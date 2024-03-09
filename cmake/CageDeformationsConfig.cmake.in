@@ -1,0 +1,20 @@
+@PACKAGE_INIT@
+
+get_filename_component(CAGEDEFORMATIONS_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+check_required_components(@LIBRARY_NAME@)
+
+include(CMakeFindDependencyMacro)
+
+list(APPEND CMAKE_MODULE_PATH ${CAGEDEFORMATIONS_CMAKE_DIR})
+
+find_dependency(OpenMP)
+list(REMOVE_AT CMAKE_MODULE_PATH -1)
+
+find_dependency(LBC)
+find_dependency(OpenFBX)
+
+if (NOT TARGET @ALIAS_NAME@::@ALIAS_NAME@)
+    include("${CAGEDEFORMATIONS_CMAKE_DIR}/@ALIAS_NAME@Targets.cmake")
+endif()
+
+set(CAGEDEFORMATIONS_LIBRARIES @ALIAS_NAME@::@ALIAS_NAME@)

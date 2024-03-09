@@ -1,0 +1,190 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "conf-common",
+            "description": "General settings that apply to all configurations",
+            "hidden": true,
+            "environment": {
+                "MCD_BUILD_DIRECTORY_NAME": "build",
+                "MCD_EXECUTABLES_DIRECTORY_NAME": "bin",
+                "MCD_BINARY_PATH": "${sourceDir}/$env{MCD_BUILD_DIRECTORY_NAME}/${presetName}/$env{MCD_EXECUTABLES_DIRECTORY_NAME}"
+            },
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": {
+                    "type": "FILEPATH",
+                    "value": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+                }
+            },
+            "binaryDir": "${sourceDir}/build/${presetName}/bin",
+            "installDir": "${sourceDir}/build/${presetName}"
+        },
+        {
+            "name": "conf-windows-common",
+            "description": "Windows settings for MSBuild toolchain that apply to msvc and clang",
+            "hidden": true,
+            "inherits": "conf-common",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+            "architecture": {
+                "value": "x64",
+                "strategy": "external"
+            }
+        },
+        {
+            "name": "windows-msvc-debug",
+            "displayName": "msvc Debug",
+            "description": "Target Windows with the msvc compiler, debug build type",
+            "inherits": "conf-windows-common",
+            "generator": "Visual Studio 17 2022",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_GENERATOR_PLATFORM": "x64",
+                "MCD_ENABLE_VULKAN_VALIDATION": true
+            },
+            "toolset": {
+                "value": "host=x64",
+                "strategy": "external"
+            }
+        },
+        {
+            "name": "windows-msvc-release",
+            "displayName": "msvc Release",
+            "description": "Target Windows with the msvc compiler, release build type",
+            "inherits": "conf-windows-common",
+            "generator": "Visual Studio 17 2022",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "CMAKE_GENERATOR_PLATFORM": "x64",
+                "MCD_ENABLE_VULKAN_VALIDATION": false
+            },
+            "toolset": {
+                "value": "host=x64",
+                "strategy": "external"
+            }
+        },
+        {
+            "name": "conf-unix-common",
+            "description": "Unix-like OS settings for gcc and clang toolchains",
+            "hidden": true,
+            "inherits": "conf-common",
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": [
+                    "Linux",
+                    "Darwin"
+                ]
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioRemoteSettings/CMake/1.0": {
+                    "sourceDir": "$env{HOME}/.vs/$ms{projectDirName}"
+                }
+            }
+        },
+        {
+            "name": "unix-clang-debug",
+            "displayName": "Unix Debug (clang)",
+            "description": "Target Unix-like OS with the clang compiler, debug build type",
+            "inherits": "conf-unix-common",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "MCD_ENABLE_VULKAN_VALIDATION": true
+            }
+        },
+        {
+            "name": "unix-clang-release",
+            "displayName": "Unix Release (clang)",
+            "description": "Target Unix-like OS with the clang compiler, release build type",
+            "inherits": "conf-unix-common",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++",
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "MCD_ENABLE_VULKAN_VALIDATION": false
+            }
+        },
+        {
+            "name": "unix-gcc-debug",
+            "displayName": "Unix Debug (gcc)",
+            "description": "Target Unix-like OS with the gcc compiler, debug build type",
+            "inherits": "conf-unix-common",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "MCD_ENABLE_VULKAN_VALIDATION": true
+            }
+        },
+        {
+            "name": "unix-gcc-release",
+            "displayName": "Unix Release (gcc)",
+            "description": "Target Unix-like OS with the gcc compiler, release build type",
+            "inherits": "conf-unix-common",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "MCD_ENABLE_VULKAN_VALIDATION": false
+            }
+        },
+        {
+            "name": "conf-macos-common",
+            "description": "macOS settings for gcc and clang toolchains",
+            "hidden": true,
+            "inherits": "conf-common",
+            "environment": {
+                "VK_ICD_FILENAMES": "$env{VULKAN_SDK}/share/vulkan/icd.d/MoltenVK_icd.json",
+                "VK_LAYER_PATH": "$env{VULKAN_SDK}/share/vulkan/explicit_layer.d",
+                "DYLD_LIBRARY_PATH": "$env{VULKAN_SDK}/lib",
+                "VK_INSTANCE_LAYERS": "VK_LAYER_KHRONOS_validation"
+            },
+            "condition": {
+                "type": "inList",
+                "string": "${hostSystemName}",
+                "list": [
+                    "Darwin"
+                ]
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioRemoteSettings/CMake/1.0": {
+                    "sourceDir": "$env{HOME}/.vs/$ms{projectDirName}"
+                }
+            }
+        },
+        {
+            "name": "macos-debug",
+            "displayName": "macOS Debug",
+            "description": "Target macOS OS with the clang compiler, debug build type",
+            "inherits": "conf-macos-common",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "MCD_ENABLE_VULKAN_VALIDATION": true
+            }
+        },
+        {
+            "name": "macos-release",
+            "displayName": "macOS Release",
+            "description": "Target macOS OS with the clang compiler, release build type",
+            "inherits": "conf-macos-common",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++",
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "MCD_ENABLE_VULKAN_VALIDATION": false
+            }
+        }
+    ]
+}

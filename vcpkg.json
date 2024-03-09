@@ -1,0 +1,45 @@
+{
+  "name": "main",
+  "version-string": "latest",
+  "dependencies": [
+    "spdlog",
+    "imgui",
+    "nativefiledialog",
+    "glm",
+    "volk",
+    "openmesh",
+    "eigen3",
+    "boost-program-options"
+  ],
+  "builtin-baseline": "57fee154cc4068542740b4b5775343d9fd83413e",
+  "overrides": [
+    {
+      "name": "spdlog",
+      "version": "1.12.0"
+    },
+    {
+      "name": "imgui",
+      "version": "1.90"
+    },
+    {
+      "name": "glm",
+      "version": "0.9.9.8"
+    },
+    {
+      "name": "volk",
+      "version": "1.3.233"
+    },
+    {
+      "name": "openmesh",
+      "version": "9.0"
+    },
+    {
+      "name": "eigen3",
+      "version": "3.4.0"
+    },
+    {
+      "name": "boost-program-options",
+      "version": "1.83.0"
+    }
+  ]
+}

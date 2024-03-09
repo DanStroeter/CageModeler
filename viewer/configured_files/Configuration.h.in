@@ -1,0 +1,20 @@
+#ifndef MESHCAGEDEFORMATIONS_CONFIGURATION_H_IN
+#define MESHCAGEDEFORMATIONS_CONFIGURATION_H_IN
+
+#include <string>
+
+namespace MCD
+{
+
+static inline constexpr bool EnableVulkanValidation = @ENABLE_VULKAN_VALIDATION@;
+static inline constexpr std::string_view ProjectName = "@PROJECT_NAME@";
+static inline constexpr std::string_view ProjectVersion = "@PROJECT_VERSION@";
+static inline constexpr int32_t ProjectVersionMajor { @PROJECT_VERSION_MAJOR@ };
+static inline constexpr int32_t ProjectVersionMinor { @PROJECT_VERSION_MINOR@ };
+static inline constexpr int32_t ProjectVersionPatch { @PROJECT_VERSION_PATCH@ };
+static inline constexpr int32_t ProjectVersionTweak { @PROJECT_VERSION_TWEAK@ };
+static inline constexpr std::string_view GitSHA = "@GIT_SHA@";
+
+} // namespace CageDeformations
+
+#endif //MESHCAGEDEFORMATIONS_CONFIGURATION_H_IN
