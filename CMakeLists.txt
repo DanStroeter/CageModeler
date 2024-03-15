@@ -21,9 +21,6 @@ if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
     set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE TRUE)
 endif()
 
-
-SET(CMAKE_CUDA_COMPILER /usr/local/cuda/bin/nvcc)
-
 # Compilation using MSVC
 if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
