@@ -57,8 +57,7 @@ private:
 	void CreateBackgroundPipeline();
 	void CreateStaticMeshPipeline();
 	void CreateCagePipeline();
-	void CreateWireframePipeline();
-	void CreatePointsPipeline();
+	void CreateWireframePipelines();
 	void CreateGizmoPipeline();
 	void CreateViewportGridPipeline();
 
@@ -75,7 +74,7 @@ private:
 	/// The proxy collector where we register render proxies.
 	std::shared_ptr<RenderProxyCollector> _renderProxyCollector = nullptr;
 
-	/// The render pipeline manager to add the scnee graphics pipelines.
+	/// The render pipeline manager to add the scene graphics pipelines.
 	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr;
 
 	/// Pointer to the resource manager.
@@ -119,11 +118,14 @@ private:
 	/// Pipeline for all polygon meshes with wireframe.
 	PipelineHandle _cagePipelineHandle;
 
-	/// Pipeline for wireframe rendering of meshes.
+	/// Pipeline for rendering of points of the mesh in wireframe mode.
+	PipelineHandle _pointsPipelineHandle;
+
+	/// Pipeline for wireframe rendering of the mesh in wireframe mode.
 	PipelineHandle _edgesPipelineHandle;
 
-	/// Pipeline for rendering of points of the mesh.
-	PipelineHandle _pointsPipelineHandle;
+	/// Pipeline for rendering of polygons of the mesh in wireframe mode.
+	PipelineHandle _polysPipelineHandle;
 
 	/// Pipeline for rendering of gizmos in the scene.
 	PipelineHandle _gizmoPipelineHandle;

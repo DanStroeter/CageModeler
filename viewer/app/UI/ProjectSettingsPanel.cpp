@@ -12,6 +12,8 @@ ProjectSettingsPanel::ProjectSettingsPanel(const std::shared_ptr<ProjectModelDat
 	, _applyButtonPressed(false)
 	, _cancelButtonPressed(false)
 {
+	_modifiedProjectModel = *model;
+
 	SetModel(model);
 }
 
@@ -80,13 +82,13 @@ void ProjectSettingsPanel::Layout()
 						}
 					}
 
-					_model->_deformationType = static_cast<DeformationType>(_selectedDeformationTypeIndex);
+					_modifiedProjectModel._deformationType = static_cast<DeformationType>(_selectedDeformationTypeIndex);
 
 					ImGui::EndCombo();
 				}
 			}
 
-			ImGui::BeginDisabled(_model->_deformationType != DeformationType::LBC);
+			ImGui::BeginDisabled(_modifiedProjectModel._deformationType != DeformationType::LBC);
 			{
 				ImGui::TableNextRow();
 				{
@@ -120,7 +122,7 @@ void ProjectSettingsPanel::Layout()
 						ImGui::EndCombo();
 					}
 
-					_model->_LBCWeightingScheme = static_cast<LBC::DataSetup::WeightingScheme>(_selectedWeightingSchemeIndex);
+					_modifiedProjectModel._LBCWeightingScheme = static_cast<LBC::DataSetup::WeightingScheme>(_selectedWeightingSchemeIndex);
 				}
 			}
 			ImGui::EndDisabled();
@@ -144,7 +146,10 @@ void ProjectSettingsPanel::Layout()
 				ImGui::TextEx("Mesh File");
 
 				ImGui::TableSetColumnIndex(1);
-				ProjecSettingsHelpers::PushFileSelectionUI(_model->_meshFilepath, "Select...##Mesh", horizontalOffset, { nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
+				ProjecSettingsHelpers::PushFileSelectionUI(_modifiedProjectModel._meshFilepath,
+					"##Mesh",
+					horizontalOffset,
+					{ nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
 			}
 
 			ImGui::TableNextRow();
@@ -153,9 +158,12 @@ void ProjectSettingsPanel::Layout()
 				ImGui::TextEx("Cage File");
 
 				ImGui::TableSetColumnIndex(1);
-				ProjecSettingsHelpers::PushFileSelectionUI(_model->_cageFilepath, "Select...##Cage", horizontalOffset, { nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
+				ProjecSettingsHelpers::PushFileSelectionUI(_modifiedProjectModel._cageFilepath,
+					"##Cage",
+					horizontalOffset,
+					{ nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
 
-				ImGui::BeginDisabled(!DeformationTypeHelpers::RequiresEmbedding(_model->_deformationType));
+				ImGui::BeginDisabled(!DeformationTypeHelpers::RequiresEmbedding(_modifiedProjectModel._deformationType));
 				{
 					ImGui::TableNextRow();
 
@@ -163,7 +171,10 @@ void ProjectSettingsPanel::Layout()
 					ImGui::TextEx("Embedded Mesh File");
 
 					ImGui::TableSetColumnIndex(1);
-					ProjecSettingsHelpers::PushFileSelectionUI(_model->_embeddingFilepath, "Select...##Embedded", horizontalOffset, { nfdfilteritem_t { "Mesh (.msh)", "msh" } });
+					ProjecSettingsHelpers::PushFileSelectionUI(_modifiedProjectModel._embeddingFilepath,
+						"##Embedded",
+						horizontalOffset,
+						{ nfdfilteritem_t { "Mesh (.msh)", "msh" } });
 				}
 				ImGui::EndDisabled();
 			}
@@ -172,27 +183,19 @@ void ProjectSettingsPanel::Layout()
 
 			ImGui::TableNextRow();
 			{
-				ImGui::TableSetColumnIndex(0);
-
-				ImGui::Checkbox("Use mesh cage as deformed cage", &_model->_useCageAsDeformedCage);
-				ImGui::SameLine();
-				UIHelpers::HelpMarker("Uses the original mesh cage as the initial deformed cage.");
-			}
-
-			ImGui::Dummy(ImVec2(0.0f, 4.0f));
-
-			ImGui::TableNextRow();
-			{
 				// If we have loaded the mesh as an FBX file we have specified the deformed cage as well.
-				const auto fbxLoaded = _model->_meshFilepath.has_value() && _model->IsFBX();
+				const auto fbxLoaded = _modifiedProjectModel._meshFilepath.has_value() && _modifiedProjectModel.IsFBX();
 
-				ImGui::BeginDisabled(_model->_useCageAsDeformedCage || fbxLoaded);
+				ImGui::BeginDisabled(fbxLoaded);
 				{
 					ImGui::TableSetColumnIndex(0);
 					ImGui::TextEx("Deformed Cage File (Optional)");
 
 					ImGui::TableSetColumnIndex(1);
-					ProjecSettingsHelpers::PushFileSelectionUI(_model->_deformedCageFilepath, "Select...##DeformedCage", horizontalOffset, { nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
+					ProjecSettingsHelpers::PushFileSelectionUI(_modifiedProjectModel._deformedCageFilepath,
+						"##DeformedCage",
+						horizontalOffset,
+						{ nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
 				}
 				ImGui::EndDisabled();
 			}
@@ -204,11 +207,14 @@ void ProjectSettingsPanel::Layout()
 
 				// Specifies the *.param parameter file to control mesh deformation.
 				ImGui::TableSetColumnIndex(1);
-				ProjecSettingsHelpers::PushFileSelectionUI(_model->_parametersFilepath, "Select...##Parameters", horizontalOffset, { nfdfilteritem_t { "Parameters (.param)", "param" } });
+				ProjecSettingsHelpers::PushFileSelectionUI(_modifiedProjectModel._parametersFilepath,
+					"##Parameters",
+					horizontalOffset,
+					{ nfdfilteritem_t { "Parameters (.param)", "param" } });
 			}
 
 			// Path to a *.dmat file.
-			ImGui::BeginDisabled(!DeformationTypeHelpers::RequiresEmbedding(_model->_deformationType));
+			ImGui::BeginDisabled(!DeformationTypeHelpers::RequiresEmbedding(_modifiedProjectModel._deformationType));
 			{
 				ImGui::TableNextRow();
 				{
@@ -216,7 +222,10 @@ void ProjectSettingsPanel::Layout()
 					ImGui::TextEx("Pre-computed Weights (Optional)");
 
 					ImGui::TableSetColumnIndex(1);
-					ProjecSettingsHelpers::PushFileSelectionUI(_model->_weightsFilepath, "Select...##Weights", horizontalOffset, { nfdfilteritem_t { "Weights (.dmat)", "dmat" } });
+					ProjecSettingsHelpers::PushFileSelectionUI(_modifiedProjectModel._weightsFilepath,
+						"##Weights",
+						horizontalOffset,
+						{ nfdfilteritem_t { "Weights (.dmat)", "dmat" } });
 				}
 			}
 			ImGui::EndDisabled();
@@ -246,7 +255,7 @@ void ProjectSettingsPanel::Layout()
 
 				ImGui::TableSetColumnIndex(1);
 				UIHelpers::SetRightAligned(100.0f);
-				ImGui::InputFloat("##Scale", &_model->_scalingFactor, 0.01f, 0.0f, "%.2f", ImGuiInputTextFlags_NoHorizontalScroll);
+				ImGui::InputFloat("##Scale", &_modifiedProjectModel._scalingFactor, 0.01f, 0.0f, "%.2f", ImGuiInputTextFlags_NoHorizontalScroll);
 			}
 
 			ImGui::TableNextRow();
@@ -258,7 +267,7 @@ void ProjectSettingsPanel::Layout()
 
 				ImGui::TableSetColumnIndex(1);
 				UIHelpers::SetRightAligned(25.0f);
-				ImGui::Checkbox("##InterpolateWeights", &_model->_interpolateWeights);
+				ImGui::Checkbox("##InterpolateWeights", &_modifiedProjectModel._interpolateWeights);
 				ImGui::SameLine();
 			}
 
@@ -271,7 +280,7 @@ void ProjectSettingsPanel::Layout()
 
 				ImGui::TableSetColumnIndex(1);
 				UIHelpers::SetRightAligned(25.0f);
-				ImGui::Checkbox("##FindOffset", &_model->_findOffset);
+				ImGui::Checkbox("##FindOffset", &_modifiedProjectModel._findOffset);
 				ImGui::SameLine();
 			}
 
@@ -284,11 +293,11 @@ void ProjectSettingsPanel::Layout()
 
 				ImGui::TableSetColumnIndex(1);
 				UIHelpers::SetRightAligned(25.0f);
-				ImGui::Checkbox("##NoOffset", &_model->_noOffset);
+				ImGui::Checkbox("##NoOffset", &_modifiedProjectModel._noOffset);
 				ImGui::SameLine();
 			}
 
-			ImGui::BeginDisabled(_model->_deformationType != DeformationType::BBW && _model->_deformationType != DeformationType::LBC);
+			ImGui::BeginDisabled(_modifiedProjectModel._deformationType != DeformationType::BBW && _modifiedProjectModel._deformationType != DeformationType::LBC);
 			{
 				ImGui::TableNextRow();
 				{
@@ -300,7 +309,7 @@ void ProjectSettingsPanel::Layout()
 
 					ImGui::TableSetColumnIndex(1);
 					UIHelpers::SetRightAligned(100.0f);
-					ImGui::InputInt("##BBW_Iterations", &_model->_numBBWSteps, 1, 10, ImGuiInputTextFlags_NoHorizontalScroll);
+					ImGui::InputInt("##BBW_Iterations", &_modifiedProjectModel._numBBWSteps, 1, 10, ImGuiInputTextFlags_NoHorizontalScroll);
 				}
 			}
 			ImGui::EndDisabled();
@@ -323,23 +332,23 @@ void ProjectSettingsPanel::Layout()
 
 		ImGui::Dummy(ImVec2(0.0f, 5.0f));
 
-		ImGui::BeginDisabled(_model->_deformationType != DeformationType::Somigliana && _model->_deformationType != DeformationType::MVC);
+		ImGui::BeginDisabled(_modifiedProjectModel._deformationType != DeformationType::Somigliana && _modifiedProjectModel._deformationType != DeformationType::MVC);
 		{
-			ImGui::InputDouble("##SomigNu", &_model->_somigNu);
+			ImGui::InputDouble("##SomigNu", &_modifiedProjectModel._somigNu);
 			ImGui::SameLine();
 			UIHelpers::HelpMarker("The material parameter nu for somigliana deformer.");
 
-			auto bulgingValue = _model->_somigBulging.load();
+			auto bulgingValue = _modifiedProjectModel._somigBulging.load();
 			if (ImGui::InputDouble("##SomigBulging", &bulgingValue)) {
-				_model->_somigBulging = bulgingValue;
+				_modifiedProjectModel._somigBulging = bulgingValue;
 			}
 			ImGui::SameLine();
 			UIHelpers::HelpMarker("The bulging parameter gamma for somigliana deformer.");
 
-			auto blendFactorValue = _model->_somigBlendFactor.load();
+			auto blendFactorValue = _modifiedProjectModel._somigBlendFactor.load();
 			if (ImGui::InputDouble("##SomigBlendFactor", &blendFactorValue))
 			{
-				_model->_somigBlendFactor = blendFactorValue;
+				_modifiedProjectModel._somigBlendFactor = blendFactorValue;
 			}
 			ImGui::SameLine();
 			UIHelpers::HelpMarker("The blending factor for somigliana deformer interpolating between local and global boundary conditions.");
@@ -366,7 +375,7 @@ void ProjectSettingsPanel::Layout()
 				ImGui::EndCombo();
 			}
 
-			_model->_somigBulgingType = static_cast<BulgingType>(_selectedBulgingTypeIndex);
+			_modifiedProjectModel._somigBulgingType = static_cast<BulgingType>(_selectedBulgingTypeIndex);
 
 			ImGui::SameLine();
 			UIHelpers::HelpMarker("The bulging type for somigliana deformer.");
@@ -384,20 +393,26 @@ void ProjectSettingsPanel::Layout()
 		// Cancel the creation and dismiss the popup.
 		if (ImGui::Button("Cancel", buttonSize))
 		{
+			// No need to clear anything on the modified data since this is going to destroy the object anyways.
+
 			Dismiss();
 		}
 
 		ImGui::SameLine();
 
-		const auto hasNoMesh = !_model->_meshFilepath.has_value() || !_model->_cageFilepath.has_value();
-		const auto hasNoDeformedCage = (_model->_useCageAsDeformedCage && !_model->_cageFilepath.has_value()) || !_model->_deformedCageFilepath;
-		const auto hasNoEmbedding = (DeformationTypeHelpers::RequiresEmbedding(_model->_deformationType) && !_model->_embeddingFilepath.has_value());
+		const auto hasNoMesh = !_modifiedProjectModel._meshFilepath.has_value() || !_modifiedProjectModel._cageFilepath.has_value();
+		const auto hasNoDeformedCage = !_modifiedProjectModel._cageFilepath.has_value();
+		const auto hasNoEmbedding = (DeformationTypeHelpers::RequiresEmbedding(_modifiedProjectModel._deformationType) && !_modifiedProjectModel._embeddingFilepath.has_value());
+		const auto hasNoChanges = (_modifiedProjectModel == *_model);
 
 		// Create the new project.
-		ImGui::BeginDisabled(hasNoMesh || hasNoDeformedCage || hasNoEmbedding || hasRunningOperation);
+		ImGui::BeginDisabled(hasNoMesh || hasNoDeformedCage || hasNoEmbedding || hasRunningOperation || hasNoChanges);
 		{
 			if (ImGui::Button("Apply", buttonSize))
 			{
+				// Update the value of the actual model pointer.
+				*_model = _modifiedProjectModel;
+
 				_applyButtonPressed = true;
 			}
 		}
@@ -447,4 +462,6 @@ void ProjectSettingsPanel::SetModel(const std::shared_ptr<ProjectModelData>& mod
 #ifdef WITH_SOMIGLIANA
 	_selectedBulgingTypeIndex = static_cast<uint32_t>(_model->_somigBulgingType);
 #endif
+
+	_modifiedProjectModel = *_model;
 }

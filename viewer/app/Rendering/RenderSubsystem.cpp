@@ -153,15 +153,9 @@ void RenderSubsystem::OnWindowResized()
 		_device,
 		_instance,
 		swapchainExtent);
-	_renderPass = CreateRenderPass();
-
-	_uiBackend->ReleaseResource();
-	_renderPipelineManager->ReleaseResource();
-
-	_sceneRenderer->CreateResources();
-
 	_framebuffers = _swapchain->CreateFramebuffers(_renderPass);
 
+	_uiBackend->ReleaseResource();
 	_uiBackend->CreateResources(_swapchain);
 }
 

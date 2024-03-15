@@ -32,12 +32,14 @@ struct MeshRenderProxyFlags
 	MeshRenderProxyFlags()
 		: _renderPoints(false)
 		, _renderEdges(false)
+		, _renderPolygons(false)
 		, _supportsWireframeRendering(false)
 		, _isVisible(true)
 	{ }
 
 	uint32_t _renderPoints : 1;
 	uint32_t _renderEdges : 1;
+	uint32_t _renderPolygons : 1;
 	uint32_t _supportsWireframeRendering : 1;
 	uint32_t _isVisible : 1;
 };
@@ -46,7 +48,8 @@ enum class WireframeRenderMode : uint8_t
 {
 	None = 0,
 	Points = 1 << 0,
-	Edges = 1 << 1
+	Edges = 1 << 1,
+	Polygons = 1 << 2
 };
 
 struct MeshProxySolidPipeline
@@ -146,6 +149,7 @@ struct MeshProxyWireframePipeline
 {
 	PipelineHandle _pointsHandle = InvalidHandle;
 	PipelineHandle _edgesHandle = InvalidHandle;
+	PipelineHandle _polyHandle = InvalidHandle;
 	std::array<std::vector<VkDescriptorSet>, VulkanUtils::NumRenderFramesInFlight> _descriptorSets;
 };
 
@@ -190,6 +194,7 @@ public:
 	{
 		_renderFlags._renderPoints = IsSet(wireframeRenderMode, WireframeRenderMode::Points);
 		_renderFlags._renderEdges = IsSet(wireframeRenderMode, WireframeRenderMode::Edges);
+		_renderFlags._renderPolygons = IsSet(wireframeRenderMode, WireframeRenderMode::Polygons);
 	}
 
 protected:

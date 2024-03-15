@@ -104,9 +104,9 @@ std::shared_ptr<PolygonMesh> SceneRenderer::AddCage(const Eigen::MatrixXd& verti
 			_cagePipelineHandle,
 			_staticMeshInfluenceMapPipelineHandle,
 			descriptorSets },
-		MeshProxyWireframePipeline { _pointsPipelineHandle, _edgesPipelineHandle, descriptorSets },
+		MeshProxyWireframePipeline { _pointsPipelineHandle, _edgesPipelineHandle, _polysPipelineHandle, descriptorSets },
 		true,
-		WireframeRenderMode::Edges);
+		WireframeRenderMode::Points | WireframeRenderMode::Edges | WireframeRenderMode::Polygons);
 	mesh->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);
 
 	return mesh;
@@ -133,7 +133,7 @@ std::shared_ptr<PolygonMesh> SceneRenderer::AddMesh(const Eigen::MatrixXd& verti
 			_staticMeshPipelineHandle,
 			_staticMeshInfluenceMapPipelineHandle,
 			solidDescriptorSets },
-		MeshProxyWireframePipeline { _pointsPipelineHandle, _edgesPipelineHandle, wireframeDescriptorSets },
+		MeshProxyWireframePipeline { _pointsPipelineHandle, _edgesPipelineHandle, _polysPipelineHandle, wireframeDescriptorSets },
 		false,
 		WireframeRenderMode::None);
 	mesh->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);
@@ -154,7 +154,7 @@ std::shared_ptr<PolygonMesh> SceneRenderer::AddGizmo(const MeshGeometry& geom)
 			_gizmoPipelineHandle,
 			_staticMeshInfluenceMapPipelineHandle,
 			solidDescriptorSets },
-		MeshProxyWireframePipeline { _pointsPipelineHandle, _edgesPipelineHandle, solidDescriptorSets },
+		MeshProxyWireframePipeline { _pointsPipelineHandle, _edgesPipelineHandle, _polysPipelineHandle, solidDescriptorSets },
 		false,
 		WireframeRenderMode::None);
 	mesh->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);
@@ -210,8 +210,7 @@ void SceneRenderer::CreateRenderPipelines()
 	CreateViewportGridPipeline();
 	CreateStaticMeshPipeline();
 	CreateCagePipeline();
-	CreateWireframePipeline();
-	CreatePointsPipeline();
+	CreateWireframePipelines();
 	CreateGizmoPipeline();
 }
 
@@ -413,52 +412,7 @@ void SceneRenderer::CreateCagePipeline()
 		.Build();
 }
 
-void SceneRenderer::CreateWireframePipeline()
-{
-	auto vertexInputAttributeDescriptions = PolygonMeshRenderProxy::GetAttributeDescriptions();
-	auto vertexInputBindingDescriptions = PolygonMeshRenderProxy::GetBindingDescription();
-
-	// Our attachments will write to all color channels, but no blending is enabled.
-	std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachments { };
-	colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachments[0].blendEnable = VK_TRUE;
-	colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
-	colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
-
-	// Create the depth and stencil descriptions.
-	VkPipelineDepthStencilStateCreateInfo depthStencil { };
-	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.minDepthBounds = 0.0f;
-	depthStencil.maxDepthBounds = 1.0f;
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {};
-	depthStencil.back = {};
-
-	std::array setLayouts { _matricesLayout->GetReference(), _objectDataLayout->GetReference() };
-
-	_edgesPipelineHandle = _renderPipelineManager->BeginPipeline()
-		.SetRenderPass(_renderPass)
-		.SetVertexInputAttributeDescriptions(std::span(vertexInputAttributeDescriptions))
-		.SetVertexInputBindingDescriptions(std::span(vertexInputBindingDescriptions))
-		.SetDescriptorSetLayouts(std::span(setLayouts))
-		.SetColorBlendAttachments(std::span(colorBlendAttachments))
-		.SetDepthStencilState(depthStencil)
-		.SetAssemblyState(VK_PRIMITIVE_TOPOLOGY_LINE_LIST)
-		.SetSubpassIndex(0)
-		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Wireframe.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Wireframe.frag.spv")
-		.Build();
-}
-
-void SceneRenderer::CreatePointsPipeline()
+void SceneRenderer::CreateWireframePipelines()
 {
 	auto vertexInputAttributeDescriptions = PolygonMeshRenderProxy::GetAttributeDescriptions();
 	auto vertexInputBindingDescriptions = PolygonMeshRenderProxy::GetBindingDescription();
@@ -497,6 +451,32 @@ void SceneRenderer::CreatePointsPipeline()
 		.SetColorBlendAttachments(std::span(colorBlendAttachments))
 		.SetDepthStencilState(depthStencil)
 		.SetAssemblyState(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+		.SetSubpassIndex(0)
+		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Wireframe.vert.spv")
+		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Wireframe.frag.spv")
+		.Build();
+
+	_edgesPipelineHandle = _renderPipelineManager->BeginPipeline()
+		.SetRenderPass(_renderPass)
+		.SetVertexInputAttributeDescriptions(std::span(vertexInputAttributeDescriptions))
+		.SetVertexInputBindingDescriptions(std::span(vertexInputBindingDescriptions))
+		.SetDescriptorSetLayouts(std::span(setLayouts))
+		.SetColorBlendAttachments(std::span(colorBlendAttachments))
+		.SetDepthStencilState(depthStencil)
+		.SetAssemblyState(VK_PRIMITIVE_TOPOLOGY_LINE_LIST)
+		.SetSubpassIndex(0)
+		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Wireframe.vert.spv")
+		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Wireframe.frag.spv")
+		.Build();
+
+	_polysPipelineHandle = _renderPipelineManager->BeginPipeline()
+		.SetRenderPass(_renderPass)
+		.SetVertexInputAttributeDescriptions(std::span(vertexInputAttributeDescriptions))
+		.SetVertexInputBindingDescriptions(std::span(vertexInputBindingDescriptions))
+		.SetDescriptorSetLayouts(std::span(setLayouts))
+		.SetColorBlendAttachments(std::span(colorBlendAttachments))
+		.SetDepthStencilState(depthStencil)
+		.SetAssemblyState(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Wireframe.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Wireframe.frag.spv")

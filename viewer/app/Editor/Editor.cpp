@@ -23,6 +23,7 @@ namespace
 {
 	constexpr auto VertexSelectionMinDistanceThresholdSq = 50.0f;
 	constexpr auto EdgeSelectionMinDistanceThreshold = 20.0f;
+	constexpr auto PolygonSelectionMinDistanceThreshold = 5.0f;
 
 	/**
 	 * Draws a selection rectangle on the screen when holding the LMB.
@@ -131,10 +132,10 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer)
 		[this] { OnNewProjectCreated(); });
 
 	_projectModel->_deformationType = DeformationType::Green;
-	_projectModel->_meshFilepath = "assets/meshes/cactus.obj";
-	_projectModel->_cageFilepath = "assets/meshes/cactus_cages_quads.obj";
-	_projectModel->_embeddingFilepath = "assets/meshes/cactus_cages_triangulated_embedding.msh";
-	_projectModel->_deformedCageFilepath = "assets/meshes/cactus_cages_quads_deformed.obj";
+	_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
+	_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
+	_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated_embedding.msh";
+	_projectModel->_deformedCageFilepath = "assets/meshes/bishop_cages_triangulated_deformed.obj";
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 
@@ -156,7 +157,7 @@ void Editor::RecordUI()
 	{
 		if (ImGui::BeginMenu("File"))
 		{
-			if (ImGui::MenuItem("New Project...", "Ctrl+N"))
+			if (ImGui::MenuItem("New Project..."))
 			{
 				_newProjectPanel = std::make_shared<NewProjectPanel>(_meshOperationSystem,
 					[this] { OnNewProjectCancelled(); },
@@ -164,12 +165,16 @@ void Editor::RecordUI()
 				_newProjectPanel->Present();
 			}
 
-			if (ImGui::BeginMenu("Export"))
-			{
-				const auto hasComputedDeformation = _hasComputedDeformationData.load(std::memory_order_relaxed);
+			const auto weightsData = _weightsData.LockRead();
+			const auto hasComputedWeights = (weightsData->_weights.cols() > 0 &&
+				!_isComputingWeightsData.load(std::memory_order_relaxed) &&
+				!_isComputingDeformationData.load(std::memory_order_relaxed));
 
-				ImGui::BeginDisabled(!hasComputedDeformation);
+			ImGui::BeginDisabled(!hasComputedWeights);
+			{
+				if (ImGui::BeginMenu("Export"))
 				{
+
 					if (ImGui::MenuItem("Meshes...", nullptr))
 					{
 						const auto filepath = UIHelpers::PresentExportFilePopup({ { "Mesh (.obj)", "obj" } }, "Untitled.obj");
@@ -179,11 +184,7 @@ void Editor::RecordUI()
 							ExportDeformedMeshes(filepath.value());
 						}
 					}
-				}
-				ImGui::EndDisabled();
 
-				ImGui::BeginDisabled(!hasComputedDeformation);
-				{
 					if (ImGui::MenuItem("Deformed Cage...", nullptr))
 					{
 						const auto filepath = UIHelpers::PresentExportFilePopup({ { "Mesh (.obj)", "obj" } }, "Untitled.obj");
@@ -193,13 +194,7 @@ void Editor::RecordUI()
 							ExportDeformedCage(filepath.value());
 						}
 					}
-				}
-				ImGui::EndDisabled();
 
-				const auto hasComputedWeights = _hasComputedWeightsData.load(std::memory_order_relaxed);
-
-				ImGui::BeginDisabled(!hasComputedDeformation || !hasComputedWeights);
-				{
 					if (ImGui::MenuItem("Influence Color Map...", nullptr))
 					{
 						const auto filepath = UIHelpers::PresentExportFilePopup({ { "Mesh (.obj)", "obj" } }, "Untitled.obj");
@@ -209,45 +204,37 @@ void Editor::RecordUI()
 							ExportInfluenceColorMap(filepath.value());
 						}
 					}
-				}
-				ImGui::EndDisabled();
 
-				ImGui::BeginDisabled(!hasComputedWeights);
-				{
-					if (ImGui::MenuItem("Weights...", nullptr))
+					ImGui::BeginDisabled(_projectModel->_deformationType != DeformationType::BBW && _projectModel->_deformationType != DeformationType::LBC);
 					{
-						const auto filepath = UIHelpers::PresentExportFilePopup({ { "Weights (.dmat)", "dmat" } }, "Untitled.dmat");
-
-						if (filepath.has_value())
+						if (ImGui::MenuItem("Weights...", nullptr))
 						{
-							ExportWeights(filepath.value());
+							const auto filepath = UIHelpers::PresentExportFilePopup({ { "Weights (.dmat)", "dmat" } }, "Untitled.dmat");
+
+							if (filepath.has_value())
+							{
+								ExportWeights(filepath.value());
+							}
 						}
 					}
-				}
-				ImGui::EndDisabled();
+					ImGui::EndDisabled();
 
-				ImGui::EndMenu();
+					ImGui::EndMenu();
+				}
 			}
+			ImGui::EndDisabled();
 
 			ImGui::EndMenu();
 		}
 
 		if (ImGui::BeginMenu("Edit"))
 		{
-			if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
-			if (ImGui::MenuItem("Redo", "CTRL+Y", false, false))
-			{
-
-			}
-
-			ImGui::Separator();
-
-			if (ImGui::MenuItem("Project Settings...", nullptr))
+			if (ImGui::MenuItem("Project Settings..."))
 			{
 				_projectSettingsPanel = std::make_shared<ProjectSettingsPanel>(_projectModel,
 					_meshOperationSystem,
-					[this] { OnNewProjectCreated(); },
-					[this] { OnNewProjectCancelled(); });
+					[this] { OnProjectSettingsCancelled(); },
+					[this] { OnProjectSettingsApplied(); });
 				_projectSettingsPanel->Present();
 			}
 
@@ -419,6 +406,33 @@ void Editor::UpdateMeshSelection(const ViewInfo& viewInfo)
 			_highlightedEdgeHandle = EdgeHandle();
 		}
 	}
+	else if (_statusBar->GetActiveSelectionType() == SelectionType::Polygon)
+	{
+		auto selection = deformedCageMesh->GetSelection<SelectionType::Polygon>();
+		const auto worldRay = viewInfo.DeprojectScreenToWorldRay(mousePosition);
+		const auto hit = deformedCageMesh->QueryRayHit(worldRay);
+
+		if (hit._polyHandle.is_valid())
+		{
+			if (_highlightedPolygonHandle != hit._polyHandle && _highlightedPolygonHandle.is_valid())
+			{
+				selection.Unhighlight(_highlightedPolygonHandle);
+			}
+
+			selection.Highlight(hit._polyHandle);
+
+			_highlightedPolygonHandle = hit._polyHandle;
+		}
+		else
+		{
+			if (_highlightedEdgeHandle.is_valid())
+			{
+				selection.Unhighlight(_highlightedPolygonHandle);
+			}
+
+			_highlightedPolygonHandle = FaceHandle();
+		}
+	}
 }
 
 void Editor::SetUpUIElements()
@@ -439,10 +453,21 @@ void Editor::OnNewProjectCancelled()
 	_newProjectPanel = nullptr;
 }
 
+void Editor::OnProjectSettingsApplied()
+{
+	// Manually update the model here on the project options panel, otherwise the temporary "modified" state will not update.
+	_projectOptionsPanel->SetModelData(_projectModel);
+
+	// Re-create the project since we changed the data model.
+	OnNewProjectCreated();
+}
+
 void Editor::OnNewProjectCreated()
 {
 	_threadPool->Submit([this]()
 	{
+		_isComputingWeightsData.store(true, std::memory_order_seq_cst);
+
 		auto projectResult = CreateProject();
 
 		if (projectResult.HasError())
@@ -470,7 +495,7 @@ void Editor::OnNewProjectCreated()
 			return;
 		}
 
-		_hasComputedWeightsData.store(true, std::memory_order_seq_cst);
+		_isComputingWeightsData.store(false, std::memory_order_seq_cst);
 
 		_weightsData.Update(std::move(weightsResult.GetValue()._skinningMatrix),
 			std::move(weightsResult.GetValue()._weights),
@@ -478,6 +503,8 @@ void Editor::OnNewProjectCreated()
 			std::move(weightsResult.GetValue()._psi),
 			std::move(weightsResult.GetValue()._psiTri),
 			std::move(weightsResult.GetValue()._psiQuad));
+
+		_isComputingDeformationData.store(true, std::memory_order_seq_cst);
 
 		auto deformedMeshResult = ComputeDeformedMesh(projectResult.GetValue()->_mesh,
 			projectResult.GetValue()->_cage,
@@ -495,7 +522,7 @@ void Editor::OnNewProjectCreated()
 			projectResult.GetValue()->CanInterpolateWeights());
 		_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
 
-		_hasComputedDeformationData.store(true, std::memory_order_seq_cst);
+		_isComputingDeformationData.store(false, std::memory_order_seq_cst);
 
 		_mainThreadQueue->Push([this, projectResultValue = projectResult.GetValue()]() mutable
 		{
@@ -517,9 +544,18 @@ void Editor::OnNewProjectCreated()
 
 			_projectData = projectResultValue;
 
+			const auto translation = glm::translate(glm::mat4(1.0f), glm::vec3(_projectData->_centerOffset));
+			const auto scale = glm::scale(glm::mat4(1.0f), glm::vec3(_projectData->_scalingFactor));
+			const auto newModelMatrix = scale * translation;
+
 			// Add the mesh and the cage to the rendered meshes. We are not going to render the original mesh and original cage for now.
 			_deformedMeshHandle = _scene->AddMesh(_projectData->_mesh._vertices, _projectData->_mesh._faces);
+			const auto mesh = _scene->GetMesh(_deformedMeshHandle);
+			mesh->SetModelMatrix(newModelMatrix);
+
 			_deformedCageHandle = _scene->AddCage(_projectData->_deformedCage._vertices, _projectData->_deformedCage._faces);
+			const auto cageMesh = _scene->GetMesh(_deformedCageHandle);
+			cageMesh->SetModelMatrix(newModelMatrix);
 
 			// We only recompute the vertex colors if they were previously on.
 			const auto renderInfluenceMap = _projectModel->CanRenderInfluenceMap();
@@ -540,6 +576,10 @@ void Editor::OnNewProjectCreated()
 				[this]<typename T>(T&& selectionType)
 				{
 					OnSelectionTypeChanged(std::forward<T>(selectionType));
+				},
+				[this]<typename T>(T&& newFrameIndex)
+				{
+					OnFrameIndexChanged(std::forward<T>(newFrameIndex));
 				}));
 
 			// Rebuild the entire BVH.
@@ -591,7 +631,7 @@ void Editor::UpdateGizmoSelection(const ViewInfo& viewInfo, const GizmoType acti
 
 	if (closestHit.has_value())
 	{
-		if (!_isGizmoHighlighted || (_isGizmoHighlighted && _highlightedGizmoAxis != closestHit->_axis))
+		if (!_isGizmoHighlighted || _highlightedGizmoAxis != closestHit->_axis)
 		{
 			_gizmo->SetHighlighted(activeGizmoType, _highlightedGizmoAxis, false);
 
@@ -628,186 +668,217 @@ void Editor::OnClicked(const InputActionParams& actionParams)
 		return;
 	}
 
+	// If we are computing the weights of a new mesh we don't want to be able to do anything until we have it ready.
+	if (_isComputingWeightsData.load(std::memory_order_relaxed))
+	{
+		return;
+	}
+
+	if (actionParams._keyState == KeyState::KeyDown)
+	{
+		OnMouseClickPressed(actionParams);
+	}
+	else if (actionParams._keyState == KeyState::KeyPressed)
+	{
+		OnMouseMoved(actionParams);
+	}
+	else if (actionParams._keyState == KeyState::KeyUp)
+	{
+		OnMouseClickReleased(actionParams);
+	}
+}
+
+void Editor::OnMouseClickPressed(const InputActionParams& actionParams)
+{
+	// Update the camera focus point if we have hit the cage or any other object in the scene.
+	// const auto currentMouseRay = viewInfo.DeprojectScreenToWorldRay(mousePosition);
+	// const auto meshHitResult = _scene->QueryClosestMesh(currentMouseRay);
+	//
+	// if (meshHitResult.has_value())
+	// {
+	// 	camera.SetPointOfInterest(meshHitResult->_worldPosition);
+	// }
+
 	const auto& camera = _cameraSubsystem->GetCamera();
 	const auto& viewInfo = camera.GetViewInfo();
 	const auto prevMousePosition = _inputSubsystem->GetPreviousMousePosition();
 	const auto mousePosition = _inputSubsystem->GetMousePosition();
 
-	if (actionParams._keyState == KeyState::KeyDown)
+	if (_isGizmoHighlighted)
 	{
-		// Update the camera focus point if we have hit the cage or any other object in the scene.
-		// const auto currentMouseRay = viewInfo.DeprojectScreenToWorldRay(mousePosition);
-		// const auto meshHitResult = _scene->QueryClosestMesh(currentMouseRay);
-		//
-		// if (meshHitResult.has_value())
-		// {
-		// 	camera.SetPointOfInterest(meshHitResult->_worldPosition);
-		// }
+		_isGizmoTransformed = true;
 
-		if (_isGizmoHighlighted)
-		{
-			_isGizmoTransformed = true;
+		_activeMeshTransformation = MeshTransformation(viewInfo,
+			_scene->GetMesh(_deformedCageHandle),
+			_statusBar->GetActiveSelectionType(),
+			GetTransformationTypeFromGizmoType(_activeGizmoType),
+			GetTransformationAxisFromGizmoAxis(_highlightedGizmoAxis),
+			_gizmo->GetMatrix(),
+			mousePosition,
+			prevMousePosition);
 
-			_activeMeshTransformation = MeshTransformation(viewInfo,
-				_scene->GetMesh(_deformedCageHandle),
-				_statusBar->GetActiveSelectionType(),
-				GetTransformationTypeFromGizmoType(_activeGizmoType),
-				GetTransformationAxisFromGizmoAxis(_highlightedGizmoAxis),
-				_gizmo->GetMatrix(),
-				mousePosition,
-				prevMousePosition);
-
-			// We bail early here otherwise we will end up selecting a vertex.
-			return;
-		}
-
-		const auto hasActiveSelection = _highlightedVertexHandle.is_valid() || _highlightedEdgeHandle.is_valid() || _isGizmoHighlighted || _isDragging;
-		const auto modifierKeys = _inputSubsystem->GetKeyModifiers();
-		const auto hasModifierKeys = IsSet(modifierKeys, SDL_KMOD_LSHIFT) || IsSet(modifierKeys, SDL_KMOD_LALT) || IsSet(modifierKeys, SDL_KMOD_LGUI);
-
-		// If we are making a rectangle selection on the screen we want to do it before we process any mesh selection, so we can use the data.
-		if (!hasActiveSelection && !hasModifierKeys)
-		{
-			_selectionRectStartPosition = ImVec2(mousePosition.x, mousePosition.y);
-			_selectionRectEndPosition = _selectionRectStartPosition;
-			_isSelectingRect = true;
-		}
+		// We bail early here otherwise we will end up selecting a vertex.
+		return;
 	}
-	else if (actionParams._keyState == KeyState::KeyPressed)
+
+	const auto hasActiveSelection = _highlightedVertexHandle.is_valid() || _highlightedEdgeHandle.is_valid() || _isGizmoHighlighted || _isDragging;
+	const auto modifierKeys = _inputSubsystem->GetKeyModifiers();
+	const auto hasModifierKeys = IsSet(modifierKeys, SDL_KMOD_LSHIFT) || IsSet(modifierKeys, SDL_KMOD_LALT) || IsSet(modifierKeys, SDL_KMOD_LGUI);
+
+	// If we are making a rectangle selection on the screen we want to do it before we process any mesh selection, so we can use the data.
+	if (!hasActiveSelection && !hasModifierKeys)
 	{
-		// If we are doing a rectangle selection skip anything else.
-		if (_isSelectingRect)
-		{
-			_selectionRectEndPosition = ImVec2(mousePosition.x, mousePosition.y);
-
-			return;
-		}
-
-		// If we have dragged the mouse then we mark it as dragged until mouse up event.
-		const auto mouseDelta = _inputSubsystem->GetMousePosition() - _inputSubsystem->GetPreviousMousePosition();
-		_isDragging |= (_isGizmoHighlighted && (glm::length2(mouseDelta) > Epsilon));
-		_hasDragged |= _isDragging;
-
-		if (_activeMeshTransformation.has_value() && _isDragging && !HasModifierKeysPressed(actionParams._modifierKeys))
-		{
-			// First transform the gizmo based on the mouse input.
-			_activeMeshTransformation->Transform(viewInfo,
-				mousePosition,
-				prevMousePosition);
-
-			ResetGizmoPositionFromSelection(viewInfo);
-		}
+		_selectionRectStartPosition = ImVec2(mousePosition.x, mousePosition.y);
+		_selectionRectEndPosition = _selectionRectStartPosition;
+		_isSelectingRect = true;
 	}
-	else if (actionParams._keyState == KeyState::KeyUp)
+}
+
+void Editor::OnMouseMoved(const InputActionParams& actionParams)
+{
+	const auto &camera = _cameraSubsystem->GetCamera();
+	const auto &viewInfo = camera.GetViewInfo();
+	const auto prevMousePosition = _inputSubsystem->GetPreviousMousePosition();
+	const auto mousePosition = _inputSubsystem->GetMousePosition();
+
+	// If we are doing a rectangle selection skip anything else.
+	if (_isSelectingRect)
 	{
-		_activeMeshTransformation.reset();
+		_selectionRectEndPosition = ImVec2(mousePosition.x, mousePosition.y);
 
-		// If we are doing a rectangle selection skip anything else.
-		if (_isSelectingRect)
+		return;
+	}
+
+	// If we have dragged the mouse then we mark it as dragged until mouse up event.
+	const auto mouseDelta = _inputSubsystem->GetMousePosition() - _inputSubsystem->GetPreviousMousePosition();
+	_isDragging |= (_isGizmoHighlighted && (glm::length2(mouseDelta) > Epsilon));
+	_hasDragged |= _isDragging;
+
+	if (_activeMeshTransformation.has_value() && _isDragging && !HasModifierKeysPressed(actionParams._modifierKeys))
+	{
+		// First transform the gizmo based on the mouse input.
+		_activeMeshTransformation->Transform(viewInfo,
+			mousePosition,
+			prevMousePosition);
+
+		ResetGizmoPositionFromSelection(viewInfo);
+	}
+}
+
+void Editor::OnMouseClickReleased(const InputActionParams& actionParams)
+{
+	_activeMeshTransformation.reset();
+
+	const auto& camera = _cameraSubsystem->GetCamera();
+	const auto& viewInfo = camera.GetViewInfo();
+	const auto prevMousePosition = _inputSubsystem->GetPreviousMousePosition();
+	const auto mousePosition = _inputSubsystem->GetMousePosition();
+
+	// If we are doing a rectangle selection skip anything else.
+	if (_isSelectingRect)
+	{
+		// If we are doing selection first cache the projected vertices into screen space.
+		const auto deformedCageMesh = _scene->GetMesh(_deformedCageHandle);
+		deformedCageMesh->CacheProjectedPointsWorldToScreen(viewInfo);
+
+		auto selection = deformedCageMesh->GetSelection<SelectionType::Vertex>();
+		selection.SelectInRectangle(viewInfo,
+			glm::vec2(_selectionRectStartPosition.x, _selectionRectStartPosition.y),
+			glm::vec2(_selectionRectEndPosition.x, _selectionRectEndPosition.y));
+
+		_isSelectingRect = false;
+
+		ResetGizmoPositionFromSelection(viewInfo);
+
+		return;
+	}
+
+	if (_isGizmoTransformed && _hasDragged && !HasModifierKeysPressed(actionParams._modifierKeys))
+	{
+		if (_deformedMeshHandle == InvalidHandle || _deformedCageHandle == InvalidHandle)
 		{
-			// If we are doing selection first cache the projected vertices into screen space.
-			const auto deformedCageMesh = _scene->GetMesh(_deformedCageHandle);
-			deformedCageMesh->CacheProjectedPointsWorldToScreen(viewInfo);
-
-			auto selection = deformedCageMesh->GetSelection<SelectionType::Vertex>();
-			selection.SelectInRectangle(viewInfo,
-				glm::vec2(_selectionRectStartPosition.x, _selectionRectStartPosition.y),
-				glm::vec2(_selectionRectEndPosition.x, _selectionRectEndPosition.y));
-
-			_isSelectingRect = false;
-
-			ResetGizmoPositionFromSelection(viewInfo);
-
 			return;
 		}
 
-		if (_isGizmoTransformed && _hasDragged && !HasModifierKeysPressed(actionParams._modifierKeys))
+		// Re-compute the deformed mesh and update the render proxy.
+		_threadPool->Submit([this,
+			mesh = _scene->GetMesh(_deformedMeshHandle)->CopyAsEigen(),
+			cage = _projectData->_cage,
+			deformedMesh = _scene->GetMesh(_deformedCageHandle)->CopyAsEigen(),
+#if WITH_SOMIGLIANA
+			somiglianaDeformer = _projectData->_somiglianaDeformer,
+			bulging = _projectModel->GetSomiglianaBulging(),
+			blendFactor = _projectModel->GetSomiglianaBlendFactor(),
+			bulgingType = _projectModel->GetSomiglianaBulgingType(),
+#endif
+			deformationType = _projectData->_deformationType,
+			weightingScheme = _projectData->_LBCWeightingScheme,
+			modelVerticesOffset = _projectData->_modelVerticesOffset,
+			numSamples = _projectData->_numSamples,
+			interpolateWeights = _projectData->CanInterpolateWeights()]() mutable
 		{
-			if (_deformedMeshHandle == InvalidHandle || _deformedCageHandle == InvalidHandle)
-			{
-				return;
-			}
+			_isComputingDeformationData.store(true, std::memory_order_seq_cst);
 
-			_hasComputedDeformationData.store(false, std::memory_order_relaxed);
-
-			// Re-compute the deformed mesh and update the render proxy.
-			_threadPool->Submit([this,
-				mesh = _scene->GetMesh(_deformedMeshHandle)->CopyAsEigen(),
-				cage = _projectData->_cage,
-				deformedMesh = _scene->GetMesh(_deformedCageHandle)->CopyAsEigen(),
+			auto deformedMeshResult = ComputeDeformedMesh(std::move(mesh),
+				std::move(cage),
+				std::move(deformedMesh),
+				deformationType,
+				weightingScheme,
 #if WITH_SOMIGLIANA
-				somiglianaDeformer = _projectData->_somiglianaDeformer,
-				bulging = _projectModel->GetSomiglianaBulging(),
-				blendFactor = _projectModel->GetSomiglianaBlendFactor(),
-				bulgingType = _projectModel->GetSomiglianaBulgingType(),
+				somiglianaDeformer,
+				bulging,
+				blendFactor,
+				bulgingType,
 #endif
-				deformationType = _projectData->_deformationType,
-				weightingScheme = _projectData->_LBCWeightingScheme,
-				modelVerticesOffset = _projectData->_modelVerticesOffset,
-				numSamples = _projectData->_numSamples,
-				interpolateWeights = _projectData->CanInterpolateWeights()]() mutable
+				modelVerticesOffset,
+				numSamples,
+				interpolateWeights);
+
+			_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
+
+			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
+
+			const auto meshPositions = _deformationData.LockRead();
+
+			// Copy the matrix to transpose in-place, so we can iterate over it in the correct memory data layout.
+			if (!meshPositions->_vertexData.empty())
 			{
-				auto deformedMeshResult = ComputeDeformedMesh(std::move(mesh),
-					std::move(cage),
-					std::move(deformedMesh),
-					deformationType,
-					weightingScheme,
-#if WITH_SOMIGLIANA
-					somiglianaDeformer,
-					bulging,
-					blendFactor,
-					bulgingType,
-#endif
-					modelVerticesOffset,
-					numSamples,
-					interpolateWeights);
-				_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
+				const auto& vertices = meshPositions->_vertexData.back()._vertices.transpose();
 
-				_hasComputedDeformationData.store(true, std::memory_order_seq_cst);
-
-				const auto meshPositions = _deformationData.LockRead();
-
-				// Copy the matrix to transpose in-place so we can iterate over it in the correct memory data layout.
-				if (!meshPositions->_vertexData.empty())
+				std::vector<glm::vec3> positions(vertices.cols());
+				for (auto i = 0; i < vertices.cols(); ++i)
 				{
-					const auto& vertices = meshPositions->_vertexData.back()._vertices.transpose();
+					positions[i] = glm::vec3(vertices(0, i), vertices(1, i), vertices(2, i));
+				}
 
-					std::vector<glm::vec3> positions(vertices.cols());
-					for (auto i = 0; i < vertices.cols(); ++i)
+				_mainThreadQueue->Push([this, localPositions = std::move(positions)]() mutable
+				{
+					// Update the positions of the mesh.
+					const auto deformedMesh = _scene->GetMesh(_deformedMeshHandle);
+					deformedMesh->SetPositions(localPositions);
+
+					// We only recompute the vertex colors if they were previously on.
+					if (_projectModel->_renderInfluenceMap)
 					{
-						positions[i] = glm::vec3(vertices(0, i), vertices(1, i), vertices(2, i));
+						UpdateMeshVertexColors(_projectModel->_renderInfluenceMap);
 					}
 
-					_mainThreadQueue->Push([this, localPositions = std::move(positions)]() mutable
+					// Rebuild the entire BVH.
 					{
-						// Update the positions of the mesh.
-						const auto deformedMesh = _scene->GetMesh(_deformedMeshHandle);
-						deformedMesh->SetPositions(localPositions);
-
-						// We only recompute the vertex colors if they were previously on.
-						const auto renderInfluenceMap = _projectModel->CanRenderInfluenceMap();
-						if (renderInfluenceMap)
-						{
-							UpdateMeshVertexColors(renderInfluenceMap);
-						}
-					});
-				}
-			});
-
-			// Rebuild the entire BVH.
-			{
-				auto bvhBuilder = _scene->BeginGeometryBVH();
-				bvhBuilder.AddGeometry(_deformedMeshHandle);
-				bvhBuilder.AddGeometry(_deformedCageHandle);
+						auto bvhBuilder = _scene->BeginGeometryBVH();
+						bvhBuilder.AddGeometry(_deformedMeshHandle);
+						bvhBuilder.AddGeometry(_deformedCageHandle);
+					}
+				});
 			}
-		}
-
-		OnClickedSelection(actionParams);
-
-		_isDragging = false;
-		_hasDragged = false;
-		_isGizmoTransformed = false;
+		});
 	}
+
+	OnClickedSelection(actionParams);
+
+	_isDragging = false;
+	_hasDragged = false;
+	_isGizmoTransformed = false;
 }
 
 void Editor::OnClickedSelection(const InputActionParams& actionParams)
@@ -911,18 +982,22 @@ void Editor::OnToolSelectionChanged(const ToolType toolType)
 
 void Editor::OnSelectionTypeChanged(const SelectionType selectionType)
 {
+	const auto& viewInfo = _cameraSubsystem->GetCamera().GetViewInfo();
 	const auto deformedCageMesh = _scene->GetMesh(_deformedCageHandle);
+	deformedCageMesh->CacheProjectedPointsWorldToScreen(viewInfo);
 
 	// If we are doing vertex selection first cache the projected vertices into screen space.
 	if (selectionType == SelectionType::Vertex)
 	{
-		const auto& viewInfo = _cameraSubsystem->GetCamera().GetViewInfo();
-		deformedCageMesh->CacheProjectedPointsWorldToScreen(viewInfo);
 		deformedCageMesh->SetWireframeRenderMode(WireframeRenderMode::Points | WireframeRenderMode::Edges);
 	}
 	else if (selectionType == SelectionType::Edge)
 	{
 		deformedCageMesh->SetWireframeRenderMode(WireframeRenderMode::Edges);
+	}
+	else if (selectionType == SelectionType::Polygon)
+	{
+		deformedCageMesh->SetWireframeRenderMode(WireframeRenderMode::Edges | WireframeRenderMode::Polygons);
 	}
 	else
 	{
@@ -930,9 +1005,14 @@ void Editor::OnSelectionTypeChanged(const SelectionType selectionType)
 	}
 }
 
+void Editor::OnFrameIndexChanged(const uint32_t newFrameIndex)
+{
+
+}
+
 void Editor::ExportDeformedMeshes(std::filesystem::path filepath) const
 {
-	CheckFormat(_hasComputedDeformationData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
+	CheckFormat(_isComputingDeformationData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
 
 	_meshOperationSystem->ExecuteOperation<DeformedMeshExportOperation>(
 		*_deformationData.LockRead(),
@@ -943,7 +1023,7 @@ void Editor::ExportDeformedMeshes(std::filesystem::path filepath) const
 #endif
 		_projectData->_mesh._faces,
 		std::move(filepath),
-		1.0f / _projectData->_internalScale);
+		1.0f / _projectData->_scalingFactor);
 }
 
 void Editor::ExportDeformedCage(std::filesystem::path filepath) const
@@ -958,7 +1038,7 @@ void Editor::ExportDeformedCage(std::filesystem::path filepath) const
 
 void Editor::ExportInfluenceColorMap(std::filesystem::path filepath) const
 {
-	CheckFormat(_hasComputedWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
+	CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
 
 	auto weights = *_weightsData.LockRead();
 
@@ -984,7 +1064,7 @@ void Editor::OnComputeInfluenceColorMap(const bool shouldRenderInfluenceMap) con
 
 void Editor::ExportWeights(std::filesystem::path filepath) const
 {
-	CheckFormat(_hasComputedWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
+	CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
 
 	const auto weightsData = _weightsData.LockRead();
 
@@ -1115,10 +1195,9 @@ void Editor::ResetGizmoPositionFromSelection(const ViewInfo& viewInfo) const
 
 		updateGizmoVisibility(selection);
 
-
 		for (const auto vertexHandle : vertexSelection)
 		{
-			averageSelPosition += glm::vec3(cageMesh->GetModelMatrix() * glm::vec4(cageMesh->GetAverageVertexPosition(vertexHandle), 1.0f));
+			averageSelPosition += cageMesh->GetAverageVertexPosition(vertexHandle);
 		}
 
 		averageSelPosition /= std::max(vertexSelection.size(), 1_sz);
@@ -1127,14 +1206,13 @@ void Editor::ResetGizmoPositionFromSelection(const ViewInfo& viewInfo) const
 	{
 		// Get the current vertex selection and apply the average position to the gizmo.
 		const auto selection = cageMesh->GetSelection<SelectionType::Edge>();
-		auto edgeSelection = selection.GetSelection();
-		const auto uniqueVertices = cageMesh->GetUniqueVerticesFromEdges(edgeSelection);
+		const auto uniqueVertices = selection.GetVertexSelection();
 
 		updateGizmoVisibility(selection);
 
 		for (const auto vertexHandle : uniqueVertices)
 		{
-			averageSelPosition += glm::vec3(cageMesh->GetModelMatrix() * glm::vec4(cageMesh->GetAverageVertexPosition(vertexHandle), 1.0f));
+			averageSelPosition += cageMesh->GetAverageVertexPosition(vertexHandle);
 		}
 
 		averageSelPosition /= std::max(uniqueVertices.size(), 1_sz);
@@ -1149,7 +1227,7 @@ void Editor::ResetGizmoPositionFromSelection(const ViewInfo& viewInfo) const
 
 		for (const auto faceHandle : faceSelection)
 		{
-			averageSelPosition += glm::vec3(cageMesh->GetModelMatrix() * glm::vec4(cageMesh->GetAverageVertexPosition(faceHandle), 1.0f));
+			averageSelPosition += cageMesh->GetAverageVertexPosition(faceHandle);
 		}
 
 		averageSelPosition /= std::max(faceSelection.size(), 1_sz);
@@ -1165,7 +1243,7 @@ void Editor::UpdateMeshVertexColors(const bool shouldRenderInfluenceMap) const
 
 	if (shouldRenderInfluenceMap)
 	{
-		CheckFormat(_hasComputedWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
+		CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
 
 		auto weights = *_weightsData.LockRead();
 

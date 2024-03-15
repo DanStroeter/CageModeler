@@ -1,3 +1,7 @@
+#ifndef IMGUI_DEFINE_MATH_OPERATORS
+	#define IMGUI_DEFINE_MATH_OPERATORS
+#endif
+
 #include <UI/StatusBar.h>
 #include <UI/UIStyle.h>
 #include <Mesh/PolygonMesh.h>
@@ -9,6 +13,219 @@ namespace
 {
 	constexpr auto StatusBarHeight = 40.0f;
 	constexpr auto StatusBarButtonSize = ImVec2(25.0f, 25.0f);
+}
+
+namespace ImGui
+{
+	constexpr std::array<uint32_t, 4> SubDivisionsMaxFrames { 10, 50, 100, 200 };
+	constexpr std::array<uint32_t, 5> SubDivisions { 1, 2, 5, 10, 20 };
+
+	static_assert(SubDivisionsMaxFrames.size() == SubDivisions.size() - 1, "Size mismatch.");
+
+	constexpr auto NumMaxFramesDraggable = 200;
+	constexpr auto MinimumDraggablePixels = 4.0f;
+	constexpr auto SequencerFrameTextPadding = ImVec2(8.0f, 2.0f);
+	constexpr auto MinimumLabelsDistanceApart = 10.0f;
+	constexpr auto HalfHandleWidth = 4.0f;
+	constexpr auto SmallDelimiterHeight = 6.0f;
+	constexpr auto ThickDelimiterWidth = 4.0f;
+	constexpr auto DelimiterWidth = 2.0f;
+
+	inline float ComputeSnap(const float value, const float snapDistance)
+	{
+		if (snapDistance <= FLT_EPSILON)
+		{
+			return 0.0f;
+		}
+
+		const auto modulo = fmodf(value, snapDistance);
+		const auto moduloRatio = fabsf(modulo) / snapDistance;
+
+		if (moduloRatio < 0.5f)
+		{
+			return value - modulo;
+		}
+		else
+		{
+			const auto snapSign = ((value < 0.0f) ? -1.0f : 1.0f);
+
+			return value - modulo + snapDistance * snapSign;
+		}
+	}
+
+	inline std::size_t GetNumberOfFramesPerDivisionIndex(const uint32_t numFrames)
+	{
+		for (std::size_t i = 0; i < SubDivisionsMaxFrames.size(); ++i)
+		{
+			if (numFrames < SubDivisionsMaxFrames[i])
+			{
+				return i;
+			}
+		}
+
+		return SubDivisionsMaxFrames.size();
+	}
+
+	inline uint32_t GetNumberOfFramesPerDivision(const uint32_t numFrames)
+	{
+		return SubDivisions[GetNumberOfFramesPerDivisionIndex(numFrames)];
+	}
+
+	inline uint32_t Sequencer(const char* label, const uint32_t frameIndex, const uint32_t numFrames, bool& inOutDraggingHandle)
+	{
+		auto window = GetCurrentWindow();
+		if (window->SkipItems)
+		{
+			return false;
+		}
+
+		const auto id = window->GetID(label);
+
+		const auto cursorPos = window->DC.CursorPos;
+		const auto canvasSize = GetContentRegionAvail() - ImVec2(300.0f, 0.0f);
+		const ImRect boundingBox(cursorPos, cursorPos + canvasSize);
+
+		ItemSize(boundingBox);
+		if (!ItemAdd(boundingBox, id, nullptr, 0))
+		{
+			return false;
+		}
+
+		const auto drawList = window->DrawList;
+
+		const auto textColor = ColorConvertFloat4ToU32(GImGui->Style.Colors[ImGuiCol_Text]);
+		const auto inactiveColor = ColorConvertFloat4ToU32(ImVec4(0.75f, 0.75f, 0.75f, 1.0f));
+		const auto activeColor = ColorConvertFloat4ToU32(ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+		const auto lineColor = ColorConvertFloat4ToU32(GImGui->Style.Colors[ImGuiCol_Separator]);
+		const auto backgroundColor = ColorConvertFloat4ToU32(GImGui->Style.Colors[ImGuiCol_FrameBg]);
+
+		// Compute the maximum number of frame labels we can fit into the canvas.
+		const auto maxTextSize = CalcTextSize("100");
+
+		// Compute how to subdivide the existing number of frames into regions.
+		const auto maxNumFramesPerDivision = GetNumberOfFramesPerDivision(numFrames);
+		auto numDivisions = static_cast<uint32_t>(ImFloor(static_cast<float>(numFrames) / static_cast<float>(maxNumFramesPerDivision)));
+		const auto numRestDivisions = numFrames - numDivisions * maxNumFramesPerDivision;
+
+		// Draw the background of the sequencer.
+		drawList->AddRectFilled(cursorPos, cursorPos + canvasSize, backgroundColor, 2.0f);
+
+		const auto timelineWidth = canvasSize.x - 2.0f * SequencerFrameTextPadding.x;
+		const auto restTimelineWidth = canvasSize.x * (static_cast<float>(numRestDivisions) / static_cast<float>(numFrames));
+		const auto labelsOffset = (timelineWidth - restTimelineWidth) / static_cast<float>(numDivisions);
+
+		const auto addDivision = [&](const int32_t index)
+		{
+			char tmp[4];
+			ImFormatString(tmp, sizeof(tmp), "%d", index * maxNumFramesPerDivision);
+
+			const auto textSize = ImGui::CalcTextSize(tmp);
+			const auto textOffset = SequencerFrameTextPadding + ImVec2(labelsOffset * static_cast<float>(index), 0.0f);
+
+			// The text of the frame.
+			drawList->AddText(cursorPos + textOffset, textColor, tmp);
+
+			// Line to indicate the frame number.
+			drawList->AddLine(cursorPos + textOffset + ImVec2(0.0f, canvasSize.y - SequencerFrameTextPadding.y),
+				ImVec2(cursorPos + textOffset + ImVec2(0.0f, SequencerFrameTextPadding.y + textSize.y)),
+				lineColor,
+				ThickDelimiterWidth);
+		};
+
+		const auto addSubDivision = [&](const int32_t index, const int32_t divisionIndex)
+		{
+			const auto frac = static_cast<float>(index) / static_cast<float>(maxNumFramesPerDivision);
+			const auto smallLineOffset = SequencerFrameTextPadding + ImVec2(labelsOffset * (static_cast<float>(divisionIndex) + frac), 0.0f);
+
+			drawList->AddLine(cursorPos + smallLineOffset + ImVec2(0.0f, canvasSize.y - SequencerFrameTextPadding.y),
+				ImVec2(cursorPos + smallLineOffset + ImVec2(0.0f, canvasSize.y - SequencerFrameTextPadding.y - SmallDelimiterHeight)),
+				lineColor,
+				DelimiterWidth);
+		};
+
+		// Draw all frame numbers.
+		for (int32_t divisionIndex = 0; divisionIndex <= numDivisions; ++divisionIndex)
+		{
+			addDivision(divisionIndex);
+
+			const auto thisNumRestDivisions = numFrames - divisionIndex * maxNumFramesPerDivision;
+			const auto maxNumSubdivisions = (std::min)(thisNumRestDivisions, maxNumFramesPerDivision);
+
+			// Intermediate lines between the big segments.
+			for (int32_t subdivisionIndex = 1; subdivisionIndex <= maxNumSubdivisions; ++subdivisionIndex)
+			{
+				addSubDivision(subdivisionIndex, divisionIndex);
+			}
+		}
+
+		uint32_t nextFrameIndex = frameIndex;
+
+		BeginGroup();
+		{
+			// We have dragged since last frame, so we want to update the handle progress and the new frame.
+			if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) && inOutDraggingHandle)
+			{
+				const auto mouseDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+
+				if (mouseDelta.x != 0)
+				{
+					// Calculate how much we have dragged if anything.
+					const auto initialMouseClickPos = *GetIO().MouseClickedPos;
+
+					auto minDragDistancePerFrame = timelineWidth / static_cast<float>(numFrames);
+					auto minDragNumFrames = 1;
+
+					const auto requiredDragDistancePerFrame = static_cast<float>(1) / NumMaxFramesDraggable * timelineWidth;
+					if (numFrames > NumMaxFramesDraggable || minDragDistancePerFrame < requiredDragDistancePerFrame)
+					{
+						minDragNumFrames = ImCeil(MinimumDraggablePixels / requiredDragDistancePerFrame);
+						minDragDistancePerFrame = requiredDragDistancePerFrame;
+					}
+
+					const auto minDragDistance = static_cast<float>(minDragNumFrames) * minDragDistancePerFrame;
+					const auto currentXValue = initialMouseClickPos.x + mouseDelta.x - cursorPos.x - SequencerFrameTextPadding.x;
+					const auto snappedMousePosX = ComputeSnap(ImClamp(currentXValue, 0.0f, timelineWidth), minDragDistance);
+
+					nextFrameIndex = static_cast<uint32_t>(roundf(snappedMousePosX / timelineWidth * static_cast<float>(numFrames)));
+				}
+			}
+
+			// Calculate the position of the handle.
+			const auto handleProgress = static_cast<float>(nextFrameIndex) / static_cast<float>(numFrames);
+			const auto handleCenterCoords = SequencerFrameTextPadding.x + handleProgress * timelineWidth;
+			const ImVec2 handlePosition(cursorPos.x + handleCenterCoords, cursorPos.y);
+
+			ImRect handleBoundingBox(handlePosition + ImVec2(0.0f, 4.0f) - ImVec2(HalfHandleWidth, 0.0f), handlePosition + ImVec2(HalfHandleWidth, canvasSize.y));
+			const ImGuiID handleId = window->GetID("SequencerHandle");
+
+			PushID(handleId);
+
+			bool hovered = false;
+			bool held = false;
+			const auto pressed = ButtonBehavior(handleBoundingBox, handleId, &hovered, &held, ImGuiButtonFlags_MouseButtonLeft);
+
+			inOutDraggingHandle = (held || inOutDraggingHandle);
+
+			if (IsMouseReleased(ImGuiMouseButton_Left) && inOutDraggingHandle)
+			{
+				inOutDraggingHandle = false;
+			}
+
+			// Draw the handle.
+			const auto col = (pressed || hovered || held || inOutDraggingHandle) ? activeColor : inactiveColor;
+			drawList->AddRectFilled(handleBoundingBox.Min,
+				handleBoundingBox.Max,
+				col,
+				4.0f,
+				ImDrawFlags_RoundCornersTopLeft | ImDrawFlags_RoundCornersTopRight);
+
+			PopID();
+		}
+		EndGroup();
+
+		return nextFrameIndex;
+	}
+
 }
 
 StatusBar::StatusBar(const std::shared_ptr<MeshOperationSystem>& meshOperationSystem)
@@ -79,6 +296,25 @@ void StatusBar::Layout()
 		ImGui::Dummy(ImVec2(1.0f, 0.0f));
 		ImGui::SameLine();
 
+		// Draw the sequencer at the bottom.
+		uint32_t numFrames = 1;
+		if (const auto projectData = _model->_projectData.lock())
+		{
+			numFrames = projectData->_numSamples;
+		}
+
+		const auto oldCursorPositionY = ImGui::GetCursorPosY();
+		const auto prevFrameIndex = _model->_frameIndex;
+		_model->_frameIndex = ImGui::Sequencer("Sequencer", _model->_frameIndex, numFrames, _model->_isDraggingSequencerHandle);
+		_model->_frameIndex = _model->_frameIndex % numFrames;
+
+		if (prevFrameIndex != _model->_frameIndex)
+		{
+			_model->_frameIndexChangedDelegate(_model->_frameIndex);
+		}
+
+		ImGui::SameLine();
+
 		const auto meshOperationSystem = _meshOperationSystem.lock();
 		if (meshOperationSystem == nullptr)
 		{
@@ -98,11 +334,13 @@ void StatusBar::Layout()
 				const auto actionTextSize = ImGui::CalcTextSize(operationDescription.c_str());
 
 				// Set the initial position of the text.
+				ImGui::SetCursorPosY(oldCursorPositionY);
 				ImGui::SetCursorPosX(windowSize.x - actionTextSize.x - ImGui::GetStyle().ItemSpacing.x - 24.0f);
 
 				ImGui::TextEx(operationDescription.c_str());
 				ImGui::SameLine();
 
+				ImGui::SetCursorPosY(oldCursorPositionY);
 				ImGui::Spinner("##LoadingSpinner", 7.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
 			}
 		}
@@ -113,6 +351,7 @@ void StatusBar::Layout()
 			const auto actionTextSize = ImGui::CalcTextSize(errorText);
 
 			// Set the initial position of the text.
+			ImGui::SetCursorPosY(oldCursorPositionY);
 			ImGui::SetCursorPosX(windowSize.x - actionTextSize.x - ImGui::GetStyle().ItemSpacing.x);
 
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.2f, 0.3f, 1.0f));

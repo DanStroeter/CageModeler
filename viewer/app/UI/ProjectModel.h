@@ -33,7 +33,6 @@ struct ProjectModelData
 #endif
 
 		_scalingFactor = other._scalingFactor;
-		_useCageAsDeformedCage = other._useCageAsDeformedCage;
 		_interpolateWeights = other._interpolateWeights;
 		_findOffset = other._findOffset;
 		_noOffset = other._noOffset;
@@ -86,7 +85,6 @@ struct ProjectModelData
 #endif
 
 		swap(lhs._scalingFactor, rhs._scalingFactor);
-		swap(lhs._useCageAsDeformedCage, rhs._useCageAsDeformedCage);
 		swap(lhs._interpolateWeights, rhs._interpolateWeights);
 		swap(lhs._findOffset, rhs._findOffset);
 		swap(lhs._noOffset, rhs._noOffset);
@@ -133,7 +131,6 @@ struct ProjectModelData
 			lhs._somigBulgingType.load(std::memory_order_relaxed) == rhs._somigBulgingType.load(std::memory_order_relaxed) &&
 #endif
 			lhs._scalingFactor == rhs._scalingFactor &&
-			lhs._useCageAsDeformedCage == rhs._useCageAsDeformedCage &&
 			lhs._interpolateWeights == rhs._interpolateWeights &&
 			lhs._findOffset == rhs._findOffset &&
 			lhs._noOffset == rhs._noOffset;
@@ -202,9 +199,6 @@ struct ProjectModelData
 #endif
 
 	float _scalingFactor = 1.0f;
-
-	/// Use the object cage as the base for the deformed cage.
-	bool _useCageAsDeformedCage = false;
 
 	/// Interpolate the weights.
 	bool _interpolateWeights = false;

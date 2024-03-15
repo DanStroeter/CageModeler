@@ -15,15 +15,21 @@ struct StatusBarModel
 {
 	StatusBarModel() = default;
 	StatusBarModel(const std::shared_ptr<ProjectData>& projectData,
-		std::function<void (SelectionType)> selectionTypeChangedDelegate)
+		std::function<void (SelectionType)> selectionTypeChangedDelegate,
+		std::function<void (uint32_t)> frameIndexChangedDelegate)
 		: _projectData(projectData)
 		, _selectionTypeChangedDelegate(std::move(selectionTypeChangedDelegate))
+		, _frameIndexChangedDelegate(std::move(frameIndexChangedDelegate))
 	{ }
 
 	std::weak_ptr<ProjectData> _projectData;
 	std::optional<MeshOperationError> _error;
 
+	uint32_t _frameIndex = 0;
+	bool _isDraggingSequencerHandle = false;
+
 	std::function<void (SelectionType)> _selectionTypeChangedDelegate;
+	std::function<void (uint32_t)> _frameIndexChangedDelegate;
 	SelectionType _activeSelectionType = SelectionType::Vertex;
 };
 

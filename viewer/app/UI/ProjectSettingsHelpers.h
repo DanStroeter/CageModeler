@@ -6,7 +6,8 @@
 struct ProjecSettingsHelpers
 {
 	static constexpr auto MaxFilepathCharacters = 45_sz;
-	static constexpr auto ButtonSize = ImVec2(65.0f, 25.0f);
+	static constexpr auto ButtonSize = ImVec2(65.0f, 24.0f);
+	static constexpr auto ClearButtonSize = ImVec2(24.0f, 24.0f);
 
 	static constexpr std::array DeformationMethodNames {
 #ifdef WITH_SOMIGLIANA
@@ -78,7 +79,7 @@ struct ProjecSettingsHelpers
 	}
 
 	static void PushFileSelectionUI(std::optional<std::filesystem::path>& inOutFilepath,
-		const char* buttonLabel,
+		const char* uniqueLabel,
 		const float horizontalOffset,
 		const std::vector<nfdfilteritem_t>& filterList)
 	{
@@ -98,9 +99,33 @@ struct ProjecSettingsHelpers
 
 		ImGui::SameLine();
 
+		const auto oldCursorY = ImGui::GetCursorPosY();
+
+		if (inOutFilepath.has_value())
+		{
+			ImGui::SetCursorPosY(oldCursorY - 4.0f);
+			ImGui::SetCursorPosX(horizontalOffset - buttonSize.x - ClearButtonSize.x - 0.25f * ImGui::GetStyle().SeparatorTextPadding.x + ImGui::GetStyle().WindowPadding.x);
+			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+
+			std::string clearButtonText(ICON_LC_CIRCLE_X);
+			clearButtonText.append(uniqueLabel);
+
+			if (ImGui::Button(clearButtonText.c_str(), ClearButtonSize))
+			{
+				inOutFilepath.reset();
+			}
+			ImGui::PopStyleColor();
+
+			ImGui::SameLine();
+		}
+
+		ImGui::SetCursorPosY(oldCursorY - 2.0f);
 		ImGui::SetCursorPosX(horizontalOffset - buttonSize.x + ImGui::GetStyle().WindowPadding.x);
 
-		if (ImGui::Button(buttonLabel, ButtonSize))
+		std::string selectButtonText("Select...");
+		selectButtonText.append(uniqueLabel);
+
+		if (ImGui::Button(selectButtonText.c_str(), ButtonSize))
 		{
 			const auto newFilepath = UIHelpers::PresentSelectFilePopup(std::filesystem::current_path() / "assets" / "meshes", filterList);
 

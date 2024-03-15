@@ -208,7 +208,7 @@ void ProjectOptionsPanel::Layout()
 				ImGui::SameLine();
 			}
 
-			ImGui::BeginDisabled(!_modifiedProjectModel.CanEditInfluenceMapSetting());
+			ImGui::BeginDisabled(!_model._projectData->CanEditInfluenceMapSetting());
 			{
 				ImGui::TableNextRow();
 				{
@@ -219,9 +219,9 @@ void ProjectOptionsPanel::Layout()
 
 					ImGui::TableSetColumnIndex(1);
 					UIHelpers::SetRightAligned(25.0f);
-					if (ImGui::Checkbox("##Project_InfluenceMap", &_modifiedProjectModel._renderInfluenceMap))
+					if (ImGui::Checkbox("##Project_InfluenceMap", &_model._projectData->_renderInfluenceMap))
 					{
-						_influenceMapToggled(_modifiedProjectModel._renderInfluenceMap);
+						_influenceMapToggled(_model._projectData->_renderInfluenceMap);
 					}
 					ImGui::SameLine();
 				}

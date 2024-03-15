@@ -133,12 +133,12 @@ public:
 
 	[[nodiscard]] glm::vec3 GetPosition(const VertexHandle handle) const
 	{
-		return _mesh->point(handle);
+		return PremultiplyPoint(_mesh->point(handle));
 	}
 
 	[[nodiscard]] glm::vec3 GetAverageVertexPosition(const VertexHandle handle) const
 	{
-		return _mesh->point(handle);
+		return PremultiplyPoint(_mesh->point(handle));
 	}
 
 	[[nodiscard]] glm::vec3 GetAverageVertexPosition(const FaceHandle handle) const
@@ -148,28 +148,11 @@ public:
 
 		for (auto it = _mesh->fv_begin(handle); it != _mesh->fv_end(handle); ++it)
 		{
-			position += _mesh->point(static_cast<VertexHandle>(*it));
+			position += GetPosition(static_cast<VertexHandle>(*it));
 			++numVertices;
 		}
 
 		return position / static_cast<float>((std::max)(1_sz, numVertices));
-	}
-
-	[[nodiscard]] std::unordered_set<VertexHandle> GetUniqueVerticesFromEdges(const std::span<EdgeHandle> handles) const
-	{
-		std::unordered_set<VertexHandle> uniqueVertexHandles;
-
-		for (const auto handle : handles)
-		{
-			const auto heHandle = _mesh->halfedge_handle(handle, 0);
-			const auto v0 = _mesh->from_vertex_handle(heHandle);
-			const auto v1 = _mesh->to_vertex_handle(heHandle);
-
-			uniqueVertexHandles.insert(v0);
-			uniqueVertexHandles.insert(v1);
-		}
-
-		return uniqueVertexHandles;
 	}
 
 	template <typename HandleType>
@@ -200,10 +183,9 @@ public:
 	/**
 	 * Find the closest ray hit with a triangle of the mesh.
 	 * @param ray A ray that should be tested against each triangle.
-	 * @param transform Pre-transform the points using a transformation matrix.
-	 * @return A hit parameter T along the ray.
+	 * @return A hit result along the ray.
 	 */
-	[[nodiscard]] std::optional<float> QueryRayHit(const Ray& ray, const glm::mat4& transform = glm::mat4(1.0f)) const;
+	[[nodiscard]] ClosestPolygonResult QueryRayHit(const Ray& ray) const;
 
 	/**
 	 * Queries the closest mesh vertex in screen space closest to the mouse cursor.
@@ -234,7 +216,7 @@ public:
 	 * @param minScreenSpaceDistance The minimum distance to check against.
 	 * @return The mesh face that is the closest to the mouse cursor.
 	 */
-	std::optional<ClosestPolygonResult> QueryClosestPolygonScreenSpace(const ViewInfo& viewInfo,
+	[[nodiscard]] std::optional<ClosestPolygonResult> QueryClosestPolygonScreenSpace(const ViewInfo& viewInfo,
 		const glm::vec2 screenSpacePosition,
 		const float minScreenSpaceDistance) const;
 
@@ -321,6 +303,16 @@ private:
 	 */
 	[[nodiscard]] std::vector<Vertex> ComputeEdgesWireframeVertices() const;
 
+	/**
+	 * Pre-multiplies a point by the model matrix.
+	 * @param point A point.
+	 * @return A pre-multiplied point.
+	 */
+	[[nodiscard]] glm::vec3 PremultiplyPoint(const glm::vec3& point) const
+	{
+		return glm::vec3(_modelMatrix * glm::vec4(point, 1.0f));
+	}
+
 private:
 	template <typename T> friend struct ProxyCollectorHelper;
 
@@ -369,14 +361,14 @@ auto PolygonMesh::GetSelection() -> decltype(auto)
 {
 	if constexpr (Type == SelectionType::Vertex)
 	{
-		return VertexSelection(*_mesh, _cachedProjectedPoints, _wireframeDirtyFlags);
+		return VertexSelection(_modelMatrix, *_mesh, _cachedProjectedPoints, _wireframeDirtyFlags);
 	}
 	else if constexpr (Type == SelectionType::Edge)
 	{
-		return EdgeSelection(*_mesh, _cachedProjectedPoints, _wireframeDirtyFlags);
+		return EdgeSelection(_modelMatrix, *_mesh, _cachedProjectedPoints, _wireframeDirtyFlags);
 	}
 	else
 	{
-		return PolygonSelection(*_mesh, _cachedProjectedPoints, _wireframeDirtyFlags);
+		return PolygonSelection(_modelMatrix, *_mesh, _cachedProjectedPoints, _wireframeDirtyFlags);
 	}
 }

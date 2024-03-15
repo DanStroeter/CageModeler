@@ -8,9 +8,10 @@ PolygonMeshRenderProxy::PolygonMeshRenderProxy(const RenderResourceRef<Device>& 
 	MeshProxyWireframePipeline wireframePipeline,
 	const bool supportsWireframeRendering,
 	const WireframeRenderMode wireframeRenderMode,
-	const SolidMeshProxyBuffers& solidMeshBuffers,
-	const PointsMeshProxyBuffers& pointsWireframeBuffers,
-	const EdgesListProxyBuffers& edgesWireframeBuffers)
+	const TrianglesListProxyBuffers& solidMeshBuffers,
+	const PointsListProxyBuffers& pointsWireframeBuffers,
+	const EdgesListProxyBuffers& edgesWireframeBuffers,
+	const TrianglesListProxyBuffers& polysListBuffers)
 	: MeshRenderProxy(device,
 		renderCommandScheduler,
 		std::move(solidPipeline),
@@ -35,8 +36,6 @@ PolygonMeshRenderProxy::PolygonMeshRenderProxy(const RenderResourceRef<Device>& 
 
 	if (pointsWireframeBuffers.IsValid())
 	{
-		_pointsWireframeBuffers._positionBuffer = renderCommandScheduler->ExecuteCommand<CreateBufferCommand>(std::span(pointsWireframeBuffers._positions),
-			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 		_pointsWireframeBuffers._vertexBuffer = renderCommandScheduler->ExecuteCommand<CreateBufferCommand>(std::span(pointsWireframeBuffers._vertices),
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 		_pointsWireframeBuffers._indexBuffer = renderCommandScheduler->ExecuteCommand<CreateBufferCommand>(std::span(pointsWireframeBuffers._indices),
@@ -56,6 +55,23 @@ PolygonMeshRenderProxy::PolygonMeshRenderProxy(const RenderResourceRef<Device>& 
 
 		_numWireframeEdges = edgesWireframeBuffers.GetNumElements();
 	}
+
+	if (polysListBuffers.IsValid())
+	{
+		_polygonsWireframeBuffers._positionBuffer = renderCommandScheduler->ExecuteCommand<CreateBufferCommand>(std::span(polysListBuffers._positions),
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+		_polygonsWireframeBuffers._vertexBuffer = renderCommandScheduler->ExecuteCommand<CreateBufferCommand>(std::span(polysListBuffers._vertices),
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+
+		if (!polysListBuffers._indices.empty())
+		{
+			_polygonsWireframeBuffers._indexBuffer = renderCommandScheduler->ExecuteCommand<CreateBufferCommand>(std::span(polysListBuffers._indices),
+				VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+		}
+
+		_numWireframeVertices = polysListBuffers._vertices.size();
+		_numWireframeIndices = polysListBuffers._indices.size();
+	}
 }
 
 void PolygonMeshRenderProxy::Render(const VkCommandBuffer commandBuffer,
@@ -70,22 +86,24 @@ void PolygonMeshRenderProxy::Render(const VkCommandBuffer commandBuffer,
 
 	std::array dynamicBufferOffsets { dynamicBufferOffset };
 
-	const auto solidPipelineHandle = (_drawInfluenceMap ? _solidPipeline._vertexColorHandle : _solidPipeline._handle);
-
-	// TODO: Group objects that require the same pipeline.
-	renderCommandScheduler->ExecuteCommand<BindGraphicsPipelineCommand>(commandBuffer, solidPipelineHandle);
-
-	// Bind the vertex and index buffers and also the descriptor sets.
-	std::array vertexBuffers { _solidMeshBuffers._positionBuffer._deviceBuffer, _solidMeshBuffers._vertexBuffer._deviceBuffer };
-	renderCommandScheduler->ExecuteCommand<BindVertexBuffersCommand>(commandBuffer, vertexBuffers, _solidMeshBuffers._indexBuffer._deviceBuffer);
-
-	// Bind the matrices descriptor sets.
-	if (!_solidPipeline._descriptorSets[currentFrameIndex].empty())
 	{
-		renderCommandScheduler->ExecuteCommand<BindDescriptorSetCommand>(commandBuffer,
-			solidPipelineHandle,
-			_solidPipeline._descriptorSets[currentFrameIndex],
-			dynamicBufferOffsets);
+		const auto solidPipelineHandle = (_drawInfluenceMap ? _solidPipeline._vertexColorHandle : _solidPipeline._handle);
+
+		// TODO: Group objects that require the same pipeline.
+		renderCommandScheduler->ExecuteCommand<BindGraphicsPipelineCommand>(commandBuffer, solidPipelineHandle);
+
+		// Bind the vertex and index buffers and also the descriptor sets.
+		std::array vertexBuffers { _solidMeshBuffers._positionBuffer._deviceBuffer, _solidMeshBuffers._vertexBuffer._deviceBuffer };
+		renderCommandScheduler->ExecuteCommand<BindVertexBuffersCommand>(commandBuffer, vertexBuffers, _solidMeshBuffers._indexBuffer._deviceBuffer);
+
+		// Bind the matrices descriptor sets.
+		if (!_solidPipeline._descriptorSets[currentFrameIndex].empty())
+		{
+			renderCommandScheduler->ExecuteCommand<BindDescriptorSetCommand>(commandBuffer,
+				solidPipelineHandle,
+				_solidPipeline._descriptorSets[currentFrameIndex],
+				dynamicBufferOffsets);
+		}
 	}
 
 	renderCommandScheduler->ExecuteCommand<DrawIndexedCommand>(commandBuffer, _numIndices, 0);
@@ -96,7 +114,7 @@ void PolygonMeshRenderProxy::Render(const VkCommandBuffer commandBuffer,
 		renderCommandScheduler->ExecuteCommand<BindGraphicsPipelineCommand>(commandBuffer, _wireframePipeline._pointsHandle);
 
 		// Bind the vertex and index buffers and also the descriptor sets.
-		std::array wireframeVertexBuffers { _pointsWireframeBuffers._positionBuffer._deviceBuffer, _pointsWireframeBuffers._vertexBuffer._deviceBuffer };
+		std::array wireframeVertexBuffers { _solidMeshBuffers._positionBuffer._deviceBuffer, _pointsWireframeBuffers._vertexBuffer._deviceBuffer };
 		renderCommandScheduler->ExecuteCommand<BindVertexBuffersCommand>(commandBuffer, wireframeVertexBuffers, _pointsWireframeBuffers._indexBuffer._deviceBuffer);
 
 		// Bind the matrices descriptor sets.
@@ -130,6 +148,27 @@ void PolygonMeshRenderProxy::Render(const VkCommandBuffer commandBuffer,
 		}
 
 		renderCommandScheduler->ExecuteCommand<DrawIndexedCommand>(commandBuffer, _numWireframeEdges, 0);
+	}
+
+	if (_renderFlags._renderPolygons && _polygonsWireframeBuffers._indexBuffer._allocatedSize > 0)
+	{
+		// TODO: Group objects that require the same pipeline.
+		renderCommandScheduler->ExecuteCommand<BindGraphicsPipelineCommand>(commandBuffer, _wireframePipeline._polyHandle);
+
+		// Bind the vertex and index buffers and also the descriptor sets.
+		std::array vertexBuffers { _polygonsWireframeBuffers._positionBuffer._deviceBuffer, _polygonsWireframeBuffers._vertexBuffer._deviceBuffer };
+		renderCommandScheduler->ExecuteCommand<BindVertexBuffersCommand>(commandBuffer, vertexBuffers, _polygonsWireframeBuffers._indexBuffer._deviceBuffer);
+
+		// Bind the matrices descriptor sets.
+		if (!_solidPipeline._descriptorSets[currentFrameIndex].empty())
+		{
+			renderCommandScheduler->ExecuteCommand<BindDescriptorSetCommand>(commandBuffer,
+				_wireframePipeline._polyHandle,
+				_wireframePipeline._descriptorSets[currentFrameIndex],
+				dynamicBufferOffsets);
+		}
+
+		renderCommandScheduler->ExecuteCommand<DrawIndexedCommand>(commandBuffer, _numIndices, 0);
 	}
 }
 
@@ -226,7 +265,7 @@ void PolygonMeshRenderProxy::SetPositions(const std::span<glm::vec3> newPosition
 	renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newPositions, _solidMeshBuffers._positionBuffer);
 }
 
-void PolygonMeshRenderProxy::SetPointsWireframeVertices(const std::span<Vertex> newWireframeVertices)
+void PolygonMeshRenderProxy::SetWireframePositions(const WireframeRenderMode renderMode, const std::span<glm::vec3> newWireframePositions)
 {
 	const auto renderCommandScheduler = _renderCommandScheduler.lock();
 	if (renderCommandScheduler == nullptr)
@@ -234,10 +273,42 @@ void PolygonMeshRenderProxy::SetPointsWireframeVertices(const std::span<Vertex> 
 		return;
 	}
 
-	renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframeVertices, _pointsWireframeBuffers._vertexBuffer);
+	if (renderMode == WireframeRenderMode::Points)
+	{
+		CheckNoEntry("Wireframe positions are inherited from the mesh itself.");
+	}
+	else if (renderMode == WireframeRenderMode::Edges)
+	{
+		renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframePositions, _edgesWireframeBuffers._positionBuffer);
+	}
+	else if (renderMode == WireframeRenderMode::Polygons)
+	{
+		if (!newWireframePositions.empty())
+		{
+			if (_numWireframeVertices == newWireframePositions.size())
+			{
+				renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframePositions, _polygonsWireframeBuffers._positionBuffer);
+			}
+			else
+			{
+				// First release the old buffer.
+				if (_polygonsWireframeBuffers._positionBuffer._allocatedSize > 0)
+				{
+					_polygonsWireframeBuffers._positionBuffer.ReleaseResource(_device);
+				}
+
+				// Create the buffer again.
+				// TODO: That is the worst way of doing it, but the easiest to implement.
+				_polygonsWireframeBuffers._positionBuffer = renderCommandScheduler->ExecuteCommand<CreateBufferCommand>(newWireframePositions,
+					VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+			}
+		}
+
+		_numWireframeVertices = newWireframePositions.size();
+	}
 }
 
-void PolygonMeshRenderProxy::SetPointsWireframePositions(const std::span<glm::vec3> newWireframePositions)
+void PolygonMeshRenderProxy::SetWireframeVertices(const WireframeRenderMode renderMode, const std::span<Vertex> newWireframeVertices)
 {
 	const auto renderCommandScheduler = _renderCommandScheduler.lock();
 	if (renderCommandScheduler == nullptr)
@@ -245,10 +316,42 @@ void PolygonMeshRenderProxy::SetPointsWireframePositions(const std::span<glm::ve
 		return;
 	}
 
-	renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframePositions, _pointsWireframeBuffers._positionBuffer);
+	if (renderMode == WireframeRenderMode::Points)
+	{
+		renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframeVertices, _pointsWireframeBuffers._vertexBuffer);
+	}
+	else if (renderMode == WireframeRenderMode::Edges)
+	{
+		renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframeVertices, _edgesWireframeBuffers._vertexBuffer);
+	}
+	else if (renderMode == WireframeRenderMode::Polygons)
+	{
+		if (!newWireframeVertices.empty())
+		{
+			if (_numWireframeIndices == newWireframeVertices.size())
+			{
+				renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframeVertices, _polygonsWireframeBuffers._vertexBuffer);
+			}
+			else
+			{
+				// First release the old buffer.
+				if (_polygonsWireframeBuffers._vertexBuffer._allocatedSize > 0)
+				{
+					_polygonsWireframeBuffers._vertexBuffer.ReleaseResource(_device);
+				}
+
+				// Create the buffer again.
+				// TODO: That is the worst way of doing it, but the easiest to implement.
+				_polygonsWireframeBuffers._vertexBuffer = renderCommandScheduler->ExecuteCommand<CreateBufferCommand>(newWireframeVertices,
+					VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+			}
+		}
+
+		_numWireframeVertices = newWireframeVertices.size();
+	}
 }
 
-void PolygonMeshRenderProxy::SetEdgesWireframeVertices(const std::span<Vertex> newWireframeVertices)
+void PolygonMeshRenderProxy::SetWireframeIndices(const WireframeRenderMode renderMode, const std::span<uint32_t> newWireframeIndices)
 {
 	const auto renderCommandScheduler = _renderCommandScheduler.lock();
 	if (renderCommandScheduler == nullptr)
@@ -256,16 +359,37 @@ void PolygonMeshRenderProxy::SetEdgesWireframeVertices(const std::span<Vertex> n
 		return;
 	}
 
-	renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframeVertices, _edgesWireframeBuffers._vertexBuffer);
-}
-
-void PolygonMeshRenderProxy::SetEdgesWireframePositions(const std::span<glm::vec3> newWireframePositions)
-{
-	const auto renderCommandScheduler = _renderCommandScheduler.lock();
-	if (renderCommandScheduler == nullptr)
+	if (renderMode == WireframeRenderMode::Points)
 	{
-		return;
+		renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframeIndices, _pointsWireframeBuffers._indexBuffer);
 	}
+	else if (renderMode == WireframeRenderMode::Edges)
+	{
+		renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframeIndices, _edgesWireframeBuffers._indexBuffer);
+	}
+	else if (renderMode == WireframeRenderMode::Polygons)
+	{
+		if (!newWireframeIndices.empty())
+		{
+			if (_numWireframeIndices == newWireframeIndices.size())
+			{
+				renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframeIndices, _polygonsWireframeBuffers._indexBuffer);
+			}
+			else
+			{
+				// First release the old buffer.
+				if (_polygonsWireframeBuffers._indexBuffer._allocatedSize > 0)
+				{
+					_polygonsWireframeBuffers._indexBuffer.ReleaseResource(_device);
+				}
 
-	renderCommandScheduler->ExecuteCommand<UpdateBufferCommand>(newWireframePositions, _edgesWireframeBuffers._positionBuffer);
+				// Create the buffer again.
+				// TODO: That is the worst way of doing it, but the easiest to implement.
+				_polygonsWireframeBuffers._indexBuffer = renderCommandScheduler->ExecuteCommand<CreateBufferCommand>(std::span(newWireframeIndices),
+					VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+			}
+		}
+
+		_numWireframeIndices = newWireframeIndices.size();
+	}
 }

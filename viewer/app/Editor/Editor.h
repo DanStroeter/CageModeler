@@ -47,6 +47,7 @@ private:
 	void OnNewProjectCancelled();
 	void OnNewProjectCreated();
 
+	void OnProjectSettingsApplied();
 	void OnProjectSettingsCancelled();
 
 	/**
@@ -106,12 +107,12 @@ private:
 		EigenMesh deformedCage,
 		const DeformationType deformationType,
 		const LBC::DataSetup::WeightingScheme weightingScheme,
-	#if WITH_SOMIGLIANA
+#if WITH_SOMIGLIANA
 		const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer,
 		const double bulging,
 		const double blendFactor,
 		const BulgingType bulgingType,
-	#endif
+#endif
 		const int32_t modelVerticesOffset,
 		const int32_t numSamples,
 		const bool interpolateWeights) const;
@@ -132,6 +133,9 @@ private:
 	 * @param actionParams Action parameters from the input system.
 	 */
 	void OnClicked(const InputActionParams& actionParams);
+	void OnMouseClickPressed(const InputActionParams& actionParams);
+	void OnMouseMoved(const InputActionParams& actionParams);
+	void OnMouseClickReleased(const InputActionParams& actionParams);
 
 	/**
 	 * Called when we click on the mesh and we want to adjust the selection. This function will go through the highlighted
@@ -153,9 +157,16 @@ private:
 
 	/**
 	 * Invoked when a new selection type is selected.
-	 * \param selectionType The new selection type.
+	 * @param selectionType The new selection type.
 	 */
 	void OnSelectionTypeChanged(const SelectionType selectionType);
+
+	/**
+	 * Whenever the frame index in the sequencer changes we have to update the vertices with the pre-computed
+	 * vertex data.
+	 * @param newFrameIndex The new frame index.
+	 */
+	void OnFrameIndexChanged(const uint32_t newFrameIndex);
 
 private:
 	/// A pointer to the input system to get input information.
@@ -194,12 +205,12 @@ private:
 	/// Data that is computed during the weights calculation step. If the value is empty then we haven't finished
 	/// the weights computation yet.
 	DoubleBuffer<MeshComputeWeightsOperationResult> _weightsData;
-	std::atomic<bool> _hasComputedWeightsData { false };
+	std::atomic<bool> _isComputingWeightsData { false };
 
 	/// Data that is computed by the deformed mesh operation and contains the deformed mesh based on the input
 	/// deformed cage for each sample from 1 to NumSamples.
 	DoubleBuffer<MeshComputeDeformationOperationResult> _deformationData;
-	std::atomic<bool> _hasComputedDeformationData { false };
+	std::atomic<bool> _isComputingDeformationData { false };
 
 	/// Project model settings for UI bindings.
 	std::shared_ptr<ProjectModelData> _projectModel = nullptr;
@@ -239,6 +250,9 @@ private:
 
 	/// The currently highlighted edge.
 	EdgeHandle _highlightedEdgeHandle = EdgeHandle();
+
+	/// The currently highlighted polygon.
+	FaceHandle _highlightedPolygonHandle = FaceHandle();
 
 	/// Whether or not the gizmo has been highlighted.
 	uint32_t _isGizmoHighlighted : 1;

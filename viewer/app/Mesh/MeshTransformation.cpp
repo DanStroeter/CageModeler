@@ -6,15 +6,15 @@ MeshTransformation::MeshTransformation(const ViewInfo& viewInfo,
 	const SelectionType selectionType,
 	const TransformationType transformationType,
 	const TransformationAxis transformationAxis,
-	const glm::mat4& matrix,
+	const glm::mat4& gizmoMatrix,
 	const glm::vec2 currentMousePos,
 	const glm::vec2 previousMousePos)
 	: _cage(cage)
 	, _selectionType(selectionType)
 	, _transformationType(transformationType)
 	, _transformationAxis(transformationAxis)
-	, _matrix(matrix)
-	, _newMatrix(matrix)
+	, _matrix(gizmoMatrix)
+	, _newMatrix(gizmoMatrix)
 {
 	const auto axis = glm::normalize(glm::vec3(_newMatrix[static_cast<glm::mat4::length_type>(_transformationAxis)]));
 
@@ -63,60 +63,43 @@ void MeshTransformation::Transform(const ViewInfo& viewInfo,
 
 	if (_transformationType == TransformationType::Translate)
 	{
+		const auto projStartPosition = ProjectPointOntoRay(viewInfo, previousMousePos);
+		const auto delta = projPosition - projStartPosition;
+		const auto deltaProj = glm::dot(delta, axis) * axis;
+
+		glm::vec3 translation(0.0f);
+		if (_transformationAxis == TransformationAxis::X)
+		{
+			translation = glm::vec3(deltaProj.x, 0.0f, 0.0f);
+		}
+		else if (_transformationAxis == TransformationAxis::Y)
+		{
+			translation = glm::vec3(0.0f, deltaProj.y, 0.0f);
+		}
+		else if (_transformationAxis == TransformationAxis::Z)
+		{
+			translation = glm::vec3(0.0f, 0.0f, deltaProj.z);
+		}
+
 		if (_selectionType == SelectionType::Vertex)
 		{
-			const auto projStartPosition = ProjectPointOntoRay(viewInfo, previousMousePos);
-			const auto delta = projPosition - projStartPosition;
-			const auto deltaProj = glm::dot(delta, axis) * axis;
 			auto selection = _cage->GetSelection<SelectionType::Vertex>();
-
-			glm::vec3 translation(0.0f);
-			if (_transformationAxis == TransformationAxis::X)
-			{
-				translation = glm::vec3(deltaProj.x, 0.0f, 0.0f);
-			}
-			else if (_transformationAxis == TransformationAxis::Y)
-			{
-				translation = glm::vec3(0.0f, deltaProj.y, 0.0f);
-			}
-			else if (_transformationAxis == TransformationAxis::Z)
-			{
-				translation = glm::vec3(0.0f, 0.0f, deltaProj.z);
-			}
-
-			_newMatrix = glm::translate(_newMatrix, translation);
-
 			selection.Translate(translation);
-
-			_cage->AddProxyDirtyFlag(MeshProxyDirtyFlags::Position);
 		}
 		else if (_selectionType == SelectionType::Edge)
 		{
-			const auto projStartPosition = ProjectPointOntoRay(viewInfo, previousMousePos);
-			const auto delta = projPosition - projStartPosition;
-			const auto deltaProj = glm::dot(delta, axis) * axis;
 			auto selection = _cage->GetSelection<SelectionType::Edge>();
-
-			glm::vec3 translation(0.0f);
-			if (_transformationAxis == TransformationAxis::X)
-			{
-				translation = glm::vec3(deltaProj.x, 0.0f, 0.0f);
-			}
-			else if (_transformationAxis == TransformationAxis::Y)
-			{
-				translation = glm::vec3(0.0f, deltaProj.y, 0.0f);
-			}
-			else if (_transformationAxis == TransformationAxis::Z)
-			{
-				translation = glm::vec3(0.0f, 0.0f, deltaProj.z);
-			}
-
-			_newMatrix = glm::translate(_newMatrix, translation);
-
 			selection.Translate(translation);
-
-			_cage->AddProxyDirtyFlag(MeshProxyDirtyFlags::Position);
 		}
+		else if (_selectionType == SelectionType::Polygon)
+		{
+			auto selection = _cage->GetSelection<SelectionType::Polygon>();
+			selection.Translate(translation);
+		}
+
+		_newMatrix = glm::translate(_newMatrix, translation);
+
+		_cage->AddProxyDirtyFlag(MeshProxyDirtyFlags::Position);
 	}
 	else if (_transformationType == TransformationType::Rotate)
 	{
@@ -195,6 +178,32 @@ void MeshTransformation::Transform(const ViewInfo& viewInfo,
 		{
 			auto edgeSelection = _cage->GetSelection<SelectionType::Edge>();
 			const auto selectedVertices = edgeSelection.GetVertexSelection();
+
+			// Project all points onto the normal plane.
+			std::unordered_map<VertexHandle, glm::vec3> newPositions;
+			newPositions.reserve(_initProjectedPoints.size());
+
+			// Compute the offset for each point from the current position to the projection.
+			std::size_t index = 0;
+			for (const auto vertexHandle : selectedVertices)
+			{
+				const auto delta = _initPoints[index] - _initProjectedPoints[index];
+				const auto newPosition = _initProjectedPoints[index] + scale * delta;
+
+				newPositions.insert(std::make_pair(vertexHandle, newPosition));
+
+				++index;
+			}
+
+			auto vertexSelection = _cage->GetSelection<SelectionType::Vertex>();
+			vertexSelection.SetPositions(newPositions);
+
+			_cage->AddProxyDirtyFlag(MeshProxyDirtyFlags::Position);
+		}
+		else if (_selectionType == SelectionType::Polygon)
+		{
+			auto polySelection = _cage->GetSelection<SelectionType::Polygon>();
+			const auto selectedVertices = polySelection.GetVertexSelection();
 
 			// Project all points onto the normal plane.
 			std::unordered_map<VertexHandle, glm::vec3> newPositions;

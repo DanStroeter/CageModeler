@@ -43,7 +43,7 @@ struct EigenMesh
 
 namespace GeometryUtils
 {
-	inline void ScaleEigenMesh(Eigen::MatrixXd vertices, const float scaleFactor)
+	inline void ScaleEigenMesh(Eigen::MatrixXd& vertices, const float scaleFactor)
 	{
 		const auto scaleMat = glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor));
 

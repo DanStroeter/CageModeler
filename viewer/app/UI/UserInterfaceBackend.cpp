@@ -152,7 +152,6 @@ void UserInterfaceBackend::ReleaseResource()
 	_commandBuffers.clear();
 }
 
-
 void UserInterfaceBackend::CreateResources(const RenderResourceRef<Swapchain>& newSwapchain)
 {
 	_swapchain = newSwapchain;

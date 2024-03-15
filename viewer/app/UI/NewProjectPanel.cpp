@@ -150,7 +150,7 @@ void NewProjectPanel::Layout()
 				ImGui::TextEx("Mesh File");
 
 				ImGui::TableSetColumnIndex(1);
-				ProjecSettingsHelpers::PushFileSelectionUI(_model->_meshFilepath, "Select...##Mesh", horizontalOffset, { nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
+				ProjecSettingsHelpers::PushFileSelectionUI(_model->_meshFilepath, "##Mesh", horizontalOffset, { nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
 			}
 
 			ImGui::TableNextRow();
@@ -159,7 +159,7 @@ void NewProjectPanel::Layout()
 				ImGui::TextEx("Cage File");
 
 				ImGui::TableSetColumnIndex(1);
-				ProjecSettingsHelpers::PushFileSelectionUI(_model->_cageFilepath, "Select...##Cage", horizontalOffset, { nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
+				ProjecSettingsHelpers::PushFileSelectionUI(_model->_cageFilepath, "##Cage", horizontalOffset, { nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
 
 				ImGui::BeginDisabled(!DeformationTypeHelpers::RequiresEmbedding(_model->_deformationType));
 				{
@@ -169,20 +169,9 @@ void NewProjectPanel::Layout()
 					ImGui::TextEx("Embedded Mesh File");
 
 					ImGui::TableSetColumnIndex(1);
-					ProjecSettingsHelpers::PushFileSelectionUI(_model->_embeddingFilepath, "Select...##Embedded", horizontalOffset, { nfdfilteritem_t { "Mesh (.msh)", "msh" } });
+					ProjecSettingsHelpers::PushFileSelectionUI(_model->_embeddingFilepath, "##Embedded", horizontalOffset, { nfdfilteritem_t { "Mesh (.msh)", "msh" } });
 				}
 				ImGui::EndDisabled();
-			}
-
-			ImGui::Dummy(ImVec2(0.0f, 4.0f));
-
-			ImGui::TableNextRow();
-			{
-				ImGui::TableSetColumnIndex(0);
-
-				ImGui::Checkbox("Use mesh cage as deformed cage", &_model->_useCageAsDeformedCage);
-				ImGui::SameLine();
-				UIHelpers::HelpMarker("Uses the original mesh cage as the initial deformed cage.");
 			}
 
 			ImGui::Dummy(ImVec2(0.0f, 4.0f));
@@ -192,13 +181,13 @@ void NewProjectPanel::Layout()
 				// If we have loaded the mesh as an FBX file we have specified the deformed cage as well.
 				const auto fbxLoaded = _model->_meshFilepath.has_value() && _model->IsFBX();
 
-				ImGui::BeginDisabled(_model->_useCageAsDeformedCage || fbxLoaded);
+				ImGui::BeginDisabled(fbxLoaded);
 				{
 					ImGui::TableSetColumnIndex(0);
 					ImGui::TextEx("Deformed Cage File (Optional)");
 
 					ImGui::TableSetColumnIndex(1);
-					ProjecSettingsHelpers::PushFileSelectionUI(_model->_deformedCageFilepath, "Select...##DeformedCage", horizontalOffset, { nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
+					ProjecSettingsHelpers::PushFileSelectionUI(_model->_deformedCageFilepath, "##DeformedCage", horizontalOffset, { nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
 				}
 				ImGui::EndDisabled();
 			}
@@ -210,7 +199,7 @@ void NewProjectPanel::Layout()
 
 				// Specifies the *.param parameter file to control mesh deformation.
 				ImGui::TableSetColumnIndex(1);
-				ProjecSettingsHelpers::PushFileSelectionUI(_model->_parametersFilepath, "Select...##Parameters", horizontalOffset, { nfdfilteritem_t { "Parameters (.param)", "param" } });
+				ProjecSettingsHelpers::PushFileSelectionUI(_model->_parametersFilepath, "##Parameters", horizontalOffset, { nfdfilteritem_t { "Parameters (.param)", "param" } });
 			}
 
 			// Path to a *.dmat file.
@@ -222,7 +211,7 @@ void NewProjectPanel::Layout()
 					ImGui::TextEx("Pre-computed Weights (Optional)");
 
 					ImGui::TableSetColumnIndex(1);
-					ProjecSettingsHelpers::PushFileSelectionUI(_model->_weightsFilepath, "Select...##Weights", horizontalOffset, { nfdfilteritem_t { "Weights (.dmat)", "dmat" } });
+					ProjecSettingsHelpers::PushFileSelectionUI(_model->_weightsFilepath, "##Weights", horizontalOffset, { nfdfilteritem_t { "Weights (.dmat)", "dmat" } });
 				}
 			}
 			ImGui::EndDisabled();
@@ -396,11 +385,11 @@ void NewProjectPanel::Layout()
 		ImGui::SameLine();
 
 		const auto hasNoMesh = !_model->_meshFilepath.has_value() || !_model->_cageFilepath.has_value();
-		const auto hasNoDeformedCage = (_model->_useCageAsDeformedCage && !_model->_cageFilepath.has_value()) || !_model->_deformedCageFilepath;
+		const auto hasNoCage = !_model->_cageFilepath.has_value();
 		const auto hasNoEmbedding = (DeformationTypeHelpers::RequiresEmbedding(_model->_deformationType) && !_model->_embeddingFilepath.has_value());
 
 		// Create the new project.
-		ImGui::BeginDisabled(hasNoMesh || hasNoDeformedCage || hasNoEmbedding || hasRunningOperation);
+		ImGui::BeginDisabled(hasNoMesh || hasNoCage || hasNoEmbedding || hasRunningOperation);
 		{
 			if (ImGui::Button("Create", buttonSize))
 			{

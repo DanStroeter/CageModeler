@@ -5,10 +5,9 @@
 #include <Core/Types.h>
 
 #include <OpenMesh/Core/IO/reader/OBJReader.hh>
-#include <OpenMesh/Core/IO/MeshIO.hh>
+#include <glm/gtx/intersect.hpp>
 
 #include <algorithm>
-#include <execution>
 
 namespace
 {
@@ -125,14 +124,16 @@ void PolygonMesh::CollectRenderProxy(const std::shared_ptr<RenderProxyCollector>
 	const RenderResourceRef<Device>& device,
 	const std::shared_ptr<RenderCommandScheduler>& renderCommandScheduler)
 {
+	TrianglesListProxyBuffers solidMeshBuffers;
+
+	auto triMesh = *_mesh;
+	triMesh.triangulate();
+	triMesh.request_vertex_normals();
+
+	const auto numVertices = triMesh.n_vertices();
+
 	// Triangulate the mesh before we build the render proxy.
-	SolidMeshProxyBuffers solidMeshBuffers;
 	{
-		auto triMesh = *_mesh;
-		triMesh.triangulate();
-
-		const auto numVertices = triMesh.n_vertices();
-
 		solidMeshBuffers._positions.resize(numVertices);
 		memcpy(solidMeshBuffers._positions.data(), triMesh.points(), numVertices * sizeof(glm::vec3));
 
@@ -162,54 +163,97 @@ void PolygonMesh::CollectRenderProxy(const std::shared_ptr<RenderProxyCollector>
 		}
 	}
 
-	PointsMeshProxyBuffers pointsBuffers;
+	PointsListProxyBuffers pointsListBuffers;
 	EdgesListProxyBuffers edgesListBuffers;
+	TrianglesListProxyBuffers polysListBuffers;
 
 	if (_supportsWireframeRendering)
 	{
-		pointsBuffers._positions.resize(_mesh->n_vertices());
-		memcpy(pointsBuffers._positions.data(), _mesh->points(), _mesh->n_vertices() * sizeof(glm::vec3));
-
-		pointsBuffers._vertices = ComputePointsWireframeVertices();
-
-		pointsBuffers._indices.resize(pointsBuffers._positions.size());
-
-		for (std::size_t i = 0; i < pointsBuffers._positions.size(); ++i)
+		// Populate the points buffers.
 		{
-			pointsBuffers._indices[i] = static_cast<uint32_t>(i);
+			pointsListBuffers._vertices = ComputePointsWireframeVertices();
+
+			pointsListBuffers._indices.resize(numVertices);
+
+			for (std::size_t i = 0; i < numVertices; ++i)
+			{
+				pointsListBuffers._indices[i] = static_cast<uint32_t>(i);
+			}
 		}
 
-		edgesListBuffers._positions.reserve(2 * _mesh->n_edges());
-		edgesListBuffers._vertices.reserve(2 * _mesh->n_edges());
-		edgesListBuffers._indices.reserve(_mesh->n_edges());
-
-		// Extract the edge lines from the original mesh. For each of them we have to insert vertices double, otherwise
-		// we cannot color them correctly in the shader.
-		for (auto it = _mesh->edges_begin(); it != _mesh->edges_end(); ++it)
+		// Populate the edges buffers.
 		{
-			// Insert the points positions from the mesh.
-			edgesListBuffers._positions.push_back(_mesh->point(static_cast<VertexHandle>(it->v0())));
-			edgesListBuffers._positions.push_back(_mesh->point(static_cast<VertexHandle>(it->v1())));
+			edgesListBuffers._positions.reserve(2 * _mesh->n_edges());
+			edgesListBuffers._vertices.reserve(2 * _mesh->n_edges());
+			edgesListBuffers._indices.reserve(_mesh->n_edges());
 
-			// If the edge is highlighted or selected then we set its vertices color to be set.
-			const auto edgeStatus = _mesh->status(static_cast<EdgeHandle>(*it));
-			glm::vec3 vertexColor = DeselectedVertexColor;
-
-			if (edgeStatus.tagged())
+			// Extract the edge lines from the original mesh. For each of them we have to insert vertices double, otherwise
+			// we cannot color them correctly in the shader.
+			for (auto it = _mesh->edges_begin(); it != _mesh->edges_end(); ++it)
 			{
-				vertexColor = HighlightedVertexColor;
+				// Insert the points positions from the mesh.
+				edgesListBuffers._positions.push_back(_mesh->point(static_cast<VertexHandle>(it->v0())));
+				edgesListBuffers._positions.push_back(_mesh->point(static_cast<VertexHandle>(it->v1())));
+
+				// If the edge is highlighted or selected then we set its vertices color to be set.
+				const auto edgeStatus = _mesh->status(static_cast<EdgeHandle>(*it));
+				glm::vec3 vertexColor = DeselectedVertexColor;
+
+				if (edgeStatus.tagged())
+				{
+					vertexColor = HighlightedVertexColor;
+				}
+				else if (edgeStatus.selected())
+				{
+					vertexColor = SelectedVertexColor;
+				}
+
+				edgesListBuffers._vertices.emplace_back(_mesh->normal(static_cast<VertexHandle>(it->v0())), vertexColor);
+				edgesListBuffers._vertices.emplace_back(_mesh->normal(static_cast<VertexHandle>(it->v1())), vertexColor);
+
+				// Insert the indices into the buffer.
+				edgesListBuffers._indices.push_back(edgesListBuffers._positions.size() - 2);
+				edgesListBuffers._indices.push_back(edgesListBuffers._positions.size() - 1);
 			}
-			else if (edgeStatus.selected())
+		}
+
+		// Populate the polygons buffers.
+		{
+			polysListBuffers._positions.reserve(numVertices);
+			polysListBuffers._vertices.reserve(numVertices);
+			polysListBuffers._indices.reserve(3 * numVertices);
+
+			for (auto faceIt = triMesh.faces_begin(); faceIt != triMesh.faces_end(); ++faceIt)
 			{
-				vertexColor = SelectedVertexColor;
+				const auto polyStatus = triMesh.status(*faceIt);
+				const auto isSelected = (polyStatus.selected() || polyStatus.tagged());
+
+				auto vertexColor = DeselectedVertexColor;
+
+				if (polyStatus.tagged())
+				{
+					vertexColor = HighlightedVertexColor;
+				}
+				else if (polyStatus.selected())
+				{
+					vertexColor = SelectedVertexColor;
+				}
+
+				for (auto vertexIt = triMesh.cfv_begin(static_cast<FaceHandle>(*faceIt)); vertexIt != triMesh.cfv_end(static_cast<FaceHandle>(*faceIt)); ++vertexIt)
+				{
+					polysListBuffers._positions.emplace_back(triMesh.point(static_cast<VertexHandle>(*vertexIt)));
+					polysListBuffers._vertices.emplace_back(triMesh.normal(static_cast<VertexHandle>(*vertexIt)), vertexColor);
+				}
+
+				// Whenever we have a selected face we add the indices of the triangle to be rendered.
+				if (isSelected)
+				{
+					for (auto vertexIt = triMesh.cfv_begin(static_cast<FaceHandle>(*faceIt)); vertexIt != triMesh.cfv_end(static_cast<FaceHandle>(*faceIt)); ++vertexIt)
+					{
+						polysListBuffers._indices.push_back(vertexIt->idx());
+					}
+				}
 			}
-
-			edgesListBuffers._vertices.emplace_back(_mesh->normal(static_cast<VertexHandle>(it->v0())), vertexColor);
-			edgesListBuffers._vertices.emplace_back(_mesh->normal(static_cast<VertexHandle>(it->v1())), vertexColor);
-
-			// Insert the indices into the buffer.
-			edgesListBuffers._indices.push_back(edgesListBuffers._positions.size() - 2);
-			edgesListBuffers._indices.push_back(edgesListBuffers._positions.size() - 1);
 		}
 	}
 
@@ -220,8 +264,9 @@ void PolygonMesh::CollectRenderProxy(const std::shared_ptr<RenderProxyCollector>
 		static_cast<bool>(_supportsWireframeRendering),
 		_wireframeRenderMode,
 		solidMeshBuffers,
-		pointsBuffers,
-		edgesListBuffers);
+		pointsListBuffers,
+		edgesListBuffers,
+		polysListBuffers);
 	renderProxy->SetModelMatrix(_modelMatrix);
 	renderProxy->SetWireframeRenderMode(_wireframeRenderMode);
 
@@ -389,47 +434,49 @@ void PolygonMesh::SetColors(const std::span<glm::vec3> colors, const bool drawIn
 	UpdateRenderProxy();
 }
 
-std::optional<float> PolygonMesh::QueryRayHit(const Ray& ray, const glm::mat4& transform) const
+ClosestPolygonResult PolygonMesh::QueryRayHit(const Ray& ray) const
 {
-	float closestT = std::numeric_limits<float>::max();
-	int32_t closestTriIndex = -1;
+	float closestT = (std::numeric_limits<float>::max)();
+	FaceHandle closestFaceHandle { };
 
-	const auto numVertices = _mesh->n_vertices();
-	const auto& points = std::vector(_mesh->points(), _mesh->points() + numVertices);
-
-	std::vector<glm::vec3> transformedPoints(_mesh->n_vertices());
-	std::transform(points.begin(),
-		points.end(),
-		transformedPoints.begin(),
-		[&transform](const auto& point)
-		{
-			const auto transformedPoint = transform * glm::vec4(point, 1.0f);
-
-			return glm::vec3(transformedPoint);
-		});
-
-	const PolyMeshKernel::ConstFaceIter faceEndIt(_mesh->faces_end());
-	for (auto faceIt = _mesh->faces_begin(); faceIt != faceEndIt; ++faceIt)
+	for (auto it = _mesh->faces_begin(); it != _mesh->faces_end(); ++it)
 	{
-		auto vertexIt = _mesh->cfv_begin(static_cast<FaceHandle>(*faceIt));
-		const auto vA = vertexIt->idx();
-		const auto vB = (++vertexIt)->idx();
-		const auto vC = (++vertexIt)->idx();
-		const auto hitT = GeometryUtils::IntersectRayTriangle(ray, transformedPoints[vA], transformedPoints[vB], transformedPoints[vC]);
+		// Store the first point of the face as the origin of each triangle.
+		const auto endVertexIt = _mesh->cfv_end(static_cast<FaceHandle>(*it));;
+		auto originVertexIt = _mesh->cfv_begin(static_cast<FaceHandle>(*it));
+		const auto pointA = GetPosition(static_cast<VertexHandle>(*originVertexIt));
 
-		if (hitT.has_value() && hitT.value() < closestT)
+		// Get the next and the points after that of the face that we will increment and use as second and third points.
+		auto prevVertexIt = ++originVertexIt;
+
+		auto nextVertexIt = prevVertexIt;
+		++nextVertexIt;
+
+		do
 		{
-			closestT = hitT.value();
-			closestTriIndex = faceIt->idx();
-		}
+			const auto pointB = GetPosition(static_cast<VertexHandle>(*prevVertexIt));
+			const auto pointC = GetPosition(static_cast<VertexHandle>(*nextVertexIt));
+
+			glm::vec2 barycenter(0.0f);
+			float dist = (std::numeric_limits<float>::max)();
+
+			if (glm::intersectRayTriangle(ray._origin, ray._direction, pointA, pointB, pointC, barycenter, dist))
+			{
+				closestFaceHandle = static_cast<FaceHandle>(*it);
+				closestT = dist;
+			}
+
+			++prevVertexIt;
+			++nextVertexIt;
+		} while (nextVertexIt != endVertexIt);
 	}
 
-	if (closestTriIndex == -1)
+	if (closestFaceHandle.is_valid())
 	{
-		return { };
+		return ClosestPolygonResult { closestFaceHandle, closestT };
 	}
 
-	return closestT;
+	return ClosestPolygonResult { FaceHandle(), (std::numeric_limits<float>::max)() };
 }
 
 std::optional<ClosestVertexResult> PolygonMesh::QueryClosestPointScreenSpace(const ViewInfo& viewInfo,
@@ -457,8 +504,8 @@ std::optional<ClosestVertexResult> PolygonMesh::QueryClosestPointScreenSpace(con
 		const VertexHandle vertexHandle(static_cast<int>(closestVertexIndex));
 
 		return ClosestVertexResult { vertexHandle,
-			_mesh->point(vertexHandle),
-			_mesh->normal(vertexHandle) };
+			GetPosition(vertexHandle),
+			GetNormal(vertexHandle) };
 	}
 
 	return { };
@@ -556,7 +603,7 @@ void PolygonMesh::CacheProjectedPointsWorldToScreen(const ViewInfo& viewInfo)
 
 	for (auto it = _mesh->vertices_begin(); it != _mesh->vertices_end(); ++it)
 	{
-		_cachedProjectedPoints[it->idx()] = viewInfo.ProjectWorldToScreen(glm::vec3(_modelMatrix * glm::vec4(_mesh->point(static_cast<VertexHandle>(*it)), 1.0f)));
+		_cachedProjectedPoints[it->idx()] = viewInfo.ProjectWorldToScreen(GetPosition(static_cast<VertexHandle>(*it)));
 	}
 
 	_isCachedGeometryDirty = false;
@@ -591,7 +638,7 @@ void PolygonMesh::UpdateRenderProxy()
 			std::vector<glm::vec3> wireframePositions(_mesh->n_vertices());
 			memcpy(wireframePositions.data(), _mesh->points(), _mesh->n_vertices() * sizeof(glm::vec3));
 
-			_renderProxy->SetPointsWireframePositions(wireframePositions);
+			_renderProxy->SetWireframePositions(WireframeRenderMode::Points, wireframePositions);
 
 			std::vector<glm::vec3> edgesPositions;
 			edgesPositions.reserve(2 * _mesh->n_edges());
@@ -605,8 +652,22 @@ void PolygonMesh::UpdateRenderProxy()
 				edgesPositions.push_back(_mesh->point(static_cast<VertexHandle>(it->v1())));
 			}
 
-			_renderProxy->SetEdgesWireframePositions(edgesPositions);
+			_renderProxy->SetWireframePositions(WireframeRenderMode::Edges, edgesPositions);
+
+			std::vector<glm::vec3> polygonsPositions;
+			polygonsPositions.reserve(numVertices);
+
+			for (auto faceIt = triMesh.faces_begin(); faceIt != triMesh.faces_end(); ++faceIt)
+			{
+				for (auto vertexIt = triMesh.cfv_begin(static_cast<FaceHandle>(*faceIt)); vertexIt != triMesh.cfv_end(static_cast<FaceHandle>(*faceIt)); ++vertexIt)
+				{
+					polygonsPositions.emplace_back(triMesh.point(static_cast<VertexHandle>(*vertexIt)));
+				}
+			}
+
+			_renderProxy->SetWireframePositions(WireframeRenderMode::Polygons, polygonsPositions);
 		}
+
 	}
 
 	if (IsSet(_dirtyFlags, MeshProxyDirtyFlags::Normal) || IsSet(_dirtyFlags, MeshProxyDirtyFlags::Color))
@@ -625,19 +686,8 @@ void PolygonMesh::UpdateRenderProxy()
 		if (_supportsWireframeRendering)
 		{
 			auto wireframeVertices = ComputePointsWireframeVertices();
-			_renderProxy->SetPointsWireframeVertices(wireframeVertices);
+			_renderProxy->SetWireframeVertices(WireframeRenderMode::Points, wireframeVertices);
 		}
-	}
-
-	if (IsSet(_wireframeDirtyFlags, MeshProxyDirtyFlags::Position))
-	{
-		CheckFormat(_supportsWireframeRendering, "The polygon object doesn't support wireframe rendering, but attempts to re-create the vertex buffer.");
-
-		// We use the original mesh here, because we don't want the triangulated edges and vertices.
-		std::vector<glm::vec3> wireframePositions(_mesh->n_vertices());
-		memcpy(wireframePositions.data(), _mesh->points(), _mesh->n_vertices() * sizeof(glm::vec3));
-
-		_renderProxy->SetPointsWireframePositions(wireframePositions);
 	}
 
 	if (IsSet(_wireframeDirtyFlags, MeshProxyDirtyFlags::Color) || IsSet(_wireframeDirtyFlags, MeshProxyDirtyFlags::Normal))
@@ -645,10 +695,60 @@ void PolygonMesh::UpdateRenderProxy()
 		CheckFormat(_supportsWireframeRendering, "The polygon object doesn't support wireframe rendering, but attempts to re-create the vertex buffer.");
 
 		auto pointsWireframeVertices = ComputePointsWireframeVertices();
-		_renderProxy->SetPointsWireframeVertices(pointsWireframeVertices);
+		_renderProxy->SetWireframeVertices(WireframeRenderMode::Points, pointsWireframeVertices);
 
 		auto edgesWireframeVertices = ComputeEdgesWireframeVertices();
-		_renderProxy->SetEdgesWireframeVertices(edgesWireframeVertices);
+		_renderProxy->SetWireframeVertices(WireframeRenderMode::Edges, edgesWireframeVertices);
+
+		std::size_t numSelected = 0;
+
+		for (auto faceIt = triMesh.faces_begin(); faceIt != triMesh.faces_end(); ++faceIt)
+		{
+			if (triMesh.status(*faceIt).selected() || triMesh.status(*faceIt).tagged())
+			{
+				++numSelected;
+			}
+		}
+
+		std::vector<Vertex> polygonsWireframeVertices;
+		polygonsWireframeVertices.reserve(numVertices);
+
+		std::vector<uint32_t> polygonsWireframeIndices;
+		polygonsWireframeIndices.reserve(3 * numSelected);
+
+		for (auto faceIt = triMesh.faces_begin(); faceIt != triMesh.faces_end(); ++faceIt)
+		{
+			const auto polyStatus = triMesh.status(*faceIt);
+			const auto isSelected = (polyStatus.selected() || polyStatus.tagged());
+
+			auto vertexColor = DeselectedVertexColor;
+
+			if (polyStatus.tagged())
+			{
+				vertexColor = HighlightedVertexColor;
+			}
+			else if (polyStatus.selected())
+			{
+				vertexColor = SelectedVertexColor;
+			}
+
+			for (auto vertexIt = triMesh.cfv_begin(static_cast<FaceHandle>(*faceIt)); vertexIt != triMesh.cfv_end(static_cast<FaceHandle>(*faceIt)); ++vertexIt)
+			{
+				polygonsWireframeVertices.emplace_back(triMesh.normal(static_cast<VertexHandle>(*vertexIt)), vertexColor);
+			}
+
+			// Whenever we have a selected face we add the indices of the triangle to be rendered.
+			if (isSelected)
+			{
+				for (auto vertexIt = triMesh.cfv_begin(static_cast<FaceHandle>(*faceIt)); vertexIt != triMesh.cfv_end(static_cast<FaceHandle>(*faceIt)); ++vertexIt)
+				{
+					polygonsWireframeIndices.push_back(vertexIt->idx());
+				}
+			}
+		}
+
+		_renderProxy->SetWireframeVertices(WireframeRenderMode::Polygons, polygonsWireframeVertices);
+		_renderProxy->SetWireframeIndices(WireframeRenderMode::Polygons, polygonsWireframeIndices);
 	}
 
 	// TODO: An optimization would be to batch those dirty flags resets and sets.

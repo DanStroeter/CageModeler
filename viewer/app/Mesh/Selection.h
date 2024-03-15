@@ -254,18 +254,24 @@ protected:
 protected:
 	friend class PolygonMesh;
 
-	Selection(PolyMeshKernel& mesh,
+	Selection(const glm::mat4& modelMatrix,
+		PolyMeshKernel& mesh,
 		const std::vector<glm::vec3>& cachedProjectedPoints,
 		MeshProxyDirtyFlags& dirtyFlags)
-		: _mesh(mesh)
+		: _modelMatrix(modelMatrix)
+		, _invModelMatrix(glm::inverse(modelMatrix))
+		, _mesh(mesh)
 		, _cachedProjectedPoints(cachedProjectedPoints)
 		, _dirtyFlags(dirtyFlags)
 	{ }
 
 protected:
+	glm::mat4 _modelMatrix;
+	glm::mat4 _invModelMatrix;
 	std::reference_wrapper<PolyMeshKernel> _mesh;
 	std::vector<glm::vec3> _cachedProjectedPoints;
 	std::reference_wrapper<MeshProxyDirtyFlags> _dirtyFlags;
+
 };
 
 class VertexSelection : public Selection<VertexHandle>
@@ -305,7 +311,7 @@ public:
 		// Update the points by the translation vector.
 		for (const auto& pair : positions)
 		{
-			_mesh.get().point(pair.first) = positions.find(pair.first)->second;
+			_mesh.get().point(pair.first) = _invModelMatrix * glm::vec4(positions.find(pair.first)->second, 1.0f);
 		}
 
 		UpdateNormals();
@@ -323,7 +329,10 @@ public:
 			{
 				if (_mesh.get().status(handle).selected())
 				{
-					_mesh.get().point(handle) += translation;
+					auto point = glm::vec3(_modelMatrix * glm::vec4(_mesh.get().point(handle), 1.0f));
+					point += translation;
+
+					_mesh.get().point(handle) = _invModelMatrix * glm::vec4(point, 1.0f);
 				}
 			});
 
@@ -347,29 +356,14 @@ public:
 	 */
 	void Translate(const glm::vec3& translation)
 	{
-		const auto maxSize = static_cast<std::size_t>(glm::floor(0.5f * static_cast<float>(_mesh.get().n_vertices())));
-
-		std::unordered_set<VertexHandle> uniqueVertices;
-		uniqueVertices.reserve(maxSize);
-
-		// Update the points by the translation vector.
-		SelectionHelpers<EdgeHandle>::Iterate(_mesh.get(),
-			[this, &uniqueVertices](const EdgeHandle handle)
-			{
-				if (_mesh.get().status(handle).selected())
-				{
-					const auto heh = _mesh.get().halfedge_handle(handle, 0);
-					const auto v0 = _mesh.get().from_vertex_handle(heh);
-					const auto v1 = _mesh.get().to_vertex_handle(heh);
-
-					uniqueVertices.insert(v0);
-					uniqueVertices.insert(v1);
-				}
-			});
+		const auto uniqueVertices = GetVertexSelection();
 
 		for (const auto vertexHandle : uniqueVertices)
 		{
-			_mesh.get().point(vertexHandle) += translation;
+			auto point = glm::vec3(_modelMatrix * glm::vec4(_mesh.get().point(vertexHandle), 1.0f));
+			point += translation;
+
+			_mesh.get().point(vertexHandle) = _invModelMatrix * glm::vec4(point, 1.0f);
 		}
 
 		UpdateNormals();
@@ -422,9 +416,51 @@ public:
 	 * Translates the currently selected faces.
 	 * @param translation The translation vector.
 	 */
-	void Translate(const glm::vec3& translation) const
+	void Translate(const glm::vec3& translation)
 	{
+		const auto uniqueVertices = GetVertexSelection();
 
+		for (const auto vertexHandle : uniqueVertices)
+		{
+			auto point = glm::vec3(_modelMatrix * glm::vec4(_mesh.get().point(vertexHandle), 1.0f));
+			point += translation;
+
+			_mesh.get().point(vertexHandle) = _invModelMatrix * glm::vec4(point, 1.0f);
+		}
+
+		UpdateNormals();
+	}
+
+	/**
+	 * Returns the currently selected vertices.
+	 * @return All selected vertices.
+	 */
+	[[nodiscard]] std::vector<VertexHandle> GetVertexSelection() const
+	{
+		const auto maxSize = static_cast<std::size_t>(glm::floor(0.5f * static_cast<float>(_mesh.get().n_vertices())));
+
+		std::unordered_set<VertexHandle> uniqueVertices;
+		uniqueVertices.reserve(maxSize);
+
+		// Update the points by the translation vector.
+		SelectionHelpers<FaceHandle>::Iterate(_mesh.get(),
+			[this, &uniqueVertices](const FaceHandle handle)
+			{
+				if (_mesh.get().status(handle).selected())
+				{
+					auto vertexIt = _mesh.get().cfv_begin(handle);
+
+					for (; vertexIt != _mesh.get().cfv_end(handle); ++vertexIt)
+					{
+						uniqueVertices.insert(*vertexIt);
+					}
+				}
+			});
+
+		std::vector<VertexHandle> result(uniqueVertices.size());
+		std::copy(uniqueVertices.begin(), uniqueVertices.end(), result.begin());
+
+		return result;
 	}
 
 private:

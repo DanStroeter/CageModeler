@@ -5,14 +5,23 @@
 
 #include <vector>
 
-struct SolidMeshProxyBuffers
+struct PointsListProxyBuffers
 {
-	std::vector<glm::vec3> _positions;
+	[[nodiscard]] bool IsValid() const
+	{
+		return !_vertices.empty() && !_indices.empty();
+	}
+
+	[[nodiscard]] std::size_t GetNumElements() const
+	{
+		return _vertices.size();
+	}
+
 	std::vector<Vertex> _vertices;
 	std::vector<uint32_t> _indices;
 };
 
-struct PointsMeshProxyBuffers
+struct EdgesListProxyBuffers
 {
 	[[nodiscard]] bool IsValid() const
 	{
@@ -29,11 +38,11 @@ struct PointsMeshProxyBuffers
 	std::vector<uint32_t> _indices;
 };
 
-struct EdgesListProxyBuffers
+struct TrianglesListProxyBuffers
 {
 	[[nodiscard]] bool IsValid() const
 	{
-		return !_positions.empty() && !_vertices.empty() && !_indices.empty();
+		return !_positions.empty() || !_vertices.empty() || !_indices.empty();
 	}
 
 	[[nodiscard]] std::size_t GetNumElements() const
@@ -44,6 +53,23 @@ struct EdgesListProxyBuffers
 	std::vector<glm::vec3> _positions;
 	std::vector<Vertex> _vertices;
 	std::vector<uint32_t> _indices;
+};
+
+struct ProxyGPUBuffersNoPosition
+{
+	/**
+	 * Releases the memory and the buffer from the GPU for all buffers.
+	 * @todo Move that into the resource manager or somewhere else where we can track individual allocations.
+	 * @param device A reference to the Vulkan device.
+	 */
+	void ReleaseResource(const RenderResourceRef<Device>& device) const
+	{
+		_vertexBuffer.ReleaseResource(device);
+		_indexBuffer.ReleaseResource(device);
+	}
+
+	Buffer _vertexBuffer;
+	Buffer _indexBuffer;
 };
 
 struct ProxyGPUBuffers
@@ -74,9 +100,10 @@ public:
 		MeshProxyWireframePipeline wireframePipeline,
 		const bool supportsWireframeRendering,
 		const WireframeRenderMode wireframeRenderMode,
-		const SolidMeshProxyBuffers& solidMeshBuffers,
-		const PointsMeshProxyBuffers& pointsWireframeBuffers,
-		const EdgesListProxyBuffers& edgesWireframeBuffers);
+		const TrianglesListProxyBuffers& solidMeshBuffers,
+		const PointsListProxyBuffers& pointsWireframeBuffers,
+		const EdgesListProxyBuffers& edgesWireframeBuffers,
+		const TrianglesListProxyBuffers& polysListBuffers);
 
 	//~BEGIN RenderProxy
 	void Render(const VkCommandBuffer commandBuffer,
@@ -119,36 +146,38 @@ public:
 	 * Set the vertices data in wireframe mode.
 	 * @param newWireframeVertices The new wireframe vertices.
 	 */
-	void SetPointsWireframeVertices(const std::span<Vertex> newWireframeVertices);
+	void SetWireframeVertices(const WireframeRenderMode renderMode, const std::span<Vertex> newWireframeVertices);
 
 	/**
 	 * Updates the positions buffer of the proxy in wireframe mode.
 	 * @param newWireframePositions The new positions buffer of the proxy in wireframe mode.
 	 */
-	void SetPointsWireframePositions(const std::span<glm::vec3> newWireframePositions);
-
-	/**
-	 * Set the vertices data in wireframe mode.
-	 * @param newWireframeVertices The new wireframe vertices.
-	 */
-	void SetEdgesWireframeVertices(const std::span<Vertex> newWireframeVertices);
+	void SetWireframePositions(const WireframeRenderMode renderMode, const std::span<glm::vec3> newWireframePositions);
 
 	/**
 	 * Updates the positions buffer of the proxy in wireframe mode.
 	 * @param newWireframePositions The new positions buffer of the proxy in wireframe mode.
 	 */
-	void SetEdgesWireframePositions(const std::span<glm::vec3> newWireframePositions);
+	void SetWireframeIndices(const WireframeRenderMode renderMode, const std::span<uint32_t> newWireframeIndices);
 
 private:
 	ProxyGPUBuffers _solidMeshBuffers;
-	ProxyGPUBuffers _pointsWireframeBuffers;
+	ProxyGPUBuffersNoPosition _pointsWireframeBuffers;
 	ProxyGPUBuffers _edgesWireframeBuffers;
+	ProxyGPUBuffers _polygonsWireframeBuffers;
 
 	std::size_t _numVertices;
 	std::size_t _numIndices;
 
+	/// Used to schedule the command for points wireframe mode.
 	std::size_t _numWireframePoints;
+
+	/// Used to schedule the command for edges wireframe mode.
 	std::size_t _numWireframeEdges;
+
+	/// Used to schedule the command for polygons wireframe mode.
+	std::size_t _numWireframeVertices;
+	std::size_t _numWireframeIndices;
 
 	uint32_t _drawInfluenceMap : 1;
 };

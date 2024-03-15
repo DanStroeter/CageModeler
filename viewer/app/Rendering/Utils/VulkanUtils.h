@@ -238,15 +238,8 @@ static void EndOneTimeCommandBuffer(const VkDevice device, const VkCommandPool c
  */
 [[nodiscard]] static VkExtent2D CalculateSwapchainExtent(const VkExtent2D drawableSize, const VkSurfaceCapabilitiesKHR& capabilities)
 {
-	if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
-	{
-		return capabilities.currentExtent;
-	}
-	else
-	{
-		return VkExtent2D { std::clamp(drawableSize.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-							std::clamp(drawableSize.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height) };
-	}
+	return VkExtent2D { std::clamp(drawableSize.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+						std::clamp(drawableSize.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height) };
 }
 
 /**

@@ -168,7 +168,7 @@ struct ProjectData
 		const int32_t numBBWSteps,
 		const int32_t numSamples,
 		const float scalingFactor,
-		const float internalScale,
+		const glm::vec3& centerOffset,
 		const bool interpolateWeights,
 		const bool findOffset,
 		const bool noOffset)
@@ -192,7 +192,7 @@ struct ProjectData
 		, _numBBWSteps(numBBWSteps)
 		, _numSamples(numSamples)
 		, _scalingFactor(scalingFactor)
-		, _internalScale(internalScale)
+		, _centerOffset(centerOffset)
 		, _interpolateWeights(interpolateWeights)
 		, _findOffset(findOffset)
 		, _noOffset(noOffset)
@@ -251,11 +251,12 @@ struct ProjectData
 	int32_t _numBBWSteps = 300;
 	int32_t _numSamples = 1;
 
-	float _scalingFactor = 1.0f;
-
 	/// Scaling based on the bounding box of the file, so we can scale it down to fit in the viewport during load.
 	/// On export we scale it back up by the inverse to get the final result.
-	float _internalScale = 1.0f;
+	float _scalingFactor = 1.0f;
+
+	/// The offset of the object in model space to center it in the viewport. On export we have to multiply by the inverse.
+	glm::vec3 _centerOffset { 0.0f };
 
 	/// Interpolate the weights.
 	uint32_t _interpolateWeights : 1;
