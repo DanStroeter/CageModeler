@@ -52,7 +52,7 @@ ThreadPool::ThreadPool(const uint32_t numMaxThreads)
 	: _isDone(false)
 	, _threadsJoiner(_threads)
 {
-	const auto maxThreadCount = (std::max)(std::thread::hardware_concurrency(), numMaxThreads);
+	const auto maxThreadCount = (std::min)(std::thread::hardware_concurrency(), numMaxThreads);
 
 	_queues.reserve(maxThreadCount);
 	_threads.reserve(maxThreadCount);
@@ -94,7 +94,7 @@ void ThreadPool::RunPendingTask()
 	}
 	else
 	{
-		std::this_thread::yield();
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 }
 

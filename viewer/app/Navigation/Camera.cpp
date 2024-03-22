@@ -15,6 +15,11 @@ namespace
 	constexpr auto InitialCameraPosition = glm::vec3(1.0f, 1.0f, 1.0f);
 	constexpr auto NearPlaneDistance = 0.1f;
 	constexpr auto FarPlaneDistance = 100.0f;
+
+	constexpr auto MaxZoomModifier = 25.0f;
+	constexpr auto MinZoomModifier = 1.0f;
+	constexpr auto CameraMaxDistanceModifier = 25.0f;
+	constexpr auto RotationModifier = 7.0f;
 }
 
 Camera::Camera(const SubsystemPtr<InputSubsystem>& eventSubsystem,
@@ -75,12 +80,30 @@ void Camera::Update(const double deltaTime)
 		// Move the eye along the camera direction.
 		const auto mouseDelta = mousePosition - prevMousePosition;
 		const auto normalizedMouseDelta = mouseDelta / _viewInfo._renderSize;
-		const auto sign = Sign((1.0f - mouseDelta.x) + mouseDelta.y);
+		const auto deltaLength = glm::length(normalizedMouseDelta);
 
-		const auto invView = glm::inverse(_viewInfo._view);
-		const auto eyePosition = glm::vec3(invView[3]);
-		const auto eyeDir = glm::vec3(invView[2]);
-		const auto newEyePosition = eyePosition + 5000.0f * sign * glm::length(normalizedMouseDelta) * static_cast<float>(deltaTime) * eyeDir;
+		if (deltaLength <= 0.0f)
+		{
+			return;
+		}
+
+		auto sign = 1.0f;
+
+		if (std::abs(mouseDelta.x) > std::abs(mouseDelta.y))
+		{
+			sign = Sign(1.0f - mouseDelta.x);
+		}
+		else
+		{
+			sign = Sign(mouseDelta.y);
+		}
+
+		const auto eyePosition = glm::vec3(_viewInfo._inverseView[3]);
+		const auto eyeDist = glm::length(eyePosition);
+		const auto modifierAlpha = std::clamp((eyeDist * eyeDist) / (CameraMaxDistanceModifier * CameraMaxDistanceModifier), 0.0f, 1.0f);
+		const auto zoomModifier = std::lerp(MinZoomModifier, MaxZoomModifier, modifierAlpha);
+		const auto eyeDir = glm::vec3(_viewInfo._inverseView[2]);
+		const auto newEyePosition = eyePosition + zoomModifier * sign * deltaLength * eyeDir;
 
 		_cameraArmLength = glm::length(_pointOfInterest - newEyePosition);
 		_viewInfo._view = glm::lookAt(newEyePosition, _pointOfInterest, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -100,12 +123,11 @@ void Camera::Update(const double deltaTime)
 		auto deltaWorldPosition = mouseWorldPosition - prevMouseWorldPosition;
 
 		// Get the camera position from the view matrix.
-		const auto invView = glm::inverse(_viewInfo._view);
-		const auto eyePosition = glm::vec3(invView[3]);
+		const auto eyePosition = glm::vec3(_viewInfo._inverseView[3]);
 		const auto poiToEye = glm::length(_pointOfInterest - eyePosition);
 		const auto posToEye = glm::length(prevMouseWorldPosition - eyePosition);
 		const auto ratio = poiToEye / posToEye;
-		const auto cameraDeltaWorldPosition = 200.0f * static_cast<float>(deltaTime) * deltaWorldPosition * ratio;
+		const auto cameraDeltaWorldPosition = deltaWorldPosition * ratio;
 
 		const auto newEyePosition = eyePosition - cameraDeltaWorldPosition;
 		const auto newPointOfInterest = _pointOfInterest - cameraDeltaWorldPosition;
@@ -143,12 +165,12 @@ void Camera::Update(const double deltaTime)
 			return;
 		}
 
-		const auto invView = glm::inverse(_viewInfo._view);
-		const auto eyePosition = glm::vec3(invView[3]);
+		const auto normalizedMouseDelta = deltaPosition / _viewInfo._renderSize;
+		const auto eyePosition = glm::vec3(_viewInfo._inverseView[3]);
 		const auto armLength = glm::length(_pointOfInterest - eyePosition);
 		glm::tvec2<float> sphericalCoordinates = glm::polar(eyePosition - _pointOfInterest);
-		sphericalCoordinates.y -= deltaPosition.x * static_cast<float>(deltaTime);
-		sphericalCoordinates.x = glm::clamp(sphericalCoordinates.x + deltaPosition.y * static_cast<float>(deltaTime), -1.5f, 1.5f);
+		sphericalCoordinates.y -= RotationModifier * normalizedMouseDelta.x;
+		sphericalCoordinates.x = glm::clamp(sphericalCoordinates.x + RotationModifier * normalizedMouseDelta.y, -1.5f, 1.5f);
 		const auto newEyePosition = _pointOfInterest + armLength * glm::euclidean(sphericalCoordinates);
 
 		_cameraArmLength = armLength;

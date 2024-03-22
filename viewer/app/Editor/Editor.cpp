@@ -109,7 +109,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer)
 
 	_meshOperationSystem = std::make_shared<MeshOperationSystem>();
 	_projectData = std::make_shared<ProjectData>();
-	_threadPool = std::make_unique<ThreadPool>(4);
+	_threadPool = std::make_unique<ThreadPool>(2);
 	_mainThreadQueue = std::make_unique<ThreadSafeQueue<FunctionWrapper>>();
 
 	_toolSystem = std::make_shared<ToolSystem>();
