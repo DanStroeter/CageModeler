@@ -766,10 +766,25 @@ void Editor::OnMouseClickReleased(const InputActionParams& actionParams)
 		const auto deformedCageMesh = _scene->GetMesh(_deformedCageHandle);
 		deformedCageMesh->CacheProjectedPointsWorldToScreen(viewInfo);
 
-		auto selection = deformedCageMesh->GetSelection<SelectionType::Vertex>();
-		selection.SelectInRectangle(viewInfo,
-			glm::vec2(_selectionRectStartPosition.x, _selectionRectStartPosition.y),
-			glm::vec2(_selectionRectEndPosition.x, _selectionRectEndPosition.y));
+		const auto selectionType = _statusBar->GetActiveSelectionType();
+		const glm::vec2 rectMin(std::min(_selectionRectStartPosition.x, _selectionRectEndPosition.x), std::min(_selectionRectStartPosition.y, _selectionRectEndPosition.y));
+		const glm::vec2 rectMax(std::max(_selectionRectStartPosition.x, _selectionRectEndPosition.x), std::max(_selectionRectStartPosition.y, _selectionRectEndPosition.y));
+
+		if (selectionType == SelectionType::Vertex)
+		{
+			auto selection = deformedCageMesh->GetSelection<SelectionType::Vertex>();
+			selection.SelectInRectangle(viewInfo, rectMin, rectMax);
+		}
+		else if (selectionType == SelectionType::Edge)
+		{
+			auto selection = deformedCageMesh->GetSelection<SelectionType::Edge>();
+			selection.SelectInRectangle(viewInfo, rectMin, rectMax);
+		}
+		else if (selectionType == SelectionType::Polygon)
+		{
+			auto selection = deformedCageMesh->GetSelection<SelectionType::Polygon>();
+			selection.SelectInRectangle(viewInfo, rectMin, rectMax);
+		}
 
 		_isSelectingRect = false;
 
@@ -920,7 +935,7 @@ void Editor::OnClickedSelection(const InputActionParams& actionParams)
 				}
 			}
 		}
-		else if (_statusBar->GetActiveSelectionType() == SelectionType::Polygon)
+		else if (selectionType == SelectionType::Polygon)
 		{
 			auto selection = deformedCageMesh->GetSelection<SelectionType::Polygon>();
 			const auto worldRay = viewInfo.DeprojectScreenToWorldRay(mousePosition);
@@ -1101,6 +1116,8 @@ void Editor::UpdateDeformedMeshPositionsFromDeformationData(const std::optional<
 
 	const auto deformedMesh = _scene->GetMesh(_deformedMeshHandle);
 	deformedMesh->SetPositions(positions);
+
+	_statusBar->SetCurrentFrame(unpackedFrameIndex);
 }
 
 void Editor::ExportDeformedMeshes(std::filesystem::path filepath) const

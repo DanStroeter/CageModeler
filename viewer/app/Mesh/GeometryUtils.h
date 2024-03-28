@@ -113,6 +113,70 @@ namespace GeometryUtils
 		return ray._origin + t * ray._direction;
 	}
 
+	[[nodiscard]] inline bool LineSegmentAABBIntersection(const glm::vec2& rectMin,
+		const glm::vec2& rectMax,
+		const glm::vec2& edgeA,
+		const glm::vec2& edgeB)
+	{
+		auto minX = edgeA.x;
+		auto maxX = edgeB.x;
+
+		if (edgeA.x > edgeB.x)
+		{
+			minX = edgeB.x;
+			maxX = edgeA.x;
+		}
+
+		if (maxX > rectMax.x)
+		{
+			maxX = rectMax.x;
+		}
+
+		if (minX < rectMin.x)
+		{
+			minX = rectMin.x;
+		}
+
+		if (minX > maxX)
+		{
+			return false;
+		}
+
+		auto minY = edgeA.y;
+		auto maxY = edgeB.y;
+		const auto dx = edgeB.x - edgeA.x;
+
+		if (std::abs(dx) > Epsilon)
+		{
+			const auto a = (edgeB.y - edgeA.y) / dx;
+			const auto b = edgeA.y - a * edgeA.x;
+			minY = a * minX + b;
+			maxY = a * maxX + b;
+		}
+
+		if (minY > maxY)
+		{
+			std::swap(maxY, minY);
+		}
+
+		if (maxY > rectMax.y)
+		{
+			maxY = rectMax.y;
+		}
+
+		if (minY < rectMin.y)
+		{
+			minY = rectMin.y;
+		}
+
+		if (minY > maxY)
+		{
+			return false;
+		}
+
+		return true;
+	}
+
 	[[nodiscard]] inline glm::vec3 ProjectPointOnPlane(const glm::vec3& point,
 		const glm::vec3& planeOrigin,
 		const glm::vec3& planeNormal)

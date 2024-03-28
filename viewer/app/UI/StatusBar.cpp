@@ -303,14 +303,22 @@ void StatusBar::Layout()
 
 		const auto projectData = _model->_projectData.lock();
 
-		if (projectData)
-		{
-			const auto prevFrameIndex = _model->_frameIndex;
-			const auto wasDraggingSequencerHandle = _model->_isDraggingSequencerHandle;
+		const auto prevFrameIndex = _model->_frameIndex;
+		const auto wasDraggingSequencerHandle = _model->_isDraggingSequencerHandle;
 
-			// Draw the sequencer at the bottom.
-			_model->_frameIndex = ImGui::Sequencer("Sequencer", _model->_frameIndex, projectData->_numSamples - 1, _model->_isDraggingSequencerHandle);
-			_model->_frameIndex = std::clamp(_model->_frameIndex, 0u, static_cast<uint32_t>(projectData->_numSamples - 1));
+		ImGui::BeginDisabled(projectData == nullptr);
+		{
+			if (projectData != nullptr)
+			{
+				// Draw the sequencer at the bottom.
+				_model->_frameIndex = ImGui::Sequencer("Sequencer", _model->_frameIndex, projectData->_numSamples - 1, _model->_isDraggingSequencerHandle);
+				_model->_frameIndex = std::clamp(_model->_frameIndex, 0u, static_cast<uint32_t>(projectData->_numSamples - 1));
+			}
+			else
+			{
+				// Draw the sequencer at the bottom.
+				ImGui::Sequencer("Sequencer", 0, 1, _model->_isDraggingSequencerHandle);
+			}
 
 			if (prevFrameIndex != _model->_frameIndex)
 			{
@@ -356,6 +364,7 @@ void StatusBar::Layout()
 
 			ImGui::SameLine();
 		}
+		ImGui::EndDisabled();
 
 		const auto meshOperationSystem = _meshOperationSystem.lock();
 		if (meshOperationSystem == nullptr)

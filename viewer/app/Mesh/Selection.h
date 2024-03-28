@@ -114,42 +114,6 @@ public:
 	}
 
 	/**
-	 * Selects any points that are in the rectangle.
-	 * @param viewInfo The current camera view info.
-	 * @param rectMin Rectangle minimum bounds.
-	 * @param rectMax Rectangle maximum bounds.
-	 */
-	void SelectInRectangle(const ViewInfo& viewInfo,
-		const glm::vec2& rectMin,
-		const glm::vec2& rectMax)
-	{
-		auto dirtyFlags = MeshProxyDirtyFlags::None;
-		const auto actualRectMin = glm::min(rectMin, rectMax);
-		const auto actualRectMax = glm::max(rectMin, rectMax);
-
-		if (rectMin != rectMax)
-		{
-			DeselectAll();
-		}
-
-		for (std::size_t pointIndex = 0; pointIndex < _cachedProjectedPoints.size(); ++pointIndex)
-		{
-			const auto& point = _cachedProjectedPoints[pointIndex];
-			const auto scaledPoint = glm::vec2(point / point.z);
-
-			if (scaledPoint.x > actualRectMin.x && scaledPoint.y > actualRectMin.y &&
-				scaledPoint.x < actualRectMax.x && scaledPoint.y < actualRectMax.y)
-			{
-				_mesh.get().status(VertexHandle(static_cast<int>(pointIndex))).set_selected(true);
-
-				dirtyFlags |= MeshProxyDirtyFlags::Color;
-			}
-		}
-
-		_dirtyFlags.get() |= dirtyFlags;
-	}
-
-	/**
 	 * Deselect vertices.
 	 * @param handles Vertex handles to mark as deselected.
 	 */
@@ -279,28 +243,41 @@ class VertexSelection : public Selection<VertexHandle>
 public:
 	VertexSelection() = delete;
 
-	// void PolygonMesh::TranslateSelectedVertices(const glm::vec3& startPosition, const glm::vec3& endPosition)
-	// {
-	// 	const auto translationDelta = endPosition - startPosition;
-	//
-	// 	// Update the points by the translation vector.
-	// 	for (auto it = _mesh->vertices_begin(); it != _mesh->vertices_end(); ++it)
-	// 	{
-	// 		if (_mesh->status(static_cast<VertexHandle>(*it)).selected())
-	// 		{
-	// 			_mesh->point(static_cast<VertexHandle>(*it)) += translationDelta;
-	// 		}
-	// 	}
-	//
-	// 	_mesh->update_normals();
-	//
-	// 	_dirtyFlags |= MeshProxyDirtyFlags::Position | MeshProxyDirtyFlags::Normal;
-	//
-	// 	UpdateRenderProxy();
-	//
-	// 	// Mark the cached points as dirty so we can do the de-projection again.
-	// 	_isCachedGeometryDirty = true;
-	// }
+	/**
+	 * Selects any points that are in the rectangle.
+	 * @param viewInfo The current camera view info.
+	 * @param rectMin Rectangle minimum bounds.
+	 * @param rectMax Rectangle maximum bounds.
+	 */
+	void SelectInRectangle(const ViewInfo& viewInfo,
+		const glm::vec2& rectMin,
+		const glm::vec2& rectMax)
+	{
+		auto dirtyFlags = MeshProxyDirtyFlags::None;
+		const auto actualRectMin = glm::min(rectMin, rectMax);
+		const auto actualRectMax = glm::max(rectMin, rectMax);
+
+		if (rectMin != rectMax)
+		{
+			DeselectAll();
+		}
+
+		for (std::size_t pointIndex = 0; pointIndex < _cachedProjectedPoints.size(); ++pointIndex)
+		{
+			const auto& point = _cachedProjectedPoints[pointIndex];
+			const auto scaledPoint = glm::vec2(point / point.z);
+
+			if (scaledPoint.x > actualRectMin.x && scaledPoint.y > actualRectMin.y &&
+			    scaledPoint.x < actualRectMax.x && scaledPoint.y < actualRectMax.y)
+			{
+				_mesh.get().status(VertexHandle(static_cast<int>(pointIndex))).set_selected(true);
+
+				dirtyFlags |= MeshProxyDirtyFlags::Color;
+			}
+		}
+
+		_dirtyFlags.get() |= dirtyFlags;
+	}
 
 	/**
 	 * Sets the positions of the currently selected vertices.
@@ -349,6 +326,44 @@ class EdgeSelection : public Selection<EdgeHandle>
 {
 public:
 	EdgeSelection() = delete;
+
+	/**
+	 * Selects any edges that are in the rectangle.
+	 * @param viewInfo The current camera view info.
+	 * @param rectMin Rectangle minimum bounds.
+	 * @param rectMax Rectangle maximum bounds.
+	 */
+	void SelectInRectangle(const ViewInfo& viewInfo,
+		const glm::vec2& rectMin,
+		const glm::vec2& rectMax)
+	{
+		auto dirtyFlags = MeshProxyDirtyFlags::None;
+		const auto actualRectMin = glm::min(rectMin, rectMax);
+		const auto actualRectMax = glm::max(rectMin, rectMax);
+
+		if (rectMin != rectMax)
+		{
+			DeselectAll();
+		}
+
+		for (auto it = _mesh.get().edges_begin(); it != _mesh.get().edges_end(); ++it)
+		{
+			const auto& pointA = _cachedProjectedPoints[it->v0().idx()];
+			const auto scaledPointA = glm::vec2(pointA / pointA.z);
+
+			const auto& pointB = _cachedProjectedPoints[it->v1().idx()];
+			const auto scaledPointB = glm::vec2(pointB / pointB.z);
+
+			if (GeometryUtils::LineSegmentAABBIntersection(rectMin, rectMax, scaledPointA, scaledPointB))
+			{
+				_mesh.get().status(*it).set_selected(true);
+
+				dirtyFlags |= MeshProxyDirtyFlags::Color;
+			}
+		}
+
+		_dirtyFlags.get() |= dirtyFlags;
+	}
 
 	/**
 	 * Translates the currently selected edges.
@@ -411,6 +426,72 @@ class PolygonSelection : public Selection<FaceHandle>
 {
 public:
 	PolygonSelection() = delete;
+
+	/**
+	 * Selects any polygons that are in the rectangle.
+	 * @param viewInfo The current camera view info.
+	 * @param rectMin Rectangle minimum bounds.
+	 * @param rectMax Rectangle maximum bounds.
+	 */
+	void SelectInRectangle(const ViewInfo& viewInfo,
+		const glm::vec2& rectMin,
+		const glm::vec2& rectMax)
+	{
+		auto dirtyFlags = MeshProxyDirtyFlags::None;
+		const auto actualRectMin = glm::min(rectMin, rectMax);
+		const auto actualRectMax = glm::max(rectMin, rectMax);
+
+		if (rectMin != rectMax)
+		{
+			DeselectAll();
+		}
+
+		const auto checkEdge = [this, &rectMin, &rectMax, &dirtyFlags](const VertexHandle vA, const VertexHandle vB)
+		{
+			const auto& pointA = _cachedProjectedPoints[vA.idx()];
+			const auto scaledPointA = glm::vec2(pointA / pointA.z);
+
+			const auto& pointB = _cachedProjectedPoints[vB.idx()];
+			const auto scaledPointB = glm::vec2(pointB / pointB.z);
+
+			return GeometryUtils::LineSegmentAABBIntersection(rectMin, rectMax, scaledPointA, scaledPointB);
+		};
+
+		for (auto it = _mesh.get().faces_begin(); it != _mesh.get().faces_end(); ++it)
+		{
+			// Store the first point of the face as the origin of each triangle.
+			auto startVertexIt = _mesh.get().cfv_begin(static_cast<FaceHandle>(*it));
+			auto endVertexIt = _mesh.get().cfv_end(static_cast<FaceHandle>(*it));
+			auto nextVertexIt = startVertexIt;
+			++nextVertexIt;
+
+			if (checkEdge(*startVertexIt, *nextVertexIt))
+			{
+				_mesh.get().status(*it).set_selected(true);
+
+				dirtyFlags |= MeshProxyDirtyFlags::Color;
+			}
+			else
+			{
+				while (nextVertexIt != endVertexIt)
+				{
+					const auto prevVertexIt = nextVertexIt;
+					++nextVertexIt;
+
+					if (checkEdge(*prevVertexIt, *nextVertexIt))
+					{
+						_mesh.get().status(*it).set_selected(true);
+
+						dirtyFlags |= MeshProxyDirtyFlags::Color;
+
+						break;
+					}
+				}
+			}
+		}
+
+		_dirtyFlags.get() |= dirtyFlags;
+	}
 
 	/**
 	 * Translates the currently selected faces.

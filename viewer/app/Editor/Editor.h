@@ -44,10 +44,24 @@ private:
 
 	void CreateSceneLights() const;
 
+	/**
+	 * Invoked when the new project window is cancelled.
+	 */
 	void OnNewProjectCancelled();
+
+	/**
+	 * Invoked when a new project has been created from the window.
+	 */
 	void OnNewProjectCreated();
 
+	/**
+	 * Invoked when the project settings have been changed and new ones have been applied.
+	 */
 	void OnProjectSettingsApplied();
+
+	/**
+	 * Invoked when the project settings get cancelled.
+	 */
 	void OnProjectSettingsCancelled();
 
 	/**

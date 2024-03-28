@@ -62,6 +62,11 @@ public:
 		_model->_error = std::move(error);
 	}
 
+	void SetCurrentFrame(const uint32_t frameIndex)
+	{
+		_model->_frameIndex = frameIndex;
+	}
+
 private:
 	void LayoutSelectionTool(const SelectionType selectionType,
 		const char* label,
