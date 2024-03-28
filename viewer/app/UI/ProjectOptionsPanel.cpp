@@ -7,7 +7,7 @@ namespace
 #if WITH_SOMIGLIANA
 	constexpr auto PanelSize = ImVec2(420.0f, 630.0f);
 #else
-	constexpr auto PanelSize = ImVec2(420.0f, 460.0f);
+	constexpr auto PanelSize = ImVec2(420.0f, 410.0f);
 #endif
 }
 
@@ -143,31 +143,6 @@ void ProjectOptionsPanel::Layout()
 			}
 
 			ImGui::Dummy(ImVec2(0.0f, 5.0f));
-
-			ImGui::TableNextRow();
-			{
-				ImGui::TableSetColumnIndex(0);
-				ImGui::TextEx("Number of samples");
-				ImGui::SameLine();
-				UIHelpers::HelpMarker("Specifies the number of samples for the parameters.");
-
-				ImGui::TableSetColumnIndex(1);
-				UIHelpers::SetRightAligned(100.0f);
-				ImGui::DragInt("##Project_NumSamples", &_modifiedProjectModel._numSamples, 1, 1, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
-			}
-
-			ImGui::TableNextRow();
-			{
-				// Add the scale input at the bottom because it's valid for all meshes.
-				ImGui::TableSetColumnIndex(0);
-				ImGui::TextEx("Scale");
-				ImGui::SameLine();
-				UIHelpers::HelpMarker("Scale model, embedding and cage by factor.");
-
-				ImGui::TableSetColumnIndex(1);
-				UIHelpers::SetRightAligned(100.0f);
-				ImGui::InputFloat("##Project_Scale", &_modifiedProjectModel._scalingFactor, 0.01f, 0.0f, "%.2f", ImGuiInputTextFlags_NoHorizontalScroll);
-			}
 
 			ImGui::TableNextRow();
 			{

@@ -573,14 +573,14 @@ void Editor::OnNewProjectCreated()
 
 			// Update the status bar to display the new meshes.
 			_statusBar->SetModel(std::make_shared<StatusBarModel>(_projectData,
-				[this]<typename T>(T&& selectionType)
-				{
-					OnSelectionTypeChanged(std::forward<T>(selectionType));
-				},
-				[this]<typename T>(T&& newFrameIndex)
-				{
-					OnFrameIndexChanged(std::forward<T>(newFrameIndex));
-				}));
+				[this]<typename T>(T&& selectionType) { OnSelectionTypeChanged(std::forward<T>(selectionType)); },
+				[this](const uint32_t newFrameIndex) { OnSequencerFrameIndexChanged(newFrameIndex); },
+				[this](const uint32_t frameIndex, const uint32_t numFrames) { OnSequencerNumFramesChanged(frameIndex, numFrames); },
+				[this]() { OnSequencerStartedDragging(); },
+				[this]() { OnSequencerEndedDragging(); }));
+
+			// Updates the vertex data with the last sample.
+			UpdateDeformedMeshPositionsFromDeformationData();
 
 			// Rebuild the entire BVH.
 			{
@@ -588,19 +588,6 @@ void Editor::OnNewProjectCreated()
 				bvhBuilder.AddGeometry(_deformedMeshHandle);
 				bvhBuilder.AddGeometry(_deformedCageHandle);
 			}
-
-			// Copy the matrix to transpose in-place so we can iterate over it in the correct memory data layout.
-			const auto deformationData = _deformationData.LockRead();
-			const auto meshPositions = deformationData->_vertexData.back()._vertices.transpose();
-
-			std::vector<glm::vec3> positions(meshPositions.cols());
-			for (auto i = 0; i < meshPositions.cols(); ++i)
-			{
-				positions[i] = glm::vec3(meshPositions(0, i), meshPositions(1, i), meshPositions(2, i));
-			}
-
-			const auto deformedMesh = _scene->GetMesh(_deformedMeshHandle);
-			deformedMesh->SetPositions(positions);
 
 			// Ready to dismiss the project panel when we are done.
 			if (_newProjectPanel != nullptr)
@@ -838,39 +825,25 @@ void Editor::OnMouseClickReleased(const InputActionParams& actionParams)
 
 			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
 
-			const auto meshPositions = _deformationData.LockRead();
-
 			// Copy the matrix to transpose in-place, so we can iterate over it in the correct memory data layout.
-			if (!meshPositions->_vertexData.empty())
+			_mainThreadQueue->Push([this]() mutable
 			{
-				const auto& vertices = meshPositions->_vertexData.back()._vertices.transpose();
+				// Update the positions of the mesh.
+				UpdateDeformedMeshPositionsFromDeformationData();
 
-				std::vector<glm::vec3> positions(vertices.cols());
-				for (auto i = 0; i < vertices.cols(); ++i)
+				// We only recompute the vertex colors if they were previously on.
+				if (_projectModel->_renderInfluenceMap)
 				{
-					positions[i] = glm::vec3(vertices(0, i), vertices(1, i), vertices(2, i));
+					UpdateMeshVertexColors(_projectModel->_renderInfluenceMap);
 				}
 
-				_mainThreadQueue->Push([this, localPositions = std::move(positions)]() mutable
+				// Rebuild the entire BVH.
 				{
-					// Update the positions of the mesh.
-					const auto deformedMesh = _scene->GetMesh(_deformedMeshHandle);
-					deformedMesh->SetPositions(localPositions);
-
-					// We only recompute the vertex colors if they were previously on.
-					if (_projectModel->_renderInfluenceMap)
-					{
-						UpdateMeshVertexColors(_projectModel->_renderInfluenceMap);
-					}
-
-					// Rebuild the entire BVH.
-					{
-						auto bvhBuilder = _scene->BeginGeometryBVH();
-						bvhBuilder.AddGeometry(_deformedMeshHandle);
-						bvhBuilder.AddGeometry(_deformedCageHandle);
-					}
-				});
-			}
+					auto bvhBuilder = _scene->BeginGeometryBVH();
+					bvhBuilder.AddGeometry(_deformedMeshHandle);
+					bvhBuilder.AddGeometry(_deformedCageHandle);
+				}
+			});
 		});
 	}
 
@@ -1005,9 +978,106 @@ void Editor::OnSelectionTypeChanged(const SelectionType selectionType)
 	}
 }
 
-void Editor::OnFrameIndexChanged(const uint32_t newFrameIndex)
+void Editor::OnSequencerFrameIndexChanged(const uint32_t newFrameIndex)
 {
+	if (_deformedMeshHandle == InvalidHandle || _deformedCageHandle == InvalidHandle)
+	{
+		return;
+	}
 
+	// Update deformed mesh vertices with the new sample index data.
+	UpdateDeformedMeshPositionsFromDeformationData(newFrameIndex);
+
+	// We only recompute the vertex colors if they were previously on.
+	if (_projectModel->_renderInfluenceMap)
+	{
+		UpdateMeshVertexColors(_projectModel->_renderInfluenceMap);
+	}
+}
+
+void Editor::OnSequencerNumFramesChanged(const uint32_t currentFrameIndex, const uint32_t numFrames)
+{
+	if (_deformedMeshHandle == InvalidHandle || _deformedCageHandle == InvalidHandle)
+	{
+		return;
+	}
+
+	// Re-compute the deformed mesh and update the render proxy.
+	_threadPool->Submit([this,
+		mesh = _scene->GetMesh(_deformedMeshHandle)->CopyAsEigen(),
+		cage = _projectData->_cage,
+		deformedMesh = _scene->GetMesh(_deformedCageHandle)->CopyAsEigen(),
+#if WITH_SOMIGLIANA
+		somiglianaDeformer = _projectData->_somiglianaDeformer,
+		bulging = _projectModel->GetSomiglianaBulging(),
+		blendFactor = _projectModel->GetSomiglianaBlendFactor(),
+		bulgingType = _projectModel->GetSomiglianaBulgingType(),
+#endif
+		deformationType = _projectData->_deformationType,
+		weightingScheme = _projectData->_LBCWeightingScheme,
+		modelVerticesOffset = _projectData->_modelVerticesOffset,
+		numSamples = _projectData->_numSamples,
+		interpolateWeights = _projectData->CanInterpolateWeights(),
+		currentFrameIndex]() mutable
+	{
+		_isComputingDeformationData.store(true, std::memory_order_seq_cst);
+
+		auto deformedMeshResult = ComputeDeformedMesh(std::move(mesh),
+			std::move(cage),
+			std::move(deformedMesh),
+			deformationType,
+			weightingScheme,
+#if WITH_SOMIGLIANA
+			somiglianaDeformer,
+			bulging,
+			blendFactor,
+			bulgingType,
+#endif
+			modelVerticesOffset,
+			numSamples,
+			interpolateWeights);
+
+		_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
+
+		_isComputingDeformationData.store(false, std::memory_order_seq_cst);
+
+		// Copy the matrix to transpose in-place, so we can iterate over it in the correct memory data layout.
+		_mainThreadQueue->Push([this, currentFrameIndex]() mutable
+		{
+			// Update the positions of the mesh.
+			UpdateDeformedMeshPositionsFromDeformationData(currentFrameIndex);
+
+			// We only recompute the vertex colors if they were previously on.
+			if (_projectModel->_renderInfluenceMap)
+			{
+				UpdateMeshVertexColors(_projectModel->_renderInfluenceMap);
+			}
+		});
+	});
+}
+
+void Editor::OnSequencerStartedDragging()
+{
+	const auto deformedCageMesh = _scene->GetMesh(_deformedCageHandle);
+	deformedCageMesh->SetVisible(false);
+}
+
+void Editor::OnSequencerEndedDragging()
+{
+	const auto deformedCageMesh = _scene->GetMesh(_deformedCageHandle);
+	deformedCageMesh->SetVisible(true);
+}
+
+void Editor::UpdateDeformedMeshPositionsFromDeformationData(const std::optional<uint32_t> frameIndex)
+{
+	// Copy the matrix to transpose in-place, so we can iterate over it in the correct memory data layout.
+	const auto deformationData = _deformationData.LockRead();
+	const auto unpackedFrameIndex = frameIndex.value_or(deformationData->_vertexData.size() - 1);
+	const auto meshPositions = deformationData->_vertexData[unpackedFrameIndex]._vertices.transpose();
+	std::vector<glm::vec3> positions = GeometryUtils::EigenVerticesToGLM(meshPositions);
+
+	const auto deformedMesh = _scene->GetMesh(_deformedMeshHandle);
+	deformedMesh->SetPositions(positions);
 }
 
 void Editor::ExportDeformedMeshes(std::filesystem::path filepath) const

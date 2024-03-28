@@ -43,6 +43,17 @@ struct EigenMesh
 
 namespace GeometryUtils
 {
+	inline std::vector<glm::vec3> EigenVerticesToGLM(const Eigen::MatrixXd& vertices)
+	{
+		std::vector<glm::vec3> positions(vertices.cols());
+		for (auto i = 0; i < vertices.cols(); ++i)
+		{
+			positions[i] = glm::vec3(vertices(0, i), vertices(1, i), vertices(2, i));
+		}
+
+		return positions;
+	}
+
 	inline void ScaleEigenMesh(Eigen::MatrixXd& vertices, const float scaleFactor)
 	{
 		const auto scaleMat = glm::scale(glm::mat4(1.0f), glm::vec3(scaleFactor));

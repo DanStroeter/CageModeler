@@ -13,6 +13,7 @@ namespace
 {
 	constexpr auto StatusBarHeight = 40.0f;
 	constexpr auto StatusBarButtonSize = ImVec2(25.0f, 25.0f);
+	constexpr auto SequencerRightScreenOffset = 400.0f;
 }
 
 namespace ImGui
@@ -79,14 +80,12 @@ namespace ImGui
 			return false;
 		}
 
-		const auto id = window->GetID(label);
-
 		const auto cursorPos = window->DC.CursorPos;
-		const auto canvasSize = GetContentRegionAvail() - ImVec2(300.0f, 0.0f);
+		const auto canvasSize = GetContentRegionAvail() - ImVec2(SequencerRightScreenOffset, 0.0f);
 		const ImRect boundingBox(cursorPos, cursorPos + canvasSize);
 
 		ItemSize(boundingBox);
-		if (!ItemAdd(boundingBox, id, nullptr, 0))
+		if (!ItemAdd(boundingBox, 0))
 		{
 			return false;
 		}
@@ -98,9 +97,6 @@ namespace ImGui
 		const auto activeColor = ColorConvertFloat4ToU32(ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
 		const auto lineColor = ColorConvertFloat4ToU32(GImGui->Style.Colors[ImGuiCol_Separator]);
 		const auto backgroundColor = ColorConvertFloat4ToU32(GImGui->Style.Colors[ImGuiCol_FrameBg]);
-
-		// Compute the maximum number of frame labels we can fit into the canvas.
-		const auto maxTextSize = CalcTextSize("100");
 
 		// Compute how to subdivide the existing number of frames into regions.
 		const auto maxNumFramesPerDivision = GetNumberOfFramesPerDivision(numFrames);
@@ -195,14 +191,16 @@ namespace ImGui
 			const auto handleCenterCoords = SequencerFrameTextPadding.x + handleProgress * timelineWidth;
 			const ImVec2 handlePosition(cursorPos.x + handleCenterCoords, cursorPos.y);
 
-			ImRect handleBoundingBox(handlePosition + ImVec2(0.0f, 4.0f) - ImVec2(HalfHandleWidth, 0.0f), handlePosition + ImVec2(HalfHandleWidth, canvasSize.y));
+			const ImRect handleBoundingBox(handlePosition + ImVec2(0.0f, 4.0f) - ImVec2(HalfHandleWidth, 0.0f), handlePosition + ImVec2(HalfHandleWidth, canvasSize.y));
 			const ImGuiID handleId = window->GetID("SequencerHandle");
 
 			PushID(handleId);
 
+			ImRect buttonBoundingBox = handleBoundingBox;
+			buttonBoundingBox.Expand(ImVec2(50.0f, 0.0f));
 			bool hovered = false;
 			bool held = false;
-			const auto pressed = ButtonBehavior(handleBoundingBox, handleId, &hovered, &held, ImGuiButtonFlags_MouseButtonLeft);
+			const auto pressed = ButtonBehavior(buttonBoundingBox, handleId, &hovered, &held, ImGuiButtonFlags_MouseButtonLeft);
 
 			inOutDraggingHandle = (held || inOutDraggingHandle);
 
@@ -296,24 +294,64 @@ void StatusBar::Layout()
 		ImGui::Dummy(ImVec2(1.0f, 0.0f));
 		ImGui::SameLine();
 
-		// Draw the sequencer at the bottom.
-		uint32_t numFrames = 1;
-		if (const auto projectData = _model->_projectData.lock())
-		{
-			numFrames = projectData->_numSamples;
-		}
-
 		const auto oldCursorPositionY = ImGui::GetCursorPosY();
-		const auto prevFrameIndex = _model->_frameIndex;
-		_model->_frameIndex = ImGui::Sequencer("Sequencer", _model->_frameIndex, numFrames, _model->_isDraggingSequencerHandle);
-		_model->_frameIndex = _model->_frameIndex % numFrames;
+		const auto windowSize = ImGui::GetWindowSize();
 
-		if (prevFrameIndex != _model->_frameIndex)
+		const auto projectData = _model->_projectData.lock();
+
+		if (projectData)
 		{
-			_model->_frameIndexChangedDelegate(_model->_frameIndex);
-		}
+			const auto prevFrameIndex = _model->_frameIndex;
+			const auto wasDraggingSequencerHandle = _model->_isDraggingSequencerHandle;
 
-		ImGui::SameLine();
+			// Draw the sequencer at the bottom.
+			_model->_frameIndex = ImGui::Sequencer("Sequencer", _model->_frameIndex, projectData->_numSamples - 1, _model->_isDraggingSequencerHandle);
+			_model->_frameIndex = std::clamp(_model->_frameIndex, 0u, static_cast<uint32_t>(projectData->_numSamples - 1));
+
+			if (prevFrameIndex != _model->_frameIndex)
+			{
+				_model->_frameIndexChangedDelegate(_model->_frameIndex);
+			}
+
+			if (wasDraggingSequencerHandle != _model->_isDraggingSequencerHandle)
+			{
+				if (wasDraggingSequencerHandle)
+				{
+					_model->_endDragDelegate();
+				}
+				else
+				{
+					_model->_startDragDelegate();
+				}
+			}
+
+			const auto sequencerSize = ImGui::GetContentRegionAvail() - ImVec2(SequencerRightScreenOffset, 0.0f);
+
+			ImGui::SetCursorPosY(oldCursorPositionY);
+			ImGui::SameLine();
+
+			ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+
+			ImGui::PushItemWidth(100.0f);
+			ImGui::SetCursorPosX(sequencerSize.x + 25.0f);
+			ImGui::SetCursorPosY(oldCursorPositionY);
+
+			auto numSamples = static_cast<int32_t>(_model->_numSamples - 1);
+			if (ImGui::InputInt("##Project_NumSamples", &numSamples, 1, 5, ImGuiInputTextFlags_CharsDecimal))
+			{
+				_model->_numSamples = static_cast<uint32_t>(numSamples + 1);
+				_model->_frameIndex = std::min(_model->_frameIndex, static_cast<uint32_t>(_model->_numSamples));
+				projectData->_numSamples = numSamples + 1;
+
+				_model->_numFramesChangedDelegate(_model->_frameIndex, _model->_numSamples);
+			}
+			ImGui::PopItemWidth();
+
+			ImGui::SameLine();
+			UIHelpers::HelpMarker("Specifies the number of samples.");
+
+			ImGui::SameLine();
+		}
 
 		const auto meshOperationSystem = _meshOperationSystem.lock();
 		if (meshOperationSystem == nullptr)
@@ -330,30 +368,25 @@ void StatusBar::Layout()
 
 			if (!operationDescription.empty())
 			{
-				const auto windowSize = ImGui::GetWindowSize();
 				const auto actionTextSize = ImGui::CalcTextSize(operationDescription.c_str());
 
 				// Set the initial position of the text.
-				ImGui::SetCursorPosY(oldCursorPositionY);
 				ImGui::SetCursorPosX(windowSize.x - actionTextSize.x - ImGui::GetStyle().ItemSpacing.x - 24.0f);
 
 				ImGui::TextEx(operationDescription.c_str());
 				ImGui::SameLine();
 
-				ImGui::SetCursorPosY(oldCursorPositionY);
+				ImGui::SetCursorPosY(oldCursorPositionY + 2.0f);
 				ImGui::Spinner("##LoadingSpinner", 7.0f, 2, ImGui::GetColorU32(ImGuiCol_Text));
 			}
 		}
 		else if (_model->_error.has_value())
 		{
 			const auto errorText = _model->_error->c_str();
-			const auto windowSize = ImGui::GetWindowSize();
 			const auto actionTextSize = ImGui::CalcTextSize(errorText);
 
 			// Set the initial position of the text.
-			ImGui::SetCursorPosY(oldCursorPositionY);
 			ImGui::SetCursorPosX(windowSize.x - actionTextSize.x - ImGui::GetStyle().ItemSpacing.x);
-
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.2f, 0.3f, 1.0f));
 			{
 				ImGui::TextEx(errorText);

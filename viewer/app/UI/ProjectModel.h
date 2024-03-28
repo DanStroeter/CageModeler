@@ -180,7 +180,7 @@ struct ProjectModelData
 	LBC::DataSetup::WeightingScheme _LBCWeightingScheme = LBC::DataSetup::WeightingScheme::SQUARE;
 
 	int32_t _numBBWSteps = 300;
-	int32_t _numSamples = 1;
+	int32_t _numSamples = 2;
 
 	std::optional<std::filesystem::path> _meshFilepath;
 	std::optional<std::filesystem::path> _weightsFilepath;

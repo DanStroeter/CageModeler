@@ -129,6 +129,12 @@ private:
 	void UpdateMeshVertexColors(const bool shouldRenderInfluenceMap) const;
 
 	/**
+	 * Extracts the vertex data from the calculated deformation data and apply it to the current mesh for the given frame index.
+	 * @param frameIndex The frame (or sample) index to be applied to the deformed mesh vertices.
+	 */
+	void UpdateDeformedMeshPositionsFromDeformationData(const std::optional<uint32_t> frameIndex = { });
+
+	/**
 	 * Invoked on a LMB click by the user.
 	 * @param actionParams Action parameters from the input system.
 	 */
@@ -166,7 +172,24 @@ private:
 	 * vertex data.
 	 * @param newFrameIndex The new frame index.
 	 */
-	void OnFrameIndexChanged(const uint32_t newFrameIndex);
+	void OnSequencerFrameIndexChanged(const uint32_t newFrameIndex);
+
+	/**
+	 * Whenever the maximum number of frames in the sequencer changes we have to call the deformation operation.
+	 * @param currentFrameIndex The current frame index.
+	 * @param numFrames The maximum number of frames.
+	 */
+	void OnSequencerNumFramesChanged(const uint32_t currentFrameIndex, const uint32_t numFrames);
+
+	/**
+	 * Called whenever the sequencer starts a drag action.
+	 */
+	void OnSequencerStartedDragging();
+
+	/**
+	 * Called whenever the sequencer ends a drag action.
+	 */
+	void OnSequencerEndedDragging();
 
 private:
 	/// A pointer to the input system to get input information.
@@ -262,6 +285,10 @@ private:
 
 	/// Whether the mouse is currently dragging.
 	uint32_t _isDragging : 1;
+
+	/// Whenever we drag from any frame other than the last one we will be previewing the deformation process.
+	/// This flag will be reset back to false when we start deforming the mesh again.
+	uint32_t _isPreviewingSample : 1;
 
 	/// Whether the mouse is being dragged for a rectangle selection.
 	uint32_t _isSelectingRect : 1;

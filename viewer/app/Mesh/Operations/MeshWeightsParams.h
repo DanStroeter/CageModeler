@@ -249,7 +249,7 @@ struct ProjectData
 
 	int32_t _modelVerticesOffset = 0;
 	int32_t _numBBWSteps = 300;
-	int32_t _numSamples = 1;
+	int32_t _numSamples = 2;
 
 	/// Scaling based on the bounding box of the file, so we can scale it down to fit in the viewport during load.
 	/// On export we scale it back up by the inverse to get the final result.

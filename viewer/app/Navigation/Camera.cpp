@@ -16,10 +16,10 @@ namespace
 	constexpr auto NearPlaneDistance = 0.1f;
 	constexpr auto FarPlaneDistance = 100.0f;
 
-	constexpr auto MaxZoomModifier = 25.0f;
-	constexpr auto MinZoomModifier = 1.0f;
+	constexpr auto MaxZoomModifier = 40.0f;
+	constexpr auto MinZoomModifier = 2.0f;
 	constexpr auto CameraMaxDistanceModifier = 25.0f;
-	constexpr auto RotationModifier = 7.0f;
+	constexpr auto RotationModifier = 10.0f;
 }
 
 Camera::Camera(const SubsystemPtr<InputSubsystem>& eventSubsystem,

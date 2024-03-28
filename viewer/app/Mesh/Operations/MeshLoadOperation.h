@@ -78,7 +78,7 @@ struct MeshLoadOperationParams
 	std::optional<std::filesystem::path> _parametersFilepath { };
 
 	int32_t _numBBWSteps = 300;
-	int32_t _numSamples = 1;
+	int32_t _numSamples = 2;
 
 	float _scalingFactor = 1.0f;
 

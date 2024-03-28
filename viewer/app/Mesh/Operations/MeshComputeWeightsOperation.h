@@ -59,7 +59,7 @@ struct MeshComputeWeightsOperationParams
 	uint32_t _interpolateWeights : 1;
 	uint32_t _forceCalculateWeights : 1;
 	int32_t _numBBWSteps = 300;
-	int32_t _numSamples = 1;
+	int32_t _numSamples = 2;
 };
 
 class MeshComputeWeightsOperation final : public MeshOperationTemplated<MeshComputeWeightsOperationParams, MeshComputeWeightsOperationResult>
