@@ -460,7 +460,7 @@ ClosestPolygonResult PolygonMesh::QueryRayHit(const Ray& ray) const
 			glm::vec2 barycenter(0.0f);
 			float dist = (std::numeric_limits<float>::max)();
 
-			if (glm::intersectRayTriangle(ray._origin, ray._direction, pointA, pointB, pointC, barycenter, dist))
+			if (glm::intersectRayTriangle(ray._origin, ray._direction, pointA, pointB, pointC, barycenter, dist) && dist < closestT)
 			{
 				closestFaceHandle = static_cast<FaceHandle>(*it);
 				closestT = dist;
@@ -740,10 +740,9 @@ void PolygonMesh::UpdateRenderProxy()
 			// Whenever we have a selected face we add the indices of the triangle to be rendered.
 			if (isSelected)
 			{
-				for (auto vertexIt = triMesh.cfv_begin(static_cast<FaceHandle>(*faceIt)); vertexIt != triMesh.cfv_end(static_cast<FaceHandle>(*faceIt)); ++vertexIt)
-				{
-					polygonsWireframeIndices.push_back(vertexIt->idx());
-				}
+				polygonsWireframeIndices.push_back(polygonsWireframeVertices.size() - 3);
+				polygonsWireframeIndices.push_back(polygonsWireframeVertices.size() - 2);
+				polygonsWireframeIndices.push_back(polygonsWireframeVertices.size() - 1);
 			}
 		}
 

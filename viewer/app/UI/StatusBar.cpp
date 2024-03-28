@@ -245,7 +245,11 @@ void StatusBar::LayoutSelectionTool(const SelectionType selectionType, const cha
 	if (ImGui::Selectable(label, _model->_activeSelectionType == selectionType, 0, size))
 	{
 		_model->_activeSelectionType = selectionType;
-		_model->_selectionTypeChangedDelegate(selectionType);
+
+		if (_model->_selectionTypeChangedDelegate)
+		{
+			_model->_selectionTypeChangedDelegate(selectionType);
+		}
 	}
 	ImGui::PopStyleVar();
 

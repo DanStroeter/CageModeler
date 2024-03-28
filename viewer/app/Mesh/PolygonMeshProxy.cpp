@@ -168,7 +168,7 @@ void PolygonMeshRenderProxy::Render(const VkCommandBuffer commandBuffer,
 				dynamicBufferOffsets);
 		}
 
-		renderCommandScheduler->ExecuteCommand<DrawIndexedCommand>(commandBuffer, _numIndices, 0);
+		renderCommandScheduler->ExecuteCommand<DrawIndexedCommand>(commandBuffer, _numWireframeIndices, 0);
 	}
 }
 

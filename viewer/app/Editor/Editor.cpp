@@ -425,10 +425,7 @@ void Editor::UpdateMeshSelection(const ViewInfo& viewInfo)
 		}
 		else
 		{
-			if (_highlightedEdgeHandle.is_valid())
-			{
-				selection.Unhighlight(_highlightedPolygonHandle);
-			}
+			selection.UnhighlightAll();
 
 			_highlightedPolygonHandle = FaceHandle();
 		}
@@ -708,7 +705,8 @@ void Editor::OnMouseClickPressed(const InputActionParams& actionParams)
 		return;
 	}
 
-	const auto hasActiveSelection = _highlightedVertexHandle.is_valid() || _highlightedEdgeHandle.is_valid() || _isGizmoHighlighted || _isDragging;
+	const auto hasValidHighlight = _highlightedVertexHandle.is_valid() || _highlightedEdgeHandle.is_valid() || _highlightedPolygonHandle.is_valid();
+	const auto hasActiveSelection = hasValidHighlight || _isGizmoHighlighted || _isDragging;
 	const auto modifierKeys = _inputSubsystem->GetKeyModifiers();
 	const auto hasModifierKeys = IsSet(modifierKeys, SDL_KMOD_LSHIFT) || IsSet(modifierKeys, SDL_KMOD_LALT) || IsSet(modifierKeys, SDL_KMOD_LGUI);
 
@@ -906,6 +904,31 @@ void Editor::OnClickedSelection(const InputActionParams& actionParams)
 			if (hit.has_value())
 			{
 				const auto handles = std::span(&hit->_edgeHandle, 1);
+
+				if (IsSet(actionParams._modifierKeys, SDL_KMOD_LALT))
+				{
+					selection.Deselect(handles);
+				}
+				else if (IsSet(actionParams._modifierKeys, SDL_KMOD_LSHIFT))
+				{
+					selection.Select(handles);
+				}
+				else
+				{
+					selection.DeselectAll();
+					selection.Select(handles);
+				}
+			}
+		}
+		else if (_statusBar->GetActiveSelectionType() == SelectionType::Polygon)
+		{
+			auto selection = deformedCageMesh->GetSelection<SelectionType::Polygon>();
+			const auto worldRay = viewInfo.DeprojectScreenToWorldRay(mousePosition);
+			auto hit = deformedCageMesh->QueryRayHit(worldRay);
+
+			if (hit._polyHandle.is_valid())
+			{
+				const auto handles = std::span(&hit._polyHandle, 1);
 
 				if (IsSet(actionParams._modifierKeys, SDL_KMOD_LALT))
 				{
