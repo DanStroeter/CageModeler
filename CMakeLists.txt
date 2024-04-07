@@ -26,6 +26,11 @@ if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
 endif()
 
+# When compiling with gcc we need an extra flag to avoid an issue with intrisics "error: third argument to ‘__builtin_prefetch’ must be a constant".
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    add_compile_definitions(EIGEN_DONT_VECTORIZE)
+endif()
+
 # Eigen3
 find_package(Eigen3 REQUIRED)
 
@@ -41,6 +46,8 @@ if (UNIX)
     check_language(CUDA)
 
     if (CMAKE_CUDA_COMPILER)
+        message("Found CUDA compiler and adding Somgliana.")
+
         if (NOT DEFINED CMAKE_CUDA_STANDARD)
             set(CMAKE_CUDA_STANDARD 11)
             set(CMAKE_CUDA_STANDARD_REQUIRED ON)
