@@ -20,6 +20,7 @@ struct DeformedMeshExportOperationParams
 	DeformedMeshExportOperationParams(MeshComputeDeformationOperationResult deformationData,
 		const DeformationType deformationType,
 		const LBC::DataSetup::WeightingScheme LBCScheme,
+		const std::optional<std::size_t> frameIndex,
 #if WITH_SOMIGLIANA
 		const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer,
 #endif
@@ -29,6 +30,7 @@ struct DeformedMeshExportOperationParams
 		: _deformationData(std::move(deformationData))
 		, _deformationType(deformationType)
 		, _LBCScheme(LBCScheme)
+		, _frameIndex(frameIndex)
 #if WITH_SOMIGLIANA
 		, _somiglianaDeformer(somiglianaDeformer)
 #endif
@@ -40,6 +42,7 @@ struct DeformedMeshExportOperationParams
 	MeshComputeDeformationOperationResult _deformationData;
 	DeformationType _deformationType;
 	LBC::DataSetup::WeightingScheme _LBCScheme;
+	std::optional<std::size_t> _frameIndex;
 #if WITH_SOMIGLIANA
 	std::shared_ptr<green::somig_deformer_3> _somiglianaDeformer;
 #endif
@@ -62,6 +65,9 @@ public:
 	}
 
 	void Execute();
+
+private:
+	void ExportSample(const std::size_t frameIndex, const std::string_view deformationTypeVariant);
 };
 
 struct MeshExportOperationParams

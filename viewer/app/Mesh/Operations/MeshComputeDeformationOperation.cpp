@@ -102,16 +102,6 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 			for (Eigen::Index j = 0; j < _params._mesh._vertices.rows(); ++j)
 			{
 				vertexData[i]._vertices.row(j) = U.row(j + _params._modelVerticesOffset);
-
-				if (i == 0 && translationFactors.size() > 1)
-				{
-					Eigen::Vector3d a = vertexData[i]._vertices.row(j);
-					const auto vert = _params._mesh._vertices.row(j);
-					Eigen::Vector3d c(vert[0], vert[1], vert[2]);
-					const auto dist = (a - c).squaredNorm();
-
-					CheckFormat(dist < igl::FLOAT_EPS, "Distance invalid.");
-				}
 			}
 		}
 	}

@@ -4,13 +4,12 @@
 #include <Rendering/Core/DescriptorSetLayout.h>
 
 #include <span>
-#include <volk.h>
 
 /// A wrapper around the VkDescriptorPool handle that exposes useful functionality and abstracts away some of the complexity.
 class DescriptorPool : public RenderResource<DescriptorPool>
 {
 public:
-	DescriptorPool(const RenderResourceRef<Device>& device);
+	explicit DescriptorPool(const RenderResourceRef<Device>& device);
 
 	void AddRef()
 	{

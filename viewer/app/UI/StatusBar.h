@@ -67,6 +67,11 @@ public:
 		_model->_frameIndex = frameIndex;
 	}
 
+	uint32_t GetCurrentFrameIndex() const
+	{
+		return _model->_frameIndex;
+	}
+
 private:
 	void LayoutSelectionTool(const SelectionType selectionType,
 		const char* label,
