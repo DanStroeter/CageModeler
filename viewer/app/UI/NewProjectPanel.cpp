@@ -99,7 +99,7 @@ void NewProjectPanel::Layout()
 					ImGui::TableSetColumnIndex(0);
 					ImGui::TextEx("LBC Weighting Scheme");
 					ImGui::SameLine();
-					UIHelpers::HelpMarker("The weighting scheme for LBC.");
+					UIHelpers::HelpMarker("The weighting scheme for LBC, which controls the level of locality.");
 					ImGui::SameLine();
 
 					ImGui::TableSetColumnIndex(1);

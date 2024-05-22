@@ -18,7 +18,52 @@ MeshTransformation::MeshTransformation(const ViewInfo& viewInfo,
 {
 	const auto axis = glm::normalize(glm::vec3(_newMatrix[static_cast<glm::mat4::length_type>(_transformationAxis)]));
 
-	const auto projectPoints = [this, &axis](const std::vector<VertexHandle>& selectedVertices)
+	if (transformationType == TransformationType::Rotate)
+	{
+		// Check the dot product so if we are nearly parallel to the rotation plane we rotate based on the distance
+		// from a line that originates at the mouse cursor position in screen space and is vertical.
+		_viewDotRotationAxis = glm::dot(axis, -glm::vec3(viewInfo._inverseView[1]));
+		_isRotationParallel = ((1.0f - std::abs(_viewDotRotationAxis)) < 0.025f);
+
+		const auto projectPoints = [this](const std::vector<VertexHandle>& selectedVertices)
+		{
+			// Project all points onto the normal plane.
+			_initPoints.reserve(selectedVertices.size());
+
+			for (std::size_t i = 0; i < selectedVertices.size(); ++i)
+			{
+				_initPoints[i] = _cage->GetPosition(selectedVertices[i]);
+			}
+		};
+
+		if (selectionType == SelectionType::Vertex)
+		{
+			const auto selection = _cage->GetSelection<SelectionType::Vertex>();
+			const auto selectedVertices = selection.GetSelection();
+
+			projectPoints(selectedVertices);
+		}
+		else if (selectionType == SelectionType::Edge)
+		{
+			const auto selection = _cage->GetSelection<SelectionType::Edge>();
+			const auto selectedVertices = selection.GetVertexSelection();
+
+			projectPoints(selectedVertices);
+		}
+		else if (selectionType == SelectionType::Polygon)
+		{
+			const auto selection = _cage->GetSelection<SelectionType::Polygon>();
+			const auto selectedVertices = selection.GetVertexSelection();
+
+			projectPoints(selectedVertices);
+		}
+
+		const auto projPoint = ProjectPointOntoRay(viewInfo, currentMousePos);
+		_initMouseDist = glm::distance(projPoint, glm::vec3(_matrix[3]));
+	}
+	else if (transformationType == TransformationType::Scale)
+	{
+		const auto projectPoints = [this, &axis](const std::vector<VertexHandle>& selectedVertices)
 		{
 			// Project all points onto the normal plane.
 			_initPoints.reserve(selectedVertices.size());
@@ -31,24 +76,32 @@ MeshTransformation::MeshTransformation(const ViewInfo& viewInfo,
 			}
 		};
 
-	if (selectionType == SelectionType::Vertex)
-	{
-		const auto selection = _cage->GetSelection<SelectionType::Vertex>();
-		const auto selectedVertices = selection.GetSelection();
+		if (selectionType == SelectionType::Vertex)
+		{
+			const auto selection = _cage->GetSelection<SelectionType::Vertex>();
+			const auto selectedVertices = selection.GetSelection();
 
-		projectPoints(selectedVertices);
+			projectPoints(selectedVertices);
+		}
+		else if (selectionType == SelectionType::Edge)
+		{
+			const auto selection = _cage->GetSelection<SelectionType::Edge>();
+			const auto selectedVertices = selection.GetVertexSelection();
+
+			projectPoints(selectedVertices);
+		}
+		else if (selectionType == SelectionType::Polygon)
+		{
+			const auto selection = _cage->GetSelection<SelectionType::Polygon>();
+			const auto selectedVertices = selection.GetVertexSelection();
+
+			projectPoints(selectedVertices);
+		}
+
+		const auto projMousePos = ProjectPointOntoRay(viewInfo, currentMousePos);
+		_initMouseRayProjPoint = GeometryUtils::ProjectPointOnPlane(projMousePos, _matrix[3], axis);
+		_initMouseRayDistSq = glm::length2(_initMouseRayProjPoint - projMousePos);
 	}
-	else if (selectionType == SelectionType::Edge)
-	{
-		const auto selection = _cage->GetSelection<SelectionType::Edge>();
-		const auto selectedVertices = selection.GetVertexSelection();
-
-		projectPoints(selectedVertices);
-	}
-
-	const auto projMousePos = ProjectPointOntoRay(viewInfo, currentMousePos);
-	_initMouseRayProjPoint = GeometryUtils::ProjectPointOnPlane(projMousePos, _matrix[3], axis);
-	_initMouseRayDistSq = glm::length2(_initMouseRayProjPoint - projMousePos);
 }
 
 void MeshTransformation::Transform(const ViewInfo& viewInfo,
@@ -103,38 +156,60 @@ void MeshTransformation::Transform(const ViewInfo& viewInfo,
 	}
 	else if (_transformationType == TransformationType::Rotate)
 	{
+		// Get the rotation axis from the gizmo matrix.
+		const auto rotationAxis = _matrix[static_cast<uint8_t>(_transformationAxis)];
+		const auto projPoint = ProjectPointOntoRay(viewInfo, currentMousePos);
+		const auto currentMouseDist = glm::distance(projPoint, glm::vec3(_matrix[3]));
+
+		const auto projectPoints = [this, &rotationAxis, currentMouseDist](const std::vector<VertexHandle>& selectedVertices)
+		{
+			const auto rotationOrigin = _matrix[3];
+			const auto rotationAngle = 40.0f * (currentMouseDist - _initMouseDist);
+			const auto rotMat = glm::rotate(glm::mat4(1.0f), glm::radians(rotationAngle), glm::vec3(rotationAxis));
+
+			// Project all points onto the normal plane.
+			std::unordered_map<VertexHandle, glm::vec3> newPositions;
+			newPositions.reserve(_initPoints.size());
+
+			std::size_t index = 0;
+			for (const auto vertexHandle : selectedVertices)
+			{
+				const auto rotatedPosition = rotMat * glm::vec4(_initPoints[index] - glm::vec3(rotationOrigin), 1.0f);
+
+				newPositions.insert(std::make_pair(vertexHandle, glm::vec3(rotationOrigin + rotatedPosition)));
+
+				++index;
+			}
+
+			return newPositions;
+		};
+
 		if (_selectionType == SelectionType::Vertex)
 		{
+			auto selection = _cage->GetSelection<SelectionType::Vertex>();
+			const auto selectedVertices = selection.GetSelection();
+			const auto newPositions = projectPoints(selectedVertices);
 
+			selection.SetPositions(newPositions);
+		}
+		else if (_selectionType == SelectionType::Edge)
+		{
+			auto selection = _cage->GetSelection<SelectionType::Edge>();
+			const auto selectedVertices = selection.GetVertexSelection();
+			const auto newPositions = projectPoints(selectedVertices);
+
+			selection.SetPositions(newPositions);
+		}
+		else if (_selectionType == SelectionType::Polygon)
+		{
+			auto selection = _cage->GetSelection<SelectionType::Polygon>();
+			const auto selectedVertices = selection.GetVertexSelection();
+			const auto newPositions = projectPoints(selectedVertices);
+
+			selection.SetPositions(newPositions);
 		}
 
-		// const auto axis = glm::normalize(glm::vec3(_matrix[static_cast<glm::mat4::length_type>(_transformationAxis)]));
-		//
-		// // Get the rotation axis from the gizmo matrix.
-		// glm::vec3 rotationAxis;
-		// if (_transformationAxis == TransformationAxis::X)
-		// {
-		// 	rotationAxis = _matrix[0];
-		// }
-		// else if (_transformationAxis == TransformationAxis::Y)
-		// {
-		// 	rotationAxis = _matrix[1];
-		// }
-		// else if (_transformationAxis == TransformationAxis::Z)
-		// {
-		// 	rotationAxis = _matrix[2];
-		// }
-		//
-		// // Compute the intersection of the mouse cursor with the plane that is determined by the main axis.
-		// const auto intersectionPt = GeometryUtils::RayPlaneIntersection(currentMouseRay, _matrix[3], rotationAxis);
-		//
-		// if (!intersectionPt.has_value())
-		// {
-		// 	return;
-		// }
-
-		// Get the angle between the start and current points on the plane and rotate the gizmo by that much.
-
+		_cage->AddProxyDirtyFlag(MeshProxyDirtyFlags::Position);
 	}
 	else if (_transformationType == TransformationType::Scale)
 	{

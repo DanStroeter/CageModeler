@@ -63,5 +63,10 @@ private:
 	std::vector<glm::vec3> _initPoints;
 	std::vector<glm::vec3> _initProjectedPoints;
 	glm::vec3 _initMouseRayProjPoint { 0.0f };
-	float _initMouseRayDistSq { 0.0f };
+
+	float _initMouseRayDistSq = 0.0f;
+	float _viewDotRotationAxis = 0.0f;
+	float _initMouseDist = 0.0f;
+
+	bool _isRotationParallel = false;
 };

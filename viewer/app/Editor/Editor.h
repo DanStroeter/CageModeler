@@ -78,7 +78,13 @@ private:
 	void UpdateMeshSelection(const ViewInfo& viewInfo);
 
 	/**
-	 * Exports the deformed mesh(es) as an .OBJ file.
+	 * Exports the current frame of the deformed mesh as an .OBJ file.
+	 * @param filepath A filepath for the output .OBJ file.
+	 */
+	void ExportCurrentDeformedMesh(std::filesystem::path filepath) const;
+
+	/**
+	 * Exports all deformed meshes as an .OBJ file.
 	 * @param filepath A filepath for the output .OBJ file.
 	 */
 	void ExportDeformedMeshes(std::filesystem::path filepath) const;

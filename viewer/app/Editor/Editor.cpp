@@ -174,6 +174,15 @@ void Editor::RecordUI()
 			{
 				if (ImGui::BeginMenu("Export"))
 				{
+					if (ImGui::MenuItem("Current Frame Mesh...", nullptr))
+					{
+						const auto filepath = UIHelpers::PresentExportFilePopup({ { "Mesh (.obj)", "obj" } }, "Untitled.obj");
+
+						if (filepath.has_value())
+						{
+							ExportCurrentDeformedMesh(filepath.value());
+						}
+					}
 
 					if (ImGui::MenuItem("Meshes...", nullptr))
 					{
@@ -1014,6 +1023,8 @@ void Editor::OnSelectionTypeChanged(const SelectionType selectionType)
 	{
 		deformedCageMesh->SetWireframeRenderMode(WireframeRenderMode::None);
 	}
+
+	ResetGizmoPositionFromSelection(viewInfo);
 }
 
 void Editor::OnSequencerFrameIndexChanged(const uint32_t newFrameIndex)
@@ -1120,14 +1131,36 @@ void Editor::UpdateDeformedMeshPositionsFromDeformationData(const std::optional<
 	_statusBar->SetCurrentFrame(unpackedFrameIndex);
 }
 
-void Editor::ExportDeformedMeshes(std::filesystem::path filepath) const
+void Editor::ExportCurrentDeformedMesh(std::filesystem::path filepath) const
 {
-	CheckFormat(_isComputingDeformationData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
+	CheckFormat(!_isComputingDeformationData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
+
+	const auto deformationData = _deformationData.LockRead();
 
 	_meshOperationSystem->ExecuteOperation<DeformedMeshExportOperation>(
-		*_deformationData.LockRead(),
+		*deformationData,
 		_projectData->_deformationType,
 		_projectData->_LBCWeightingScheme,
+		_statusBar->GetCurrentFrameIndex(),
+#if WITH_SOMIGLIANA
+		_projectData->_somiglianaDeformer,
+#endif
+		_projectData->_mesh._faces,
+		std::move(filepath),
+		1.0f / _projectData->_scalingFactor);
+}
+
+void Editor::ExportDeformedMeshes(std::filesystem::path filepath) const
+{
+	CheckFormat(!_isComputingDeformationData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
+
+	const auto deformationData = _deformationData.LockRead();
+
+	_meshOperationSystem->ExecuteOperation<DeformedMeshExportOperation>(
+		*deformationData,
+		_projectData->_deformationType,
+		_projectData->_LBCWeightingScheme,
+		std::optional<std::size_t>(),
 #if WITH_SOMIGLIANA
 		_projectData->_somiglianaDeformer,
 #endif

@@ -169,6 +169,21 @@ public:
 	}
 
 	/**
+	 * Sets the positions of the currently selected vertices.
+	 * @param positions The new positions.
+	 */
+	void SetPositions(const std::unordered_map<VertexHandle, glm::vec3>& positions)
+	{
+		// Update the points by the translation vector.
+		for (const auto& pair : positions)
+		{
+			_mesh.get().point(pair.first) = _invModelMatrix * glm::vec4(positions.find(pair.first)->second, 1.0f);
+		}
+
+		UpdateNormals();
+	}
+
+	/**
 	 * Returns the current selection of the handle type.
 	 * @return All selected elements.
 	 */
@@ -280,21 +295,6 @@ public:
 	}
 
 	/**
-	 * Sets the positions of the currently selected vertices.
-	 * @param positions The new positions.
-	 */
-	void SetPositions(const std::unordered_map<VertexHandle, glm::vec3>& positions)
-	{
-		// Update the points by the translation vector.
-		for (const auto& pair : positions)
-		{
-			_mesh.get().point(pair.first) = _invModelMatrix * glm::vec4(positions.find(pair.first)->second, 1.0f);
-		}
-
-		UpdateNormals();
-	}
-
-	/**
 	 * Translates the currently selected vertices.
 	 * @param translation The translation vector.
 	 */
@@ -310,6 +310,30 @@ public:
 					point += translation;
 
 					_mesh.get().point(handle) = _invModelMatrix * glm::vec4(point, 1.0f);
+				}
+			});
+
+		UpdateNormals();
+	}
+
+	/**
+	 * Rotates the currently selected vertices.
+	 * @param translation The translation vector.
+	 */
+	void Rotate(const glm::vec3& rotationOrigin, const glm::vec3& rotationAxis, const float rotationAngle)
+	{
+		// Create the rotation matrix.
+		const auto rotMat = glm::rotate(glm::mat4(1.0f), glm::radians(rotationAngle), rotationAxis);
+
+		// Update the points by the translation vector.
+		SelectionHelpers<VertexHandle>::Iterate(_mesh.get(),
+			[this, &rotMat, &rotationOrigin](const VertexHandle handle)
+			{
+				if (_mesh.get().status(handle).selected())
+				{
+					const auto point = rotMat * (_modelMatrix * glm::vec4(_mesh.get().point(handle), 1.0f) - glm::vec4(rotationOrigin, 1.0f));
+
+					_mesh.get().point(handle) = _invModelMatrix * (point + glm::vec4(rotationOrigin, 1.0f));
 				}
 			});
 
