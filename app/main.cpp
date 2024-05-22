@@ -49,7 +49,7 @@ int main(int argc, char** argv)
 	desc.add_options()
 		("help,h", "Help screen")
 		("verbose,v", boost::program_options::value<unsigned int>(&verbosity), "Handle verbosity (0: quiet, 1: verbose, default: 1)")
-		("model,m", boost::program_options::value<std::string>(&inputFile), "Specifies the input *.btet file of the deformation model")
+		("model,m", boost::program_options::value<std::string>(&inputFile), "Specifies the input *.msh or *.obj file of the to-be-deformed model")
 		("cage,c", boost::program_options::value<std::string>(&cageFile), "Specifies the cage to use (Halfface *.hf file for subspaces and obj for others)")
 		("cage-deformed,cd", boost::program_options::value<std::string>(&cageDeformedFile), "Specifies a derformed cage file (instead of a parametrization)")
 		("fbx", boost::program_options::value<std::string>(&fbxFile), "Specifies the .fbx file to be loaded")
@@ -319,7 +319,7 @@ int main(int argc, char** argv)
 	}
 
 	auto const suffix_pos = outMeshFile.find(".");
-	const bool write_msh = outMeshFile.substr(suffix_pos + 1, outMeshFile.size()).compare("btet") == 0;
+	const bool write_msh = outMeshFile.substr(suffix_pos + 1, outMeshFile.size()).compare("msh") == 0;
 
 	Eigen::MatrixXd normals;
 	std::vector<double> psi_tri;
@@ -738,6 +738,7 @@ int main(int argc, char** argv)
 					std::cout << "Writing " << prefix + middle + variant_string + std::string(".obj") << "\n";
 				}
 				igl::writeOBJ(prefix + middle + variant_string + std::string(".obj"), U_model, T_model);
+				igl::writeOBJ(prefix + middle + variant_string + std::string("cage.obj"), C_deformed, CF);
 			}
 		}
 	}

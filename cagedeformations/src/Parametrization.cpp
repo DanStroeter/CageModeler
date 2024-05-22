@@ -6,7 +6,7 @@ std::vector<float> createRegularSampling(int numSamples, float minValue /*= 0.f*
 {
 	if (numSamples == 1)
 	{
-		return { 1 };
+		return { maxValue };
 	}
 
 	std::vector<float> samples(numSamples);
@@ -31,6 +31,8 @@ Parametrization readParams(std::string paramFile)
 	in >> params.maxFactor;
 
 	unsigned int numTransformations = 0;
+
+	in >> numTransformations;
 	
 	for (unsigned int i = 0; i < numTransformations; ++i)
 	{
