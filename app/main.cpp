@@ -192,7 +192,12 @@ int main(int argc, char** argv)
 #ifdef WITH_SOMIGLIANA
 	if (somigliana || MVC)
 	{
-		if (!somig_deformer->load_mesh(inputFile))
+		if (inputFile.substr(inputFile.size() - 4, 4).compare(".msh") == 0)
+		{
+			somig_deformer->V_ = V_model.transpose();
+			somig_deformer->F_ = T_model;
+		} 
+		else if (!somig_deformer->load_mesh(inputFile))
 		{
 			std::cerr << "Failed to load mesh file\n";
 			return 1;
@@ -719,6 +724,12 @@ int main(int argc, char** argv)
 
 		if (write_msh)
 		{
+#ifdef WITH_SOMIGLIANA
+		if (somigliana || MVC)
+		{
+			U_model = somig_deformer->V_.transpose();
+		}
+#endif
 			igl::writeMSH(prefix + middle + variant_string + std::string(".msh"), U_model, Eigen::MatrixXi(), T_model, Eigen::MatrixXi(), tet_tags, std::vector<std::string>(),
 				std::vector<Eigen::MatrixXd>(), std::vector<std::string>(), std::vector<Eigen::MatrixXd>(), std::vector<Eigen::MatrixXd>());
 		}
@@ -738,7 +749,6 @@ int main(int argc, char** argv)
 					std::cout << "Writing " << prefix + middle + variant_string + std::string(".obj") << "\n";
 				}
 				igl::writeOBJ(prefix + middle + variant_string + std::string(".obj"), U_model, T_model);
-				igl::writeOBJ(prefix + middle + variant_string + std::string("cage.obj"), C_deformed, CF);
 			}
 		}
 	}
