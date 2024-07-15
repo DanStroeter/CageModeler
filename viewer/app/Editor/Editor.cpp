@@ -470,6 +470,13 @@ void Editor::OnProjectSettingsApplied()
 
 void Editor::OnNewProjectCreated()
 {
+	if (_projectModel->CheckMissingFiles())
+	{
+		_statusBar->SetError("Unable to load all files, check if some of them are missing.");
+
+		return;
+	}
+
 	_threadPool->Submit([this]()
 	{
 		_isComputingWeightsData.store(true, std::memory_order_seq_cst);
