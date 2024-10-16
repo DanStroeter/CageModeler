@@ -11,6 +11,8 @@
 #include "green_core.h"
 #include "trig_quad_rule.h"
 
+#include "spdlog/spdlog.h"
+
 namespace green {
 
 typedef CGAL::Exact_predicates_inexact_constructions_kernel Kernel;
