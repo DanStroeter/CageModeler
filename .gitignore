@@ -36,3 +36,4 @@ build/
 
 # IDE specific
 .idea/
+.vscode/
