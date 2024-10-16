@@ -1,26 +1,53 @@
 cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
-
-project(green CXX CUDA Fortran)
+if(SOMIG_WITH_CUDA)
+	project(green CXX CUDA) # Fortran
+else()
+	project(green CXX) # CUDA Fortran
+endif(SOMIG_WITH_CUDA)
 
 find_package(CGAL REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(LAPACK REQUIRED)
 
-add_library(cuda_green STATIC src/cuda_impl.cu)
+set(green_core_HEADERS 
+	include/somigliana/green_core.h 
+	include/somigliana/green_core.inl
+	)
+set(green_core_SOURCES 
+	src/green_core.cc
+	)
 
-set_target_properties(cuda_green PROPERTIES
-	CUDA_SEPARABLE_COMPILATION ON
-	CUDA_RESOLVE_DEVICE_SYMBOLS ON)
+if(SOMIG_WITH_CUDA)
+	list(APPEND green_core_SOURCES src/green_core.cu)
+endif(SOMIG_WITH_CUDA)	
+	
+add_library(green_core STATIC ${green_core_SOURCES} ${green_core_HEADERS})  
 
-find_package(CUDAToolkit REQUIRED)
+if(SOMIG_WITH_CUDA)
+	set_target_properties(green_core PROPERTIES
+		CUDA_SEPARABLE_COMPILATION ON
+		CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 
-set_target_properties(cuda_green PROPERTIES CUDA_ARCHITECTURES "50;72")
+	target_compile_definitions(green_core PUBLIC SOMIG_WITH_CUDA)
+	# CUDA runtime libs
+	find_package(CUDAToolkit REQUIRED)
 
-target_link_libraries(cuda_green
-	CUDA::cudart
-	Eigen3::Eigen
-	CGAL::CGAL
-)
+	set_target_properties(green_core PROPERTIES CUDA_ARCHITECTURES "50;72")
+
+	target_link_libraries(green_core
+		CUDA::cudart
+		Eigen3::Eigen
+		CGAL::CGAL
+	)
+
+else()
+
+	target_link_libraries(green_core
+		Eigen3::Eigen
+		CGAL::CGAL
+	)
+endif()
+
 
 set(${PROJECT_NAME}_HEADERS
 	include/somigliana/catch.hpp
@@ -35,9 +62,9 @@ set(${PROJECT_NAME}_HEADERS
 	include/somigliana/types.h
 	include/somigliana/trig_quad_rule.h
 	include/somigliana/helper_cuda.h
-	include/somigliana/cuda_impl.h
 	include/somigliana/somigliana_2d.h
 	include/somigliana/somigliana_3d.h
+	include/somigliana/green_core.h
 )
 
 set(${PROJECT_NAME}_SOURCES
@@ -45,7 +72,7 @@ set(${PROJECT_NAME}_SOURCES
 	src/quadrule.cpp
 	src/somigliana_2d.cc
 	src/somigliana_3d.cc
-	src/tet_fem.f90
+	#src/tet_fem.f90
 	src/trig_quad_rule.cc
 )
 
@@ -56,20 +83,38 @@ target_link_libraries(${PROJECT_NAME}
 	igl::core
 	${Boost_LIBRARIES}
 	${LAPACK_LIBRARIES}
-	cuda_green
+	green_core
 	spdlog::spdlog_header_only
 )
 
-target_include_directories(${PROJECT_NAME}
-	PUBLIC
-		${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+if(SOMIG_WITH_CUDA)
 
-target_include_directories(
-	${PROJECT_NAME}
-	PUBLIC
-		$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-		$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-	PRIVATE
-		${CMAKE_CURRENT_SOURCE_DIR}
-		${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
-)
+	target_include_directories(${PROJECT_NAME}
+		PUBLIC
+			${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+
+	target_include_directories(
+		${PROJECT_NAME}
+		PUBLIC
+			$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+			$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+		PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR}
+			${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+	)
+
+else()
+	target_include_directories(
+		${PROJECT_NAME}
+		PUBLIC
+			$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+			$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+		PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR}
+	)
+endif(SOMIG_WITH_CUDA)
+
+
+if(SOMIG_WITH_CUDA)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC SOMIG_WITH_CUDA)
+endif()

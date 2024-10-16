@@ -5,12 +5,7 @@
 CageModeler utilizes CMake for project file generation, vcpkg for managing external dependencies, and CMake presets 
 to streamline configurations across major platforms - Windows, Linux, and macOS. For Linux, ensure the presence of
 `zip` for vcpkg functionality and `libomp-dev` as an external dependency. On macOS, `libomp` can be installed via 
-Homebrew. Moreover, when compiling on Linux with CUDA installed, the following libraries are required for compiling Somigliana:
-
-- `gfortran` (Fortran compiler)
-- `libcgal-dev` (CGAL)
-- `libblas3-dev` (BLAS)
-- `liblapack-dev` (LAPACK)
+Homebrew. 
 
 Set the environment variable `CUDA_HOME` to point to the CUDA installation directory (e.g. `/usr/local/cuda`).
 Ensure that `LD_LIBRARY_PATH` contains `$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64` and `PATH` includes `$CUDA_HOME/bin`
