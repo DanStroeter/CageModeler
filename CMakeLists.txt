@@ -24,6 +24,10 @@ endif()
 # Compilation using MSVC
 if (MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /bigobj")
+        
+    # Force MSVC to use utf-8
+    add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
+    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 endif()
 
 # When compiling with gcc we need an extra flag to avoid an issue with intrisics "error: third argument to ‘__builtin_prefetch’ must be a constant".
@@ -39,10 +43,11 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/external/LBC" LBCLib)
 add_subdirectory("${CMAKE_SOURCE_DIR}/external/libigl" libIGL)
 add_subdirectory("${CMAKE_SOURCE_DIR}/external/OpenFBX" OpenFBXLib)
 
+option(SOMIG_WITH_CUDA "" OFF)
+
 # On Linux we want to enable Somigliana only if we have CUDA.
 if (UNIX)
     include(CheckLanguage)
-
     check_language(CUDA)
 
     if (CMAKE_CUDA_COMPILER)
@@ -54,15 +59,16 @@ if (UNIX)
         endif()
 
         enable_language(CUDA)
-
-        add_compile_definitions(WITH_SOMIGLIANA)
-        set(ENABLE_SOMIGLIANA true)
-
-        add_subdirectory("${CMAKE_SOURCE_DIR}/external/somigliana" SomiglianaLib)
+        option(SOMIG_WITH_CUDA "" ON)
     else()
         message("No CUDA compiler found.")
+
     endif()
 endif()
+
+add_compile_definitions(WITH_SOMIGLIANA)
+set(ENABLE_SOMIGLIANA true)
+add_subdirectory("${CMAKE_SOURCE_DIR}/external/somigliana" SomiglianaLib)
 
 # Include directories of the external dependencies.
 set(IGL_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/external/libigl/include")
