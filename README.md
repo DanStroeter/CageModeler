@@ -108,33 +108,25 @@ Handle the click event
       Reset the event status
 
 OnToolSelectionChanged
-Set the visibility of the gizmos based on the selected tool from the tool bar
+  Set the visibility of the gizmos based on the selected tool from the tool bar
 
 OnSelectionTypeChanged
-If the selection type change,  set the wireframe render mode to the deformedMesh according to the new type
+  If the selection type change,  set the wireframe render mode to the deformedMesh according to the new type
 
 OnSequencerFrameIndexChanged
-Update the deformed mesh according to the new data of frameIndex
+  Update the deformed mesh according to the new data of frameIndex
 
 OnSequencerNumFramesChanged
-Do the deformation operation when the maximum number of frames in the sequencer changes
+  Do the deformation operation when the maximum number of frames in the sequencer changes
 
 UpdateDeformedMeshPositionsFromDeformationData
-Be called to update the deformed mesh according to the deformation data extracted from frameIndex
+  Be called to update the deformed mesh according to the deformation data extracted from frameIndex
 
 ExportCurrentDeformedMesh
-Export deformed mesh data of current frame to the filename
+  Export deformed mesh data of current frame to the filename
 
 ExportDeformedMeshes
-Export all deformed mesh data to the filename
-
-ExportDeformedCage
-ExportInfluenceColorMap
-
-CreateProject
-ComputeCageWeights
-ComputeDeformedMesh
-Return corresponding point from the parameters
+  Export all deformed mesh data to the filename
 
 ResetGizmoPositionFromSelection
-get the current vertex selection from different selection type (vertex/edge/polygon) and calculate its average position, then apply the average position to the gizmo to update the position of gizmo
+  Get the current vertex selection from different selection type (vertex/edge/polygon) and calculate its average position, then apply the average position to the gizmo to update the position of gizmo
