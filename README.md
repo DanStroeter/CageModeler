@@ -1,22 +1,41 @@
 # CageModeler
 
+CageModeler enables the deformation of meshes by cage-based deformation.
+This tool has been developed for a recent Eurographics [state of the art report](https://onlinelibrary.wiley.com/doi/full/10.1111/cgf.15060) about cage-based deformation of 3D models.
+It unifies many of the most relevant approaches in cage-based deformation and offers a simple GUI for modeling. 
+Users can load models and corresponding cages. 
+The navigation enables to rotate (`LMB` + `Alt`), to drad view (`LMB` + `Shift`) and to zoom (`RMB`).
+For modeling by cage control, the user can select vertices, edges and faces of the cage.
+Whenever the user deforms the cage, the model is adjusted to the cage: 
+
+![Cage-based deformatio](https://hessenbox.tu-darmstadt.de/dl/fiDFC1aVrUS22fAuGU48ULsE/Cactus_QGC.gif)
+
 ## Getting started
 
 CageModeler utilizes CMake for project file generation, vcpkg for managing external dependencies, and CMake presets 
-to streamline configurations across major platforms - Windows, Linux, and macOS. For Linux, ensure the presence of
-`zip` for vcpkg functionality and `libomp-dev` as an external dependency. On macOS, `libomp` can be installed via 
-Homebrew. 
+to streamline configurations across major platforms - Windows, Linux, and macOS. For Linux, ensure the presence of the following packages:
+- `zip` (for vcpkg functionality)
+- `libomp-dev`
+- `libtool`
+- `autoconf`
+- `gfortran`
+- `libxrandr-dev`
+- `gtk-3.0`
 
 Set the environment variable `CUDA_HOME` to point to the CUDA installation directory (e.g. `/usr/local/cuda`).
 Ensure that `LD_LIBRARY_PATH` contains `$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64` and `PATH` includes `$CUDA_HOME/bin`
 for the CMake scripts to locate the CUDA installation.
+The build has been tested on Windows 10, Mac OS, and Ubuntu 24.04 LTS.
 
 ## Cloning
 
+As the models in this repository are maintained as lfs, ensure you have `git-lfs` installed before cloning.
+CageModeler will load models on startup.
 Cloning the repository necessitates a recursive fetch of all submodules:
 
 ```
-git clone git@github.com:DanStroeter/CageModeler.git
+git clone https://github.com/DanStroeter/CageModeler.git
+cd CageModeler
 git submodule update --init --recursive
 ```
 
