@@ -1,14 +1,14 @@
 # CageModeler
 
 CageModeler enables the deformation of meshes by cage-based deformation.
-This tool has been developed for a recent Eurographics [state of the art report](https://onlinelibrary.wiley.com/doi/full/10.1111/cgf.15060) about cage-based deformation of 3D models.
+This tool has been developed for a recent Eurographics [state of the art report](https://onlinelibrary.wiley.com/doi/full/10.1111/cgf.15060) about deformation of 3D models.
 It unifies many of the most relevant approaches in cage-based deformation and offers a simple GUI for modeling. 
-Users can load models and corresponding cages. 
-The navigation enables to rotate (`LMB` + `Alt`), to drad view (`LMB` + `Shift`) and to zoom (`RMB`).
+Users can load models with corresponding cages. 
+The navigation enables to rotate (`LMB` + `Alt`), drag (`LMB` + `Shift`) and zoom (`RMB`).
 For modeling by cage control, the user can select vertices, edges and faces of the cage.
 Whenever the user deforms the cage, the model is adjusted to the cage: 
 
-![Cage-based deformatio](https://hessenbox.tu-darmstadt.de/dl/fiDFC1aVrUS22fAuGU48ULsE/Cactus_QGC.gif)
+![Cage-based deformatio](media/Cactus_QGC.gif)
 
 ## Getting started
 
