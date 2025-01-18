@@ -1,6 +1,7 @@
 #include <UI/ProjectSettingsPanel.h>
 #include <UI/ProjectSettingsHelpers.h>
 #include <Mesh/Operations/MeshOperationSystem.h>
+#include <Mesh/Operations/MeshGenerateCageOperation.h>
 
 ProjectSettingsPanel::ProjectSettingsPanel(const std::shared_ptr<ProjectModelData>& model,
 										   const std::shared_ptr<MeshOperationSystem>& meshOperationSystem,
@@ -152,10 +153,30 @@ void ProjectSettingsPanel::Layout()
 					{ nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
 			}
 
+          const auto hasNoMesh1 = !_modifiedProjectModel._meshFilepath.has_value();
 			ImGui::TableNextRow();
 			{
 				ImGui::TableSetColumnIndex(0);
 				ImGui::TextEx("Cage File");
+
+        
+		//generate the cage
+		ImGui::BeginDisabled(hasNoMesh1 );
+		{
+			if (ImGui::Button("Generate Cage"))
+			{
+				/*
+				// Update the value of the actual model pointer.
+				*_model = _modifiedProjectModel;
+
+				_applyButtonPressed = true;*/
+
+			std::string generatedCagePath=GenerateCageFromMesh(_modifiedProjectModel._meshFilepath.value());
+				_modifiedProjectModel._cageFilepath=generatedCagePath;
+			}
+		}
+		ImGui::EndDisabled();
+
 
 				ImGui::TableSetColumnIndex(1);
 				ProjecSettingsHelpers::PushFileSelectionUI(_modifiedProjectModel._cageFilepath,
@@ -450,6 +471,30 @@ void ProjectSettingsPanel::Dismiss()
 
 		_isModalVisible = false;
 	}
+}
+
+
+std::string ProjectSettingsPanel::GenerateCageFromMesh(const std::string& meshfilePath){
+/*
+const auto meshOperationSystem = _meshOperationSystem.lock();
+		if (meshOperationSystem == nullptr)
+		{
+			return " ";
+		}
+			
+	std::string outputCageFile=meshfilePath+"_cage.obj";
+	 
+	meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(meshfilePath,outputCageFile);
+
+	if(outputCageFile.empty()){
+
+		//handle cage generatioin failed
+		ImGui::OpenPopup("Cage Generation Failed!");
+		return "";
+	}
+	return outputCageFile;
+
+*/
 }
 
 void ProjectSettingsPanel::SetModel(const std::shared_ptr<ProjectModelData>& model)
