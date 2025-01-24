@@ -580,7 +580,7 @@ int main(int argc, char** argv)
 
 	if (!lbc && !green && !QMVC && !QGC && !MLC && !MEC)
 	{
-		igl::normalize_row_sums(W, W);
+		W  = (W.array().colwise() / W.array().rowwise().sum()).eval();
 	}
 	Eigen::MatrixXd M;
 	// precompute linear blend skinning matrix

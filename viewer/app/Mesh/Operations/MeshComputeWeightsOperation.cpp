@@ -4,7 +4,6 @@
 #include <cagedeformations/MaximumEntropyCoordinates.h>
 #include <cagedeformations/MaximumLikelihoodCoordinates.h>
 #include <cagedeformations/WeightInterpolation.h>
-#include <igl/normalize_row_sums.h>
 #include <igl/boundary_conditions.h>
 #include <igl/harmonic.h>
 #include <igl/bbw.h>
@@ -187,7 +186,7 @@ MeshComputeWeightsOperation::ExecutionResult MeshComputeWeightsOperation::Execut
 #endif
 		)
 	{
-		igl::normalize_row_sums(weights, weights);
+		weights  = (weights.array().colwise() / weights.array().rowwise().sum()).eval();
 	}
 
 	LOG_DEBUG("Done computing weights.");
