@@ -13,7 +13,9 @@ Whenever the user deforms the cage, the model is adjusted to the cage:
 ## Getting started
 
 CageModeler utilizes CMake for project file generation, vcpkg for managing external dependencies, and CMake presets 
-to streamline configurations across major platforms - Windows, Linux, and macOS. For Linux, ensure the presence of the following packages:
+to streamline configurations across major platforms - Windows, Linux, and macOS.
+Compiling the source requires [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) installed. 
+For Linux, ensure the presence of the following packages:
 - `zip` (for vcpkg functionality)
 - `libomp-dev`
 - `libtool`
@@ -22,7 +24,7 @@ to streamline configurations across major platforms - Windows, Linux, and macOS.
 - `libxrandr-dev`
 - `gtk-3.0`
 
-Set the environment variable `CUDA_HOME` to point to the CUDA installation directory (e.g. `/usr/local/cuda`).
+If CUDA should be used for faster computations, set the environment variable `CUDA_HOME` to point to the CUDA installation directory (e.g. `/usr/local/cuda`).
 Ensure that `LD_LIBRARY_PATH` contains `$CUDA_HOME/lib64:$CUDA_HOME/extras/CUPTI/lib64` and `PATH` includes `$CUDA_HOME/bin`
 for the CMake scripts to locate the CUDA installation.
 The build has been tested on Windows 10, Mac OS, and Ubuntu 24.04 LTS.
