@@ -81,8 +81,8 @@ int main(int argc, char** argv)
 		("QMVC", "Use triquad mean value coordinates by Thiery et al.")
 		("QGC", "Use tri-quad green coordinates by Thiery et al.")
 		("MLC", "Use maximum likelihood coordinates by Chang et al.")
-		// ("MEC", boost::program_options::value<int>(&mec_flag), "Use maximum entropy coordinates by Hormann et al.")
-		("MEC", "Use maximum entropy coordinates by Hormann et al.")   // here we only use MEC-1 prior function
+		("MEC", boost::program_options::value<int>(&mec_flag), "Use maximum entropy coordinates by Hormann et al.(1: MEC-1 prior functions, 2: MEC-2 prior functions, default: 1)")
+		//("MEC", "Use maximum entropy coordinates by Hormann et al.")   // here we only use MEC-1 prior function
 #ifdef WITH_SOMIGLIANA
 		("somigliana", "Use somigliana coordinates by Chen et al.")
 #endif
