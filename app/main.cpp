@@ -13,6 +13,7 @@
 #include <cagedeformations/LoadMesh.h>
 #include <cagedeformations/WeightInterpolation.h>
 #include <cagedeformations/LoadFBX.h>
+#include <cagedeformations/somig.h>
 
 #include <boost/program_options.hpp>
 //#define VERBOSE
@@ -27,9 +28,6 @@
 #include <igl/readDMAT.h>
 #include <igl/Timer.h>
 #include <LBC/LBCSolver.h>
-#ifdef WITH_SOMIGLIANA
-#include <somigliana/somigliana_3d.h>
-#endif
 
 int main(int argc, char** argv)
 {
@@ -40,11 +38,8 @@ int main(int argc, char** argv)
 	float scaling_factor = 1.;
 	int mec_flag = 1;
 	std::unique_ptr<igl::Timer> timer;
-	#ifdef WITH_SOMIGLIANA
-	double somig_nu = 0, somig_bulging = 0, somig_blend_factor = 0;
-	int somig_bulging_type = SWEPT_VOLUME;
-	std::unique_ptr<green::somig_deformer_3> somig_deformer;
-	#endif
+	double somig_nu = 0;
+	std::unique_ptr<somig_deformer_3> somig_deformer;
 
 	desc.add_options()
 		("help,h", "Help screen")
@@ -63,18 +58,11 @@ int main(int argc, char** argv)
 		("time,t", "Measure runtime of coordinate calculation")
 		("iter", boost::program_options::value<int>(&numBBWSteps), "The number of iterations for calculating BBW or LBC")
 		("lbc-scheme", boost::program_options::value<int>(&lbc_scheme), "The weighting scheme for lbc")
-#ifdef WITH_SOMIGLIANA
 		("somig-nu", boost::program_options::value<double>(&somig_nu), "The material parameter nu for somigliana deformer")
-		("somig-bulging", boost::program_options::value<double>(&somig_bulging), "The bulging parameter gamma for somigliana deformer")
-		("somig-bulging-type", boost::program_options::value<int>(&somig_bulging_type), "The bulging type for somigliana deformer 0: solid angle, 1: swept volume (default 1)")
-		("somig-blend", boost::program_options::value<double>(&somig_blend_factor), "The blending factor for somigliana deformer interpolating between local and global boundary conditions")
-#endif
 		("influence", "Evaluate the influence of the control vertices involved in the deformation and write the plot (Mesh for OBJ) to file")
 		("interpolate-weights", "Interpolate weights of model vertices from the embedding (embedding does not contain vertices of model)")
 		("harmonic", "Use harmonic coordinates by Joshi et al.")
-#ifdef WITH_SOMIGLIANA
 		("MVC", "Use mean value coordinates by Floater et al.")
-#endif
 		("LBC", "Use local barycentric coordinates by Zhang et al.")
 		("green", "Use green coordinates by Lipman et al.")
 		("BBW", "Use bounded biharmonic weights by Jacobson et al.")
@@ -83,9 +71,7 @@ int main(int argc, char** argv)
 		("MLC", "Use maximum likelihood coordinates by Chang et al.")
 		("MEC", boost::program_options::value<int>(&mec_flag), "Use maximum entropy coordinates by Hormann et al.(1: MEC-1 prior functions, 2: MEC-2 prior functions, default: 1)")
 		//("MEC", "Use maximum entropy coordinates by Hormann et al.")   // here we only use MEC-1 prior function
-#ifdef WITH_SOMIGLIANA
-		("somigliana", "Use somigliana coordinates by Chen et al.")
-#endif
+		("somigliana", "Use closed-form somigliana coordinates by Chen et al.")
 		("subspace", "Use Linear subspace design by Wang et al.");
 	boost::program_options::positional_options_description p;
 	boost::program_options::variables_map vm;
@@ -105,14 +91,8 @@ int main(int argc, char** argv)
 	const bool QMVC = !QGC && !lbc && !harmonic && !green && static_cast<bool>(vm.count("QMVC"));
 	const bool MLC = ! QMVC && !QGC && !lbc && !harmonic && !green && static_cast<bool>(vm.count("MLC"));
 	const bool MEC = !MLC && !QMVC && !QGC && !lbc && !harmonic && !green && static_cast<bool>(vm.count("MEC"));
-	const bool somigliana = 
-#ifdef WITH_SOMIGLIANA
-	!lbc && !harmonic && !green && !QMVC && !QGC && !MLC && !MEC && static_cast<bool>(vm.count("somigliana"));
+	const bool somigliana = !lbc && !harmonic && !green && !QMVC && !QGC && !MLC && !MEC && static_cast<bool>(vm.count("somigliana"));
 	const bool MVC = !lbc && !harmonic && !green && ! QMVC && !QGC && !MLC && !MEC && !somigliana && static_cast<bool>(vm.count("MVC"));
-#else
-	false;
-	const bool MVC = false;
-#endif
 	const bool load_fbx = static_cast<bool>(vm.count("fbx"));
 	const bool find_offset = static_cast<bool>(vm.count("find-offset"));
 	const bool scale = static_cast<bool>(vm.count("scale"));
@@ -161,12 +141,10 @@ int main(int argc, char** argv)
 			timer->stop();
 		}
 	};
-#ifdef WITH_SOMIGLIANA
-	if (somigliana || MVC)
+	if (somigliana)
 	{
-		somig_deformer = std::make_unique<green::somig_deformer_3>(somig_nu, static_cast<bool>(!verbosity));
+		somig_deformer = std::make_unique<somig_deformer_3>(somig_nu);
 	}
-#endif
 	Eigen::MatrixXd V, V_model, C;
 	Eigen::MatrixXi T, T_model, CF;
 	if (verbosity)
@@ -189,22 +167,25 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-#ifdef WITH_SOMIGLIANA
-	if (somigliana || MVC)
+	if (somigliana)
 	{
-		if (inputFile.substr(inputFile.size() - 4, 4).compare(".msh") == 0)
-		{
-			somig_deformer->V_ = V_model.transpose();
-			somig_deformer->F_ = T_model;
-		} 
-		else if (!somig_deformer->load_mesh(inputFile))
-		{
-			std::cerr << "Failed to load mesh file\n";
-			return 1;
-		}
-	}
-#endif
+		std::vector<std::vector<unsigned int>> elements(T_model.rows());
+		std::vector<point3d> model_verts(V_model.rows());
 
+		bool msh = inputFile.substr(inputFile.size() - 4, 4).compare(".msh") == 0;
+
+		for (int i = 0; i < V_model.rows(); ++i) {
+			model_verts[i] = {V_model(i, 0), V_model(i, 1), V_model(i, 2)};
+		}
+		for (int i = 0; i < T_model.rows(); ++i) {
+			elements[i] = {T_model(i, 0), T_model(i, 1), T_model(i, 2)};
+			if (msh) {
+				elements[i].push_back(T_model(i, 3));
+			}
+		}
+
+		somig_deformer->set_mesh(elements, model_verts);
+	}
 
 	if (!MVC && !somigliana && !green && !QMVC && !QGC && !MLC && !MEC && !vm.count("embedded"))
 	{
@@ -212,7 +193,7 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	if (!somigliana && !MVC && !green && !QMVC && !QGC && !MLC && !MEC)
+	if (!somigliana && !green && !MVC && !QMVC && !QGC && !MLC && !MEC)
 	{
 		if (verbosity)
 		{
@@ -288,17 +269,20 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-#ifdef WITH_SOMIGLIANA
-	if (somigliana || MVC)
+	// TODO - Proper MVC handling
+
+	if (somigliana)
 	{
-		if (somig_deformer->load_cage(C, CF))
-		{
-			std::cerr << "Failed to load cage!\n";
-			return 1;
+		std::vector<std::vector<unsigned int>> faces_somig(CF.rows());
+		std::vector<point3d> verts_somig(C.rows());
+		for (int i = 0; i < CF.rows(); ++i) {
+			faces_somig[i] = {CF(i, 0), CF(i, 1), CF(i, 2)};
 		}
-		somig_deformer->init();
+		for (int i = 0; i < C.rows(); ++i) {
+			verts_somig[i] = {C(i, 0), C(i, 1), C(i, 2)};
+		}
+		somig_deformer->set_cage(faces_somig, verts_somig);
 	}
-#endif
 
 	if (!find_offset && !interpolate_weights)
 	{
@@ -485,6 +469,12 @@ int main(int argc, char** argv)
 		calculateGreenCoordinatesTriQuad(C, CF, V_model, W, psi_tri, psi_quad);
 		stop_timer();
 	}
+	else if (MVC) {
+		variant_string = "MVC";
+		start_timer();
+		computeMVC(C, CF, V_model, W);
+		stop_timer();
+	}
 	else if (QMVC)
 	{
 		variant_string = "QMVC";
@@ -506,18 +496,13 @@ int main(int argc, char** argv)
 		calculateMaximumEntropyCoordinates(C.transpose(), CF.transpose(), V_model.transpose(), W, mec_flag);
 		stop_timer();
 	}
-#ifdef WITH_SOMIGLIANA
 	else if (somigliana)
 	{
 		variant_string = "somigliana";
-		somig_deformer->precompute_somig_coords(); // somigliana coordinates ship their own timer
+		start_timer();
+		somig_deformer->precompute_somig_coords(false);
+		stop_timer();
 	}
-	else if (MVC)
-	{
-		variant_string = "MVC";
-		somig_deformer->precompute_mvc_coords();
-	}
-#endif
 	else
 	{
 		igl::BBWData bbw_data;
@@ -564,13 +549,7 @@ int main(int argc, char** argv)
 		} 
 		else
 		{
-			std::cout << (MVC || somigliana ? 
-#ifdef WITH_SOMIGLIANA
-				somig_deformer->runtime 
-#else
-				timer->getElapsedTime()
-#endif
-				: timer->getElapsedTime()) << "\n";
+			std::cout << (somigliana ? timer->getElapsedTime() : timer->getElapsedTime()) << "\n";
 		}
 	}
 	if (verbosity)
@@ -578,7 +557,7 @@ int main(int argc, char** argv)
 		std::cout << "Done computing weights\n";
 	}
 
-	if (!lbc && !green && !QMVC && !QGC && !MLC && !MEC)
+	if (!lbc && !green && !QMVC && !QGC && !MLC && !MEC && !somigliana && !MVC)
 	{
 		W  = (W.array().colwise() / W.array().rowwise().sum()).eval();
 	}
@@ -588,7 +567,7 @@ int main(int argc, char** argv)
 	{
 		std::cout << "Calculating M\n";
 	}
-	if (green || QMVC || QGC)
+	if (green || QMVC || QGC || MVC)
 	{
 		M = W;
 	}
@@ -625,18 +604,16 @@ int main(int argc, char** argv)
 	if (influence)
 	{
 		auto const base_name = outMeshFile.substr(0, suffix_pos);
-		if (!MVC)
+		if (!somigliana)
 		{
 			write_influence_color_map_OBJ(base_name + "_influence_" + variant_string + ".obj", V_model, T_model, interpolate_weights ? W_interpolated : W,
 				control_vertices_idx, (green || QGC || MLC || MEC || interpolate_weights) ? 0 : model_vertices_offset, green || QGC || MLC || MEC);
 		}
-#ifdef WITH_SOMIGLIANA	
 		else
 		{
 			write_influence_color_map_OBJ(base_name + "_influence_" + variant_string + ".obj", V_model, T_model, somig_deformer->getPhi(),
 				control_vertices_idx, 0, true);
 		}
-#endif
 	}
 
 	auto const numTransformations = numControlVertices;
@@ -682,20 +659,25 @@ int main(int argc, char** argv)
 		{
 			calcNewPositionsTriQuad(C, C_deformed, CF, W, psi_tri, psi_quad, U_model);
 		}
-		else if (QMVC || MLC || MEC)
+		else if (MVC || QMVC || MLC || MEC)
 		{
 			U_model = W.transpose() * C_deformed;
 		}
-#ifdef WITH_SOMIGLIANA
 		else if (somigliana)
 		{
-			somig_deformer->deform(C_deformed, SOMIGLIANA, static_cast<BulgingType>(somig_bulging_type), somig_bulging, somig_blend_factor);
+			std::vector<point3d> cage_verts_deformed_somig(C_deformed.rows());
+			std::vector<point3d> verts_deformed_somig(V_model.rows());
+			for (int i = 0; i < C_deformed.rows(); ++i) {
+				cage_verts_deformed_somig[i] = { C_deformed(i, 0), C_deformed(i, 1), C_deformed(i, 2) };
+			}
+			somig_deformer->deform(cage_verts_deformed_somig, verts_deformed_somig);
+			for (int i = 0; i < U_model.rows(); ++i) {
+				auto const deformed_vertex = verts_deformed_somig[i];
+				U_model(i, 0) = deformed_vertex.x();
+				U_model(i, 1) = deformed_vertex.y();
+				U_model(i, 2) = deformed_vertex.z();
+			}
 		}
-		else if (MVC)
-		{
-			somig_deformer->deform(C_deformed, MEANVALUE, static_cast<BulgingType>(somig_bulging_type), somig_bulging, somig_blend_factor);
-		}
-#endif
 		else
 		{
 			U = M * Transformation;
@@ -724,25 +706,11 @@ int main(int argc, char** argv)
 
 		if (write_msh)
 		{
-#ifdef WITH_SOMIGLIANA
-		if (somigliana || MVC)
-		{
-			U_model = somig_deformer->V_.transpose();
-		}
-#endif
 			igl::writeMSH(prefix + middle + variant_string + std::string(".msh"), U_model, Eigen::MatrixXi(), T_model, Eigen::MatrixXi(), tet_tags, std::vector<std::string>(),
 				std::vector<Eigen::MatrixXd>(), std::vector<std::string>(), std::vector<Eigen::MatrixXd>(), std::vector<Eigen::MatrixXd>());
 		}
 		else
 		{
-#ifdef WITH_SOMIGLIANA
-			if (somigliana || MVC)
-			{
-				const std::string fname = prefix + middle + variant_string;
-				somig_deformer->save_mesh(fname.c_str());
-			}
-			else
-#endif
 			{
 				if (verbosity)
 				{

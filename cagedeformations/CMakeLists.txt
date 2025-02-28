@@ -22,7 +22,10 @@ set(${LIBRARY_NAME}_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/LoadFBX.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/InfluenceMap.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/Parametrization.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/WeightInterpolation.h)
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/WeightInterpolation.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/somig.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/BHC.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/point3.h)
 
 set(${LIBRARY_NAME}_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/globals.cpp
@@ -33,7 +36,8 @@ set(${LIBRARY_NAME}_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LoadFBX.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/InfluenceMap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Parametrization.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/WeightInterpolation.cpp)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/WeightInterpolation.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/somig.cpp)
 
 # Add the source files to the library.
 add_library(${LIBRARY_NAME} ${${LIBRARY_NAME}_SOURCES} ${${LIBRARY_NAME}_HEADERS})
