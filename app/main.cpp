@@ -178,9 +178,10 @@ int main(int argc, char** argv)
 			model_verts[i] = {V_model(i, 0), V_model(i, 1), V_model(i, 2)};
 		}
 		for (int i = 0; i < T_model.rows(); ++i) {
-			elements[i] = {T_model(i, 0), T_model(i, 1), T_model(i, 2)};
+			elements[i] = {static_cast<unsigned int>(T_model(i, 0)),
+				static_cast<unsigned int>(T_model(i, 1)), static_cast<unsigned int>(T_model(i, 2))};
 			if (msh) {
-				elements[i].push_back(T_model(i, 3));
+				elements[i].push_back(static_cast<unsigned int>(T_model(i, 3)));
 			}
 		}
 
@@ -276,7 +277,8 @@ int main(int argc, char** argv)
 		std::vector<std::vector<unsigned int>> faces_somig(CF.rows());
 		std::vector<point3d> verts_somig(C.rows());
 		for (int i = 0; i < CF.rows(); ++i) {
-			faces_somig[i] = {CF(i, 0), CF(i, 1), CF(i, 2)};
+			faces_somig[i] = {static_cast<unsigned int>(CF(i, 0)), static_cast<unsigned int>(CF(i, 1)),
+				static_cast<unsigned int>(CF(i, 2))};
 		}
 		for (int i = 0; i < C.rows(); ++i) {
 			verts_somig[i] = {C(i, 0), C(i, 1), C(i, 2)};

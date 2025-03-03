@@ -104,7 +104,7 @@ void somig_deformer_3::precompute_somig_coords(const bool sanity_check)
   phi_.setZero(ncv, nv);
   MatrixXd phi0 = MatrixXd::Zero(nf, nv), phi1 = phi0, phi2 = phi0; // face-based buffers
   #pragma omp parallel for
-  for (size_t pid = 0; pid < V0_.cols(); ++pid) {
+  for (int pid = 0; pid < V0_.cols(); ++pid) {
     const point_t eta = V0_.col(pid);
     for (size_t i = 0; i < cageF_.cols(); ++i) {
       point_t tri_vertices[3] = {cageV0_.col(cageF_(0, i)),
@@ -150,7 +150,7 @@ void somig_deformer_3::precompute_somig_coords(const bool sanity_check)
   auto &somigK = PSI_;
   auto &somigT = PHI_;
   #pragma omp parallel for
-  for (size_t pid = 0; pid < V0_.cols(); ++pid) {
+  for (int pid = 0; pid < V0_.cols(); ++pid) {
 
     const double A = 1/(4*M_PI), B = A/(4*(1-nu_));
     const point_t eta = V0_.col(pid);
