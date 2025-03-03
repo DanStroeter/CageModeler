@@ -542,11 +542,13 @@ return offsets;
 	
 }
 
-
+int getIndex(int x, int y, int z, const std::array<int, 3>& gridSizes) {
+    return x + y * gridSizes[0] + z * gridSizes[0] * gridSizes[1];
+}
 
 ///check intersection for erosion,just use sphere SE 
+bool check_intersect_erosionE(const std::array<int,3>& node, int level,const std::array<int,3>& voxelp,int seSize,const std::array<int,3>& gridSizes,std::vector<std::array<int,3>>& offsets){
 
-bool check_intersect_erosionE(const std::array<int,3>& node, int level,const std::array<int,3>& voxelp,int seSize,const std::array<int,3>& gridSizes){
 
 bool result=false;
 //the rigoin of dilated subnode box
@@ -557,13 +559,15 @@ int nodeBoxMinY=node[1] * nodeBoxSize, nodeBoxMaxY=(node[1]+1) * nodeBoxSize;
 int nodeBoxMinZ=node[2] * nodeBoxSize, nodeBoxMaxZ=(node[2]+1) * nodeBoxSize;
 
 //the rigon of dilated subnode box
-std::vector<std::array<int,3>> dilated_voxels;
+//std::vector<std::array<int,3>> dilated_voxels;
+std::vector<uint8_t> dilated_voxels(gridSizes[0] * gridSizes[1] * gridSizes[2], 0);
 
 
 //the sphere offset
-std::vector<std::array<int,3>> offsets= generate_sphere_offsets(seSize);
+//std::vector<std::array<int,3>> offsets= generate_sphere_offsets(seSize);
 
 //do the dilation
+#pragma omp parallel for collapse(3) 
 for(int x=nodeBoxMinX; x<nodeBoxMaxX; ++x){
 	for(int y=nodeBoxMinY; y<nodeBoxMaxY; ++y){
 		for(int z=nodeBoxMinZ; z<nodeBoxMaxZ; ++z){
@@ -573,7 +577,8 @@ for(int x=nodeBoxMinX; x<nodeBoxMaxX; ++x){
                int ny=y+offset[1];
                int nz=z+offset[2];
 			   if(isValid(nx,ny,nz,gridSizes)){
-				dilated_voxels.push_back({nx,ny,nz});
+				//dilated_voxels.push_back({nx,ny,nz});
+				  dilated_voxels[getIndex(nx, ny, nz, gridSizes)] = 1;
 			   }
 
 		   }
@@ -583,15 +588,24 @@ for(int x=nodeBoxMinX; x<nodeBoxMaxX; ++x){
 	}
 }
 
+
 //calculate the rigion of checked voxel box
 for(int x=voxelp[0];x<=voxelp[0]+1; ++x){
 	for(int y=voxelp[1]; y<=voxelp[1]+1; ++y){
 		for(int z=voxelp[2]; z<=voxelp[2]+1; ++z){
 			std::array<int,3> pos={x,y,z};
+			/*
 			if(std::find(dilated_voxels.begin(),dilated_voxels.end(),pos)!=dilated_voxels.end()){
 				result=true;
 				break;
 			}
+			*/
+		  int idx=getIndex(x, y, z, gridSizes);
+		  if (dilated_voxels[idx]) {
+                    result= true;
+					break;
+                }
+		    
 		}
 	}
 }
@@ -600,75 +614,89 @@ return result;
 
 }
 
+//create sphere SE
+std::vector<std::array<int,3>> generate_sphere_offsets(int radius){
+std::vector<std::array<int,3>> offsets;
 
-
-
-
-/// erosion process
-Grid3D spaciallyErosion(Grid3D& dilation,Grid3D& grid, MipmapTree mipmap, int seScale){
-
-Grid3D result = dilation; 
-    int maxLevel = mipmap.size() - 1; 
-    int gridSizeX = grid.size();
-    int gridSizeY = grid[0].size();
-    int gridSizeZ = grid[0][0].size();
-	std::vector<std::array<int,3>> originalV;  //save all the positions that need to be checked
-
-	for(int x=0;x<gridSizeX;++x){
-		for(int y=0;y<gridSizeY;++y){
-			for(int z=0;z<gridSizeZ;++z){
-				if(result[x][y][z]==true && grid[x][y][z]==false){
-					originalV.push_back({x,y,z});
-				}
+for(int x=-radius; x<=radius; ++x){
+	for(int y=-radius; y<=radius; ++y){
+		for(int z=-radius; z<=radius; ++z){
+			if((x*x+y*y+z*z)<=std::pow(radius,2)){
+				offsets.push_back({x,y,z});
 			}
 		}
 	}
+}
+return offsets;
+	
+}
 
-	struct Pair{
-	int level;
-	std::array<int,3> position;
-   };
 
-   for(auto ov: originalV){
+/// erosion process
 
-	std::vector<Pair> stack;
-      stack.push_back({maxLevel, {0,0,0}});
+Grid3D spaciallyErosion(Grid3D& dilation, Grid3D& grid, MipmapTree& mipmap, int seScale,std::vector<std::array<int,3>>& offsets) {
+    Grid3D result = dilation;
+    int maxLevel = mipmap.size() - 1;
+    int gridSizeX = grid.size();
+    int gridSizeY = grid[0].size();
+    int gridSizeZ = grid[0][0].size();
+    std::vector<std::array<int, 3>> originalV;
 
-	  while(!stack.empty() && result[ov[0]][ov[1]][ov[2]]==true){
-		Pair top=stack.back();
-		stack.pop_back();
+    
+    #pragma omp parallel
+    {
+        std::vector<std::array<int, 3>> local_originalV;
+        #pragma omp for collapse(3) nowait
+        for (int x = 0; x < gridSizeX; ++x) {
+            for (int y = 0; y < gridSizeY; ++y) {
+                for (int z = 0; z < gridSizeZ; ++z) {
+                    if (result[x][y][z] == true && grid[x][y][z] == false) {
+                        local_originalV.push_back({x, y, z});
+                    }
+                }
+            }
+        }
+        #pragma omp critical
+        originalV.insert(originalV.end(), local_originalV.begin(), local_originalV.end());
+    }
 
-		if(top.level==0){
-			result[ov[0]][ov[1]][ov[2]]=false;
-		}
-		else{
-			for(int dx=0;dx<=1;++dx){
-				for(int dy=0;dy<=1;++dy){
-					for(int dz=0;dz<=1;++dz){
-						std::array<int,3> subNode={
-							top.position[0]*2+dx,
-							top.position[1]*2+dy,
-							top.position[2]*2+dz
-						};
+    
+    #pragma omp parallel for schedule(dynamic)
+    for (size_t i = 0; i < originalV.size(); ++i) {
+        auto ov = originalV[i];
+        std::deque<Pair> stack;
+        stack.push_back({maxLevel, {0, 0, 0}});
 
-						if(mipmap[top.level - 1].count(subNode) &&
-                         mipmap[top.level - 1].at(subNode)){
+        while (!stack.empty() && result[ov[0]][ov[1]][ov[2]] == true) {
+            Pair top = stack.back();
+            stack.pop_back();
 
-							if(check_intersect_erosionE(subNode,top.level-1,ov,seScale,{gridSizeX,gridSizeY,gridSizeZ})){
-											   std::cout<<"the subNode is valid"<<std::endl;
+            if (top.level == 0) {
+                result[ov[0]][ov[1]][ov[2]] = false;
+            } else {
 
-								stack.push_back({top.level-1,subNode});
-							}
-						}
-						
-					}
-				}
-			}
-		}
-	  }
-   }
-   return result;
+                for (int dx = 0; dx <= 1; ++dx) {
+                    for (int dy = 0; dy <= 1; ++dy) {
+                        for (int dz = 0; dz <= 1; ++dz) {
+                            std::array<int, 3> subNode = {
+                                top.position[0] * 2 + dx,
+                                top.position[1] * 2 + dy,
+                                top.position[2] * 2 + dz
+                            };
 
+                            if (mipmap[top.level - 1].count(subNode) &&
+                            mipmap[top.level - 1].at(subNode) &&
+                            check_intersect_erosionE(subNode, top.level - 1, ov, seScale, {gridSizeX, gridSizeY, gridSizeZ}, offsets)) {
+                            stack.push_back({top.level - 1, subNode});
+                        }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return result;
 }
 
 
@@ -1054,11 +1082,11 @@ std::array<ExactVector, 3> voxel_strides;
     //handle the dilation
 	int gridSizeX,gridSizeY,gridSizeZ;
 	const int hierarchyLevels=log2(numVoxels[0])+1;
-	const int se_scale=1;
-	double threshold_asymatric = 0.01;
+	const int se_scale=2;
+	double threshold_asymatric = 0.001;
   	double threshold_symatric = 0.001;
    	double threshold =  std::sqrt(CGAL::to_double((voxel_strides[0] + voxel_strides[1] + voxel_strides[2]).squared_length()));
-
+    std::vector<std::array<int,3>> offsets=generate_sphere_offsets(se_scale);
 
 	try{
     
@@ -1100,7 +1128,7 @@ std::array<ExactVector, 3> voxel_strides;
       // printMipmap(mipmap_erose);
 
 		//do the erosion
-		Grid3D erosion=spaciallyErosion(dilation,fineGrid,mipmap_erose,se_scale);
+		Grid3D erosion=spaciallyErosion(dilation,fineGrid,mipmap_erose,se_scale-1,offsets);
 		std::cout<<"erosion is done!"<<std::endl;
 
 		//write the erosion(grid) into obj file
