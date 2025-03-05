@@ -40,6 +40,7 @@ void ToolBar::Layout()
 		{
 			ShowToolUI(toolType, toolDescription);
 		}
+        
 
 		ImGui::End();
 	}
@@ -74,6 +75,7 @@ void ToolBar::ShowToolUI(const ToolType toolType, const ToolDescription& toolDes
 	{
 		_toolSystem->SetActiveTool(toolType);
 	}
+	
 	ImGui::PopStyleVar();
 
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
