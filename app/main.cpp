@@ -270,8 +270,6 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
-	// TODO - Proper MVC handling
-
 	if (somigliana)
 	{
 		std::vector<std::vector<unsigned int>> faces_somig(CF.rows());

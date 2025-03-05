@@ -132,16 +132,17 @@ MeshComputeWeightsOperation::ExecutionResult MeshComputeWeightsOperation::Execut
 			psiTri,
 			psiQuad);
 	}
-#ifdef WITH_SOMIGLIANA
 	else if (_params._deformationType == DeformationType::Somigliana)
 	{
-		_params._somiglianaDeformer->precompute_somig_coords();
+		_params._somiglianaDeformer->precompute_somig_coords(false);
 	}
 	else if (_params._deformationType == DeformationType::MVC)
 	{
-		_params._somiglianaDeformer->precompute_mvc_coords();
+		computeMVC(_params._cage._vertices,
+			_params._cage._faces,
+			_params._mesh._vertices,
+			weights);
 	}
-#endif
 	else if (_params._deformationType == DeformationType::QMVC)
 	{
 		computeMVCTriQuad(_params._cage._vertices,
@@ -179,12 +180,7 @@ MeshComputeWeightsOperation::ExecutionResult MeshComputeWeightsOperation::Execut
 		}
 	}
 
-	if (DeformationTypeHelpers::RequiresEmbedding(_params._deformationType)
-#if WITH_SOMIGLIANA
-		|| _params._deformationType == DeformationType::MVC
-		|| _params._deformationType == DeformationType::Somigliana
-#endif
-		)
+	if (DeformationTypeHelpers::RequiresEmbedding(_params._deformationType))
 	{
 		weights  = (weights.array().colwise() / weights.array().rowwise().sum()).eval();
 	}

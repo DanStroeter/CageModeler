@@ -31,7 +31,7 @@ class somig_deformer_3
   
   void calc_outward_normal();
 
-  matd_t getPhi() { return PHI_; };
+  matd_t& getPhi() { return PHI_; };
   
  private:
   double mu_, nu_;

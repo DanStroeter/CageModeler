@@ -83,6 +83,7 @@ set_target_properties(${LIBRARY_NAME} PROPERTIES DEBUG_POSTFIX "d")
 target_link_libraries(${LIBRARY_NAME}
     PUBLIC
         Eigen3::Eigen
+        LAPACK::LAPACK 
     PRIVATE
         LBC
         OpenFBX
@@ -95,15 +96,6 @@ if (APPLE)
         PRIVATE
         omp
     )
-endif()
-
-if (DEFINED ENABLE_SOMIGLIANA)
-    target_link_libraries(
-        ${LIBRARY_NAME}
-        PRIVATE
-        green
-    )
-    target_compile_definitions(${LIBRARY_NAME} PRIVATE WITH_SOMIGLIANA)
 endif()
 
 # Required for CMAKE_INSTALL_* variables.
