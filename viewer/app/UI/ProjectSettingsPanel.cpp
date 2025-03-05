@@ -171,7 +171,7 @@ void ProjectSettingsPanel::Layout()
 
 				_applyButtonPressed = true;*/
 
-			std::string generatedCagePath=GenerateCageFromMesh(_modifiedProjectModel._meshFilepath.value());
+			std::string generatedCagePath=GenerateCageFromMesh(_modifiedProjectModel._meshFilepath.value(),_modifiedProjectModel._scalingFactor);
 				_modifiedProjectModel._cageFilepath=generatedCagePath;
 			}
 		}
@@ -474,19 +474,21 @@ void ProjectSettingsPanel::Dismiss()
 }
 
 
-std::string ProjectSettingsPanel::GenerateCageFromMesh(const std::string& meshfilePath){
-/*
+std::string ProjectSettingsPanel::GenerateCageFromMesh(const std::string& meshfilePath,int scale){
+
 const auto meshOperationSystem = _meshOperationSystem.lock();
 		if (meshOperationSystem == nullptr)
 		{
 			return " ";
 		}
 			
-	std::string outputCageFile=meshfilePath+"_cage.obj";
+	std::string outputCageFile="/Users/liujiaqi/Desktop/opencv_Lab/CageModeler_1/models/cage1.obj";
 	 
-	meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(meshfilePath,outputCageFile);
+	meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(meshfilePath,outputCageFile,scale);
 
-	if(outputCageFile.empty()){
+    std::ifstream input(outputCageFile);
+     
+	if(!input){
 
 		//handle cage generatioin failed
 		ImGui::OpenPopup("Cage Generation Failed!");
@@ -494,7 +496,7 @@ const auto meshOperationSystem = _meshOperationSystem.lock();
 	}
 	return outputCageFile;
 
-*/
+
 }
 
 void ProjectSettingsPanel::SetModel(const std::shared_ptr<ProjectModelData>& model)

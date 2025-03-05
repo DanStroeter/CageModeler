@@ -6,6 +6,15 @@ project(
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
+#CGAL package
+find_package(CGAL REQUIRED COMPONENTS Core )
+
+find_package(Eigen3 REQUIRED)
+
+set(CMAKE_PREFIX_PATH "/opt/homebrew/opt/cgal")
+find_package(CGAL REQUIRED)
+
+
 # ImGUI bindings to Vulkan and SDL2.
 file(GLOB_RECURSE IMGUI_BINDINGS "${CMAKE_SOURCE_DIR}/viewer/external/ImGUI/Bindings/src/*.cpp")
 include_directories("${CMAKE_SOURCE_DIR}/viewer/external/ImGUI/Bindings/include")
@@ -13,8 +22,11 @@ include_directories("${CMAKE_SOURCE_DIR}/viewer/external/ImGUI/Bindings/include"
 # On Apple we have MoltenVK, but we want to also be able to include the auto-generated header file
 # vk_enum_string_helper.h to access result-to-string conversion for Vulkan result types.
 IF (APPLE)
-    include_directories("/usr/local/include")
+    include_directories("/Users/liujiaqi/VulkanSDK/1.3.296.0/macOS/include") 
 endif ()
+
+#OpenMP
+include_directories(/opt/homebrew/opt/libomp/include)
 
 # Set the startup project for the "play" button in MSVC.
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
@@ -49,6 +61,7 @@ add_executable(${PROJECT_NAME}
     Mesh/Operations/MeshComputeInfluenceMapOperation.cpp
     Mesh/Operations/MeshComputeDeformationOperation.cpp
     Mesh/Operations/MeshExportInfluenceMapOperation.cpp
+    Mesh/Operations/MeshGenerateCageOperation.cpp
     Mesh/Operations/MeshLoadOperation.cpp
     Mesh/Operations/MeshExportOperation.cpp
     Rendering/Commands/BufferCommand.h
@@ -59,7 +72,7 @@ add_executable(${PROJECT_NAME}
     Rendering/Core/Device.cpp
     Rendering/Core/DescriptorPool.cpp
     Rendering/Core/DescriptorSetLayout.cpp
-    Rendering/Core/RenderSurface.cpp
+    Rendering/Core/RenderSurface.cpp 
     Rendering/Core/Swapchain.cpp
     Rendering/Core/RenderResourceManager.cpp
     Rendering/Scene/SceneRenderer.cpp
@@ -104,6 +117,9 @@ else()
     endif()
 endif()
 
+# OpenMP
+target_compile_options(${PROJECT_NAME} PRIVATE -Xpreprocessor -fopenmp)
+
 # if (WIN32)
     # set(ASSETS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}/assets")
 # else()
@@ -146,6 +162,7 @@ target_link_libraries(
         Vulkan::Vulkan
         nfd
         SDL3::SDL3
+        /opt/homebrew/opt/libomp/lib/libomp.dylib
 )
 
 # On Linux the naming of the OpenMesh library is different.
@@ -199,6 +216,13 @@ target_include_directories(${PROJECT_NAME}
         "${CMAKE_SOURCE_DIR}/viewer/external/SDL3/include")
 
 target_include_directories(${PROJECT_NAME} BEFORE PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
+
+#include CGAL 
+target_include_directories(${PROJECT_NAME} PUBLIC ${CGAL_INCLUDE_DIRS})
+
+include_directories(${EIGEN3_INCLUDE_DIR})
+
+target_link_libraries(${PROJECT_NAME} PUBLIC CGAL::CGAL )
 
 # Precompiled header file includes.
 target_precompile_headers(

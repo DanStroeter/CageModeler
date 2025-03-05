@@ -131,15 +131,19 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer)
 		[this] { OnNewProjectCancelled(); },
 		[this] { OnNewProjectCreated(); });
 
+/*
 	_projectModel->_deformationType = DeformationType::Green;
 	_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
 	_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
 	_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated_embedding.msh";
 	_projectModel->_deformedCageFilepath = "assets/meshes/bishop_cages_triangulated_deformed.obj";
+	
+*/
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 
 	OnNewProjectCreated();
+
 #endif
 }
 
@@ -602,6 +606,10 @@ void Editor::OnNewProjectCreated()
 				bvhBuilder.AddGeometry(_deformedCageHandle);
 			}
 
+            //add new code here
+			const auto geo =_scene->GetMesh(_deformedMeshHandle)->GetGeometry();
+			
+
 			// Ready to dismiss the project panel when we are done.
 			if (_newProjectPanel != nullptr)
 			{
@@ -617,6 +625,19 @@ void Editor::OnNewProjectCreated()
 			}
 		});
 	});
+}
+
+void Editor::OnCageGeneration()
+{
+	if (_projectModel->CheckMissingFilesForCageGeneration())
+	{
+		_statusBar->SetError("Unable to load mesh file, check if it is missing.");
+
+		return;
+	}
+
+ // auto cageGenerationResult=newCage();
+	
 }
 
 void Editor::OnProjectSettingsCancelled()

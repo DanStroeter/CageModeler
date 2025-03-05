@@ -18,6 +18,8 @@ public:
 
 	void SetModel(const std::shared_ptr<ProjectModelData>& model) override;
 
+	std::string GenerateCageFromMesh(const std::string& meshFilePath,int scale);
+
 	void Present();
 
 	void Dismiss();

@@ -55,6 +55,11 @@ private:
 	void OnNewProjectCreated();
 
 	/**
+	 * Invoked for cage generation
+	 */
+	void OnCageGeneration();
+
+	/**
 	 * Invoked when the project settings have been changed and new ones have been applied.
 	 */
 	void OnProjectSettingsApplied();
