@@ -38,10 +38,6 @@ private:
 	uint32_t _selectedDeformationTypeIndex = -1;
 	uint32_t _selectedWeightingSchemeIndex = -1;
 
-#ifdef WITH_SOMIGLIANA
-	uint32_t _selectedBulgingTypeIndex = -1;
-#endif
-
 	/// Keeps track inside ImGui whether the New Project popup should be displayed.
 	bool _isModalVisible = false;
 

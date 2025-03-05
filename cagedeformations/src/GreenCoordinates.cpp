@@ -909,125 +909,217 @@ void calculateGreenCoordinatesTriQuad(const Eigen::MatrixXd& C, const Eigen::Mat
 	}
 }
 
-void calcMVC(const Eigen::MatrixXd& C, const Eigen::MatrixXi& CF, Eigen::MatrixXd const& eta_m,
-	Eigen::MatrixXd& phi) {
-	auto const num_vertices_mesh = eta_m.rows();
+// MVC : Code from "Mean Value Coordinates for Closed Triangular Meshes" Schaeffer Siggraph 2005
+void computeMVCForOneVertex(Eigen::MatrixXd const & C, Eigen::MatrixXi const & CF,
+	Eigen::Vector3d eta, Eigen::VectorXd& weights, Eigen::VectorXd& w_weights) {
 	auto const num_vertices_cage = C.rows();
 	auto const num_faces_cage = CF.rows();
 
-	auto const epsilon_ = 0.00001; // Might need some adjustment to bb size
+    double epsilon = 0.00000001;
 
-	phi = Eigen::MatrixXd::Zero(num_vertices_mesh, num_vertices_cage);
-	Eigen::VectorXd vector_D;
-	Eigen::MatrixXd matrix_U;
-	Eigen::Vector3d x, pJ, p1, p2, p3;
-	double dJ;
-	Eigen::Vector3i indices;
-	int num_planaer_cases1 = 0, num_planaer_cases2 = 0;
-	for (int k = 0; k < num_vertices_mesh; k++) {
-		Eigen::VectorXd weightsK = Eigen::VectorXd::Zero(num_vertices_cage);
-		double totalW = 0.;
-		x = eta_m.row(k);
-		matrix_U = Eigen::MatrixXd::Zero(num_vertices_cage, 3);
-		vector_D = Eigen::VectorXd::Zero(num_vertices_cage);
-		for (int j = 0; j < num_vertices_cage; j++) {
-			pJ = C.row(j);
-			dJ = (pJ - x).norm();
-			vector_D(j) = dJ;
-			matrix_U.row(j) = (pJ - x) / dJ;
-		}
-		for (int f = 0; f < num_faces_cage; f++) {
-			indices = Eigen::Vector3i(CF.row(f));
-			p1 = C.row(indices(0));
-			p2 = C.row(indices(1));
-			p3 = C.row(indices(2));
-			double thetaIs[3] = { 0.,0.,0. };
-			double cIs[3] = { 0.,0.,0. };
-			double sIs[3] = { 0.,0.,0. };
-			double h = 0.;
-			Eigen::MatrixXd u123 = Eigen::MatrixXd::Zero(3, 3);
-			for (int i = 0; i < 3; i++) {
-				int iMinus = (i - 1) % 3;
-				iMinus = (iMinus < 0) ? iMinus + 3 : iMinus;
-				Eigen::Vector3d uIPlus = matrix_U.row(indices((i + 1) % 3));
-				Eigen::Vector3d uIMinus = matrix_U.row(indices(iMinus));
-				double lI = (uIPlus - uIMinus).norm();
-				thetaIs[i] = 2. * asin(lI / 2.);
-				h += thetaIs[i] / 2.;
-				u123.row(i) = matrix_U.row(indices(i));
-			}
-			if (M_PI - h < epsilon_) {
-				weightsK = Eigen::VectorXd::Zero(num_vertices_cage);
-				totalW = 0.;
-				for (int i = 0; i < 3; i++) {
-					int iMinus = (i - 1) % 3;
-					iMinus = (iMinus < 0) ? iMinus + 3 : iMinus;
-					//sin[θi]di−1di+1
-					double wI = sin(thetaIs[i]) * vector_D(indices((i + 1) % 3)) * vector_D(indices(iMinus));
-					if (std::isnan(wI)) {
-						std::cerr << "NaN" << std::endl;
-					}
-					weightsK(indices(i)) = wI;
-					totalW += wI;
+    w_weights.setZero();
+    weights.setZero();
+    double sumWeights = 0.0;
 
-				}
-				num_planaer_cases1 += 1;
-				break;
-			}
-			auto signDet = u123.determinant();
-			if (signDet == 0) {
-				std::cerr << "u123 = " << std::endl;
-				std::cerr << "(" << u123(0, 0) << ", " << u123(0, 1) << ", " << u123(0, 2) << ")" << std::endl;
-				std::cerr << "(" << u123(1, 0) << ", " << u123(1, 1) << ", " << u123(1, 2) << ")" << std::endl;
-				std::cerr << "(" << u123(2, 0) << ", " << u123(2, 1) << ", " << u123(1, 2) << ")" << std::endl;
-			}
-			signDet = signDet / abs(signDet);
-			bool discardTriangle = false;
-			for (int i = 0; i < 3; i++) {
-				int iMinus = (i - 1) % 3;
-				iMinus = (iMinus < 0) ? iMinus + 3 : iMinus;
-				double cI = -1. + 2. * sin(h) * sin(h - thetaIs[i]) /
-					(sin(thetaIs[(i + 1) % 3]) * sin(thetaIs[iMinus]));
-				cIs[i] = cI;
-				if (cI < -1.) {
-					cI = -1.;
-					std::cerr << "cI < -1 " << std::endl;
-				}
-				if (cI > 1.) {
-					cI = 1.;
-					std::cerr << "cI > 1 " << std::endl;
-				}
-				double sI = signDet * sqrt(1. - cI * cI);
-				if (std::isnan(sI)) {
-					std::cerr << "NaN" << std::endl;
-				}
-				if (abs(sI) < epsilon_) {
-					discardTriangle = true;
-					num_planaer_cases2 += 1;
-					break;
-				}
-				else sIs[i] = sI;
-			}
-			if (!discardTriangle) {
-				for (int i = 0; i < 3; i++) {
-					int iPlus = (i + 1) % 3;
-					int iMinus = (i - 1) % 3;
-					iMinus = (iMinus < 0) ? iMinus + 3 : iMinus;
-					double dI = vector_D(indices(i));
-					double wI = (thetaIs[i] - cIs[iPlus] * thetaIs[iMinus] - cIs[iMinus] * thetaIs[iPlus]) /
-						(dI * sin(thetaIs[iPlus]) * sIs[iMinus]);
-					if (std::isnan(wI)) {
-						std::cerr << "NaN" << std::endl;
-					}
-					weightsK(indices(i)) += wI;
-					totalW += wI;
-				}
-			}
+	Eigen::VectorXd d(num_vertices_cage);
+	d.setZero();
+	Eigen::MatrixXd u(num_vertices_cage, 3);
+
+    for (unsigned int v = 0 ; v < num_vertices_cage ; ++v) {
+		Eigen::Vector3d cage_vertex = C.row(v);
+        d(v) = (eta - cage_vertex).norm();
+        if (d(v) < epsilon) {
+            weights(v) = 1.0;
+            return;
+        }
+        u.row(v) = (cage_vertex - eta) / d(v);
+    }
+
+    unsigned int vid[3]; 
+	double l[3]; 
+	double theta[3]; 
+	double w[3]; 
+	double c[3]; 
+	double s[3];
+    for(unsigned int t = 0 ; t < num_faces_cage ; ++t) { // the Norm is CCW :
+        for(unsigned int i = 0 ; i <= 2 ; ++i) {
+			vid[i] =  CF(t,i);
 		}
-		weightsK /= totalW;
-		phi.row(k) = weightsK;
+        for(unsigned int i = 0 ; i <= 2 ; ++i) {
+			Eigen::Vector3d v_0 = u.row(vid[(i + 1) % 3]);
+			Eigen::Vector3d v_1 = u.row(vid[(i + 2) % 3]);
+			l[i] = (v_0 - v_1).norm();
+		}
+        for(unsigned int i = 0 ; i <= 2 ; ++i) {
+			theta[i] = 2.0 * asin( l[i] / 2.0 );
+		}
+        double h = ( theta[0] + theta[1] + theta[2] ) / 2.0;
+        if(M_PI - h < epsilon) { // eta is on the triangle t , use 2d barycentric coordinates :
+            for(unsigned int i = 0 ; i <= 2 ; ++i) {
+				 w[i] = sin(theta[i]) * l[(i+2) % 3] * l[(i+1) % 3];
+			}
+
+            sumWeights = w[0] + w[1] + w[2];
+
+            w_weights.setZero();
+            weights(vid[0]) = w[0] / sumWeights;
+            weights(vid[1]) = w[1] / sumWeights;
+            weights(vid[2]) = w[2] / sumWeights;
+
+            return;
+        }
+
+        for(unsigned int i = 0; i <= 2; ++i) {
+			c[i] = (2.0 * sin(h) * sin(h - theta[i])) / (sin(theta[(i+1) % 3]) * sin(theta[(i+2) % 3])) - 1.0;
+		}
+
+        double sign_Basis_u0u1u2 = 1;
+		Eigen::Vector3d v_0 = u.row(vid[0]);
+		Eigen::Vector3d v_1 = u.row(vid[1]);
+		Eigen::Vector3d v_2 = u.row(vid[2]);
+        if( v_2.dot(v_0.cross(v_1)) < 0.0 ) {
+			sign_Basis_u0u1u2 = -1;
+		}
+
+        for(unsigned int i = 0; i <= 2; ++i) {
+			 s[i] = sign_Basis_u0u1u2 * std::sqrt(std::max<double>(0.0 , 1.0 - c[i] * c[i]));
+		}
+        if(std::fabs(s[0]) < epsilon || std::fabs(s[1]) < epsilon || std::fabs(s[2]) < epsilon ) {
+			continue; // eta is on the same plane, outside t  ->  ignore triangle t : 
+		} 
+        for(unsigned int i = 0; i <= 2; ++i) {
+			w[i] = (theta[i] - c[(i+1)% 3] * theta[(i+2) % 3] - c[(i+2) % 3] * theta[(i+1) % 3]) / (2.0 * d(vid[i]) * sin(theta[(i+1) % 3]) * s[(i+2) % 3]);
+		}
+        sumWeights += (w[0] + w[1] + w[2]);
+        w_weights(vid[0]) += w[0];
+        w_weights(vid[1]) += w[1];
+        w_weights(vid[2]) += w[2];
+    }
+
+    for(unsigned int v = 0 ; v < num_vertices_cage ; ++v) {
+		weights(v)  = w_weights(v) / sumWeights;
 	}
-	//cout << "[Mean Value Coordinates] number of planar cases : " << num_planaer_cases1 << " and " << num_planaer_cases2 << endl;
+}
+
+/// A simple but more robust scheme to compute MVC supposed in https://github.com/superboubek/QMVC
+void computeMVCForOneVertexSimple(Eigen::MatrixXd const & C, Eigen::MatrixXi const & CF,
+	Eigen::Vector3d eta, Eigen::VectorXd& weights, Eigen::VectorXd& w_weights) {
+	double epsilon = 0.000000001;
+
+    auto const num_vertices_cage = C.rows();
+	auto const num_faces_cage = CF.rows();
+
+    w_weights.setZero();
+    weights.setZero();
+    double sumWeights = 0.0;
+
+	Eigen::VectorXd d(num_vertices_cage);
+	d.setZero();
+	Eigen::MatrixXd u(num_vertices_cage, 3);
+
+    for(unsigned int v = 0; v < num_vertices_cage; ++v) {
+		const Eigen::Vector3d cage_vertex = C.row(v);
+        d(v) = (eta - cage_vertex).norm();
+        if(d(v) < epsilon) {
+            weights(v) = 1.0;
+            return;
+        }
+        u.row(v) = (cage_vertex - eta ) / d(v);
+    }
+
+    unsigned int vid[3];
+    double l[3], theta[3], w[3];
+
+    for(unsigned int t = 0 ; t < num_faces_cage; ++t) {
+        // the Norm is CCW :
+        for(unsigned int i = 0; i <= 2; ++i) {
+            vid[i] =  CF(t,i);
+		}
+
+        for(unsigned int i = 0; i <= 2; ++i) {
+			const Eigen::Vector3d v_0 = u.row(vid[(i + 1) % 3]);
+			const Eigen::Vector3d v_1 = u.row(vid[(i + 2) % 3]);
+            l[i] = (v_0 - v_1).norm();
+        }
+
+        for( unsigned int i = 0; i <= 2; ++i) {
+			const Eigen::Vector3d v_0 = u.row(vid[(i + 1) % 3]);
+			const Eigen::Vector3d v_1 = u.row(vid[(i + 2) % 3]);
+            theta[i] = 2. * asin((v_0 - v_1).norm() * .5);
+        }
+
+        // test in original MVC paper: (they test if one angle psi is close to 0: it is "distance sensitive" in the sense that it does not
+        // relate directly to the distance to the support plane of the triangle, and the more far away you go from the triangle, the worse it is)
+        // In our experiments, it is actually not the good way to do it, as it increases significantly the errors we get in the computation of weights and derivatives,
+        // especially when evaluating Hfx, Hfy, Hfz which can be of norm of the order of 10^3 instead of 0 (when specifying identity on the cage, see paper)
+
+        // simple test we suggest:
+        // the determinant of the basis is 2*area(T)*d( eta , support(T) ), we can directly test for the distance to support plane of the triangle to be minimum
+
+		const Eigen::Vector3d c_0 = C.row(vid[0]);
+		const Eigen::Vector3d c_1 = C.row(vid[1]);
+		const Eigen::Vector3d c_2 = C.row(vid[2]);
+        double determinant = (c_0 - eta).dot((c_1 - c_0).cross(c_2 - c_0));
+        double sqrdist = determinant*determinant / (4 * ((c_1 - c_0).cross(c_2 - c_0)).squaredNorm());
+        double dist = std::sqrt(sqrdist);
+
+        if(dist < epsilon) {
+            // then the point eta lies on the support plane of the triangle
+            double h = (theta[0] + theta[1] + theta[2]) * .5;
+            if(M_PI - h < epsilon) {
+                // eta lies inside the triangle t , use 2d barycentric coordinates :
+                for( unsigned int i = 0; i <= 2; ++i) {
+                    w[i] = sin(theta[i]) * l[(i+2) % 3] * l[(i+1) % 3];
+                }
+                sumWeights = w[0] + w[1] + w[2];
+
+                w_weights.setZero();
+                weights(vid[0]) = w[0] / sumWeights;
+                weights(vid[1]) = w[1] / sumWeights;
+                weights(vid[2]) = w[2] / sumWeights;
+                return;
+            }
+        }
+
+        Eigen::Vector3d pt[3], N[3];
+        for(unsigned int i = 0; i < 3; ++i) {
+            pt[i] = C.row(CF(t, i));
+		}
+        for(unsigned int i = 0; i < 3; ++i) {
+            N[i] = (pt[(i+1)%3] - eta).cross(pt[(i+2)%3] - eta);
+		}
+
+        for(unsigned int i = 0; i <= 2; ++i) {
+            w[i] = 0.0;
+            for(unsigned int j = 0; j <= 2; ++j) {
+                w[i] += theta[j] * N[i].dot(N[j]) / (2.0 * N[j].norm());
+			}
+            w[i] /= determinant;
+        }
+
+        sumWeights += (w[0] + w[1] + w[2]);
+        w_weights(vid[0]) += w[0];
+        w_weights(vid[1]) += w[1];
+        w_weights(vid[2]) += w[2];
+    }
+
+    for(unsigned int v = 0; v < num_vertices_cage; ++v) {
+        weights(v)  = w_weights(v) / sumWeights;
+	}
+}
+
+void computeMVC(const Eigen::MatrixXd& C, const Eigen::MatrixXi& CF, Eigen::MatrixXd const& eta_m,
+    Eigen::MatrixXd& phi) {
+		phi.resize(C.rows(), eta_m.rows());
+		Eigen::VectorXd w_weights(C.rows());
+		Eigen::VectorXd weights(C.rows());
+	
+	
+		for (int eta_idx = 0; eta_idx < eta_m.rows(); ++eta_idx) {
+			const Eigen::Vector3d eta = eta_m.row(eta_idx);
+			computeMVCForOneVertexSimple(C, CF, eta, weights, w_weights);
+			phi.col(eta_idx) = weights;
+		}
 }
 
 double getSpanDeterminant(Eigen::Vector3d const& v1, Eigen::Vector3d const& v2, Eigen::Vector3d const& v3) {

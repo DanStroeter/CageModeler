@@ -174,21 +174,6 @@ struct ProjectModelData
 		return hasNoMeshFile || hasNoCageFile || hasNoWeightsFile || hasNoDeformedCageFile || hasNoParamsFile || hasNoEmbedding;
 	}
 
-	/**
-	 * @return Check if the mesh files exist when generate the cage of the mesh, otherwise we will end up with errors.
-	 */
-	[[nodiscard]] bool CheckMissingFilesForCageGeneration() const
-	{
-		const auto hasNoMeshFile = (_meshFilepath.has_value() && !std::filesystem::exists(_meshFilepath.value()));
-		//const auto hasNoCageFile = (_cageFilepath.has_value() && !std::filesystem::exists(_cageFilepath.value()));
-		//const auto hasNoDeformedCageFile = (_deformedCageFilepath.has_value() && !std::filesystem::exists(_deformedCageFilepath.value()));
-		//const auto hasNoWeightsFile = (_weightsFilepath.has_value() && !std::filesystem::exists(_weightsFilepath.value()));
-		//const auto hasNoParamsFile = (_parametersFilepath.has_value() && !std::filesystem::exists(_parametersFilepath.value()));
-		//const auto hasNoEmbedding = (DeformationTypeHelpers::RequiresEmbedding(_deformationType) && _embeddingFilepath.has_value() && !std::filesystem::exists(_embeddingFilepath.value()));
-
-		return hasNoMeshFile ;
-	}
-
 #if WITH_SOMIGLIANA
 	[[nodiscard]] double GetSomiglianaBulging() const
 	{

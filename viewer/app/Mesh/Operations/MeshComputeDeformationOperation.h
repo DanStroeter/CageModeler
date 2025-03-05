@@ -9,12 +9,7 @@ struct MeshComputeDeformationOperationParams
 {
 	MeshComputeDeformationOperationParams(const DeformationType deformationType,
 		const LBC::DataSetup::WeightingScheme LBCScheme,
-#if WITH_SOMIGLIANA
-		const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer,
-		const double somigBulging,
-		const double somigBlendFactor,
-		const BulgingType somigBulgingType,
-#endif
+		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer,
 		EigenMesh mesh,
 		EigenMesh cageMesh,
 		EigenMesh deformedCage,
@@ -24,12 +19,7 @@ struct MeshComputeDeformationOperationParams
 		const bool interpolateWeights)
 		: _deformationType(deformationType)
 		, _LBCScheme(LBCScheme)
-#if WITH_SOMIGLIANA
 		, _somiglianaDeformer(somiglianaDeformer)
-		, _somigBulging(somigBulging)
-		, _somigBlendFactor(somigBlendFactor)
-		, _somigBulgingType(somigBulgingType)
-#endif
 		, _mesh(std::move(mesh))
 		, _cage(std::move(cageMesh))
 		, _deformedCage(std::move(deformedCage))
@@ -42,13 +32,7 @@ struct MeshComputeDeformationOperationParams
 	DeformationType _deformationType = DeformationType::Green;
 	LBC::DataSetup::WeightingScheme _LBCScheme = LBC::DataSetup::WeightingScheme::SQUARE;
 
-#if WITH_SOMIGLIANA
-	std::shared_ptr<green::somig_deformer_3> _somiglianaDeformer = nullptr;
-
-	double _somigBulging = 0;
-	double _somigBlendFactor = 0;
-	BulgingType _somigBulgingType = SWEPT_VOLUME;
-#endif
+	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
 
 	EigenMesh _mesh;
 	EigenMesh _cage;
