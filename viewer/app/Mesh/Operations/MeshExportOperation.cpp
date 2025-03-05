@@ -32,19 +32,10 @@ void DeformedMeshExportOperation::ExportSample(const std::size_t frameIndex, con
 	outputFilename.append(deformationTypeVariant);
 	outputFilename.append(".obj");
 
-#ifdef WITH_SOMIGLIANA
-	if (_params._deformationType == DeformationType::MVC || _params._deformationType == DeformationType::Somigliana)
-		{
-			_params._somiglianaDeformer->save_mesh(outputFilename.c_str());
-		}
-		else
-#endif
-	{
-		// Scale the output data before we do the export.
-		GeometryUtils::ScaleEigenMesh(_params._deformationData._vertexData[frameIndex]._vertices, _params._scalingFactor);
+	// Scale the output data before we do the export.
+	GeometryUtils::ScaleEigenMesh(_params._deformationData._vertexData[frameIndex]._vertices, _params._scalingFactor);
 
-		igl::writeOBJ(outputFilename, _params._deformationData._vertexData[frameIndex]._vertices, _params._faces);
-	}
+	igl::writeOBJ(outputFilename, _params._deformationData._vertexData[frameIndex]._vertices, _params._faces);
 
 	LOG_DEBUG("Exported deformed mesh to {}.", outputFilename);
 }

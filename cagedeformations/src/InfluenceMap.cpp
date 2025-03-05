@@ -73,5 +73,6 @@ void write_influence_color_map_OBJ(const std::string & file_name, const Eigen::M
 
 		V_colors.row(i) = HSVtoRGB(240. * (1. - interpolate(influences(i))), 100., 100.);
 	}
-	igl::writeOBJ(file_name, V, T, V_colors);
+	// NOTE - Influence Map feature no longer supported by CageModeler
+	igl::writeOBJ(file_name, V, T/*, V_colors*/);
 }

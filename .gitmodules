@@ -1,6 +1,6 @@
 [submodule "vcpkg"]
 	path = vcpkg
 	url = https://github.com/microsoft/vcpkg.git
-[submodule "external/libigl"]
+[submodule "libigl"]
 	path = external/libigl
-	url = https://github.com/DanStroeter/libigl.git
+	url = https://github.com/libigl/libigl.git

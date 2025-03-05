@@ -12,11 +12,7 @@ void MeshExportInfluenceMapOperation::Execute()
 		controlVerticesIdx.push_back(it.first);
 	}
 
-	bool usesSomigliana = false;
-
-#ifdef WITH_SOMIGLIANA
-	usesSomigliana = (_params._deformationType == DeformationType::Somigliana || _params._deformationType == DeformationType::MVC);
-#endif
+	bool usesSomigliana = usesSomigliana = (_params._deformationType == DeformationType::Somigliana);
 
 	if (!usesSomigliana)
 	{
@@ -25,6 +21,8 @@ void MeshExportInfluenceMapOperation::Execute()
 			_params._deformationType == DeformationType::QGC ||
 			_params._deformationType == DeformationType::MLC ||
 			_params._deformationType == DeformationType::MEC ||
+			_params._deformationType == DeformationType::MVC ||
+			_params._deformationType == DeformationType::QMVC ||
 			_params._interpolateWeights) ? 0 : _params._modelVerticesOffset;
 		const auto transposeW = _params._deformationType == DeformationType::Green ||
 			_params._deformationType == DeformationType::QGC ||
@@ -41,7 +39,6 @@ void MeshExportInfluenceMapOperation::Execute()
 	}
 	else
 	{
-#if WITH_SOMIGLIANA
 		write_influence_color_map_OBJ(_params._outputFilepath.string(),
 			_params._mesh._vertices,
 			_params._mesh._faces,
@@ -49,6 +46,5 @@ void MeshExportInfluenceMapOperation::Execute()
 			controlVerticesIdx,
 			0,
 			true);
-#endif
 	}
 }

@@ -7,9 +7,7 @@ struct MeshComputeInfluenceMapOperationParams
 {
 	MeshComputeInfluenceMapOperationParams(const DeformationType deformationType,
 		const LBC::DataSetup::WeightingScheme LBCScheme,
-#if WITH_SOMIGLIANA
-		const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer,
-#endif
+		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer,
 		Eigen::MatrixXd vertices,
 		Parametrization parametrization,
 		const MeshComputeWeightsOperationResult& weightsData,
@@ -17,9 +15,7 @@ struct MeshComputeInfluenceMapOperationParams
 		const bool interpolateWeights)
 		: _deformationType(deformationType)
 		, _LBCScheme(LBCScheme)
-#if WITH_SOMIGLIANA
 		, _somiglianaDeformer(somiglianaDeformer)
-#endif
 		, _vertices(std::move(vertices))
 		, _parametrization(std::move(parametrization))
 		, _weightsData(weightsData)
@@ -30,9 +26,7 @@ struct MeshComputeInfluenceMapOperationParams
 	DeformationType _deformationType;
 	LBC::DataSetup::WeightingScheme _LBCScheme;
 
-#if WITH_SOMIGLIANA
-	std::shared_ptr<green::somig_deformer_3> _somiglianaDeformer = nullptr;
-#endif
+	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
 
 	Eigen::MatrixXd _vertices;
 	Parametrization _parametrization { };
