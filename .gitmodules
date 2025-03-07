@@ -4,3 +4,6 @@
 [submodule "libigl"]
 	path = external/libigl
 	url = https://github.com/libigl/libigl.git
+[submodule "vcglib"]
+	path = viewer/external/vcglib
+	url = https://github.com/cnr-isti-vclab/vcglib.git
