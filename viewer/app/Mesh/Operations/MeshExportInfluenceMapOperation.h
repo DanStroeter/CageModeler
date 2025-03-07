@@ -9,7 +9,9 @@ struct MeshExportInfluenceMapOperationParams
 {
 	MeshExportInfluenceMapOperationParams(const DeformationType deformationType,
 		const LBC::DataSetup::WeightingScheme LBCScheme,
-		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer,
+#if WITH_SOMIGLIANA
+		const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer,
+#endif
 		EigenMesh mesh,
 		EigenMesh cage,
 		Parametrization parametrization,
@@ -19,7 +21,9 @@ struct MeshExportInfluenceMapOperationParams
 		const bool interpolateWeights)
 		: _deformationType(deformationType)
 		, _LBCScheme(LBCScheme)
+#if WITH_SOMIGLIANA
 		, _somiglianaDeformer(somiglianaDeformer)
+#endif
 		, _mesh(std::move(mesh))
 		, _cage(std::move(cage))
 		, _parametrization(std::move(parametrization))
@@ -32,7 +36,9 @@ struct MeshExportInfluenceMapOperationParams
 	DeformationType _deformationType;
 	LBC::DataSetup::WeightingScheme _LBCScheme;
 
-	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
+#if WITH_SOMIGLIANA
+	std::shared_ptr<green::somig_deformer_3> _somiglianaDeformer = nullptr;
+#endif
 
 	EigenMesh _mesh;
 	EigenMesh _cage;

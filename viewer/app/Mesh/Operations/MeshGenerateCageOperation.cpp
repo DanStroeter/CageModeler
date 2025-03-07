@@ -12,7 +12,6 @@
 #include <omp.h>
 #include <ctime>
 #define CGAL_EIGEN3_ENABLED
-//#define DETERMINE_VOXEL_SIZE
 
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
@@ -294,10 +293,10 @@ std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
 	Point_inside inside_tester(tree);
 
 	// Exact_Polyhedron voxels;
-	std::cout << "Check for intersection\n";
+	//std::cout << "Check for intersection\n";
 	for (unsigned int i = 0; i < data_resolution[0]; i++) {
 		for (unsigned int j = 0; j < data_resolution[1]; j++) {
-			if (j % 30 == 0) printf("voxelizing (%d, %d)\n", i, j);
+			//if (j % 30 == 0) printf("voxelizing (%d, %d)\n", i, j);
 			for (unsigned int k = 0; k < data_resolution[2]; k++) {
 
 				unsigned int idx = i * pow(BASE_RESOLUTION, 2) + j * BASE_RESOLUTION + k;
@@ -329,23 +328,13 @@ std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
 					intersecting_voxels.push_back(idx);
 					voxels_marking[idx] = true;
 				}
-				//if(k % 5 == 0) std::cout << "k : " << k << "\n";
 			}
-			//if(j % 5 == 0)  std::cout << "j : " << j << "\n";
 		}
-		//if (i % 5 == 0) std::cout << "i : " << i << "\n";
 	}
 
-	// for mesh generation of voxel
-	/*Exact_Polyhedron voxels;
-	for (auto voxel_idx : intersecting_voxels)
-	{
-		calc_voxel_from_idx_hex(voxel_idx, numVoxels, grid_min, voxel_strides, voxels);
-	}*/
+
 	global_min_point = grid_min;
 	base_cellsize = cell_size;
-	//CGAL::write_off("C:/Users/jinjo/Documents/TUD/a2024wise/VC_lab/CageModeler/models/cactus_voxel.off", voxels);
-
 	return voxels_marking;
 }
 
@@ -409,8 +398,7 @@ MIPMAP_TYPE generate_mipmap(VOXEL_GRID grid) {
 			}
 		}
 
-		//draw_voxel(depth, mipmap, resol);
-		//std::cout << "just drew mipmap level " << depth << "\n";
+	
 		mm_pyramid.push_back(mipmap);
 	}
 	return mm_pyramid;
@@ -530,7 +518,7 @@ VOXEL_GRID executeDilation(MIPMAP_TYPE mipmap) {
 				if (d_grid[flat_idx] == true) continue;
 				SE se;
 				Node current_point = { 0, flat_idx };
-				define_se(current_point, 3 * base_cellsize, se, false);
+				define_se(current_point, 2 * base_cellsize, se, false);
 				//define_se(current_point, base_cellsize * 0.6, se, true);
 				node_stack.push({ mipmap_depth - 1, 0 });
 				while (!node_stack.empty() && d_grid[flat_idx] == false) {
@@ -864,38 +852,11 @@ ExactMesh extract_surface_from_voxels(
 		}
 	}
 
-	//if (!CGAL::is_closed(output_mesh)) {
-	//	std::cerr << "Warning: Mesh is not closed! Trying to close it..." << std::endl;
-	//	PMP::stitch_borders(output_mesh);
-	//	PMP::triangulate_faces(output_mesh);
-
-	//	if (CGAL::is_closed(output_mesh)) {
-	//		std::cout << "Mesh is now closed after stitching!" << std::endl;
-	//	}
-	//	else {
-	//		std::cerr << "Error: Mesh is still not closed!" << std::endl;
-	//	}
-	//}
-
-
-	// std::ofstream output(outputfile);
-	// if (!output) {
-	// 	std::cerr << "Error: Cannot open output file " << outputfile << std::endl;
-	// 	return;
-	// }
-
-	// output << output_mesh;
-	// output.close();
-
-	// std::cout << "Meshing is done successfully!" << std::endl;
 
 	return output_mesh;
 }
 
 void decimation(MyMesh& vcg_mesh) {
-
-	//MyMesh vcg_mesh;
-	//from_cgal_to_vcg(mesh, vcg_mesh);
 
 	tri::Smooth<MyMesh>::VertexCoordLaplacianHC(vcg_mesh, 3);
 
@@ -905,20 +866,20 @@ void decimation(MyMesh& vcg_mesh) {
 	float TargetError = std::numeric_limits<float>::max();
 	std::cout << "target error: " << TargetError << "\n";
 	TargetError = 0.001f;
-	qparams.QualityCheck = true;  printf("Using Quality Checking\n");
-	qparams.NormalCheck = true;  printf("Using Normal Deviation Checking\n");
-	qparams.OptimalPlacement = true;  printf("Using OptimalPlacement\n");
-	qparams.ScaleIndependent = true;  printf("Using ScaleIndependent\n");
+	qparams.QualityCheck = true;  
+	qparams.NormalCheck = true;  
+	qparams.OptimalPlacement = true;  
+	qparams.ScaleIndependent = true;  
 	qparams.PreserveTopology = true;
 
 	bool CleaningFlag = true;
 	if (CleaningFlag) {
 		int dup = tri::Clean<MyMesh>::RemoveDuplicateVertex(vcg_mesh);
 		int unref = tri::Clean<MyMesh>::RemoveUnreferencedVertex(vcg_mesh);
-		printf("Removed %i duplicate and %i unreferenced vertices from mesh \n", dup, unref);
+	//	printf("Removed %i duplicate and %i unreferenced vertices from mesh \n", dup, unref);
 	}
-	int FinalSize = 100;
-	printf("reducing it to %i\n", FinalSize);
+	int FinalSize = 400;
+	//printf("reducing it to %i\n", FinalSize);
 
 	vcg::tri::UpdateBounding<MyMesh>::Box(vcg_mesh);
 
@@ -928,15 +889,16 @@ void decimation(MyMesh& vcg_mesh) {
 	int t1 = clock();
 	DeciSession.Init<MyTriEdgeCollapse>();
 	int t2 = clock();
-	printf("BEFORE: mesh  %d %d \n", vcg_mesh.vn, vcg_mesh.fn);
-	printf("Initial Heap Size %i\n", int(DeciSession.h.size()));
+//	printf("BEFORE: mesh  %d %d \n", vcg_mesh.vn, vcg_mesh.fn);
+//	printf("Initial Heap Size %i\n", int(DeciSession.h.size()));
 
 	DeciSession.SetTargetSimplices(FinalSize);
 	DeciSession.SetTimeBudget(0.5f);
 	DeciSession.SetTargetOperations(100000);
-	if (TargetError < std::numeric_limits<float>::max()) DeciSession.SetTargetMetric(TargetError);
+	//if (TargetError < std::numeric_limits<float>::max()) DeciSession.SetTargetMetric(TargetError);
 
-	while (DeciSession.DoOptimization() && vcg_mesh.fn > FinalSize && DeciSession.currMetric < TargetError)
+	//while (DeciSession.DoOptimization() && vcg_mesh.fn > FinalSize && DeciSession.currMetric < TargetError)
+      while (DeciSession.DoOptimization() && vcg_mesh.fn > FinalSize)
 		printf("Current Mesh size %7i heap sz %9i err %9g \n", vcg_mesh.fn, int(DeciSession.h.size()), DeciSession.currMetric);
 
 	int t3 = clock();
@@ -947,20 +909,18 @@ void decimation(MyMesh& vcg_mesh) {
 		int dup_face = tri::Clean<MyMesh>::RemoveDuplicateFace(vcg_mesh);
 
 		//tri::UpdateNormal<MyMesh>::PerVertexPerFace(vcg_mesh);
-		printf("Removed %i duplicate and %i unreferenced vertices from mesh \n", dup, unref);
-		printf("Removed %i duplicate and %i unreferenced faces from mesh \n", dup_face, deg_face);
+	//	printf("Removed %i duplicate and %i unreferenced vertices from mesh \n", dup, unref);
+	//	printf("Removed %i duplicate and %i unreferenced faces from mesh \n", dup_face, deg_face);
 	}
 
-	printf("mesh  %d %d Error %g \n", vcg_mesh.vn, vcg_mesh.fn, DeciSession.currMetric);
-	printf("\nCompleted in (%5.3f+%5.3f) sec\n", float(t2 - t1) / CLOCKS_PER_SEC, float(t3 - t2) / CLOCKS_PER_SEC);
-
+	//printf("mesh  %d %d Error %g \n", vcg_mesh.vn, vcg_mesh.fn, DeciSession.currMetric);
+    printf("\nCompleted decimation in (%5.3f+%5.3f) sec\n", float(t2 - t1) / CLOCKS_PER_SEC, float(t3 - t2) / CLOCKS_PER_SEC);  
 	//return vcg_mesh;
 
 }
 
 void GenerateCageFromMeshOperation::Execute(){
 
-//const std::string filepath="/Users/liujiaqi/Desktop/opencv_Lab/CageModeler_1/models/";
  std::string filename=_params._meshfilepath;
  std::string outputfilename=_params._cagefilepath;
 
@@ -976,10 +936,10 @@ std::string intermediate_path=filepath+obj+"_interm.obj";
 	VOXEL_GRID d_grid = executeDilation(mipmap);
 
 	// extract contour and generate mipmap of the contour
-	std::cout << "drawing done. start contour extraction\n";
+	//std::cout << "drawing done. start contour extraction\n";
 	VOXEL_GRID contour = extract_contour(d_grid);
 
-	std::cout << "contour extraction done\n";
+	//std::cout << "contour extraction done\n";
 	MIPMAP_TYPE contour_pyramid = generate_mipmap(contour);
 
 	// erosion
@@ -997,6 +957,5 @@ std::string intermediate_path=filepath+obj+"_interm.obj";
 	tri::io::ImporterOFF<MyMesh>::Open(final_mesh, intermediate_path.c_str());
 	decimation(final_mesh);
 	std::string output_path = filepath + obj + "_cage.obj";
-	//const char* obj_path = "C:/Users/jinjo/Documents/TUD/a2024wise/VC_lab/CageModeler/models/mipmap_data/resol128/chessBishop_smoothed_decimated.obj";
 		tri::io::ExporterOBJ<MyMesh>::Save(final_mesh,outputfilename.c_str(),tri::io::Mask::IOM_BITPOLYGONAL);
 }

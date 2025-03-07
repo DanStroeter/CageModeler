@@ -57,26 +57,23 @@ MeshLoadOperation::ExecutionResult MeshLoadOperation::Execute()
 		}
 	}
 
-	auto somiglianaDeformer = std::make_shared<somig_deformer_3>(_params._somigNu);
+#if WITH_SOMIGLIANA
+	#if BUILD_DEVELOPMENT
+		auto somiglianaDeformer = std::make_shared<green::somig_deformer_3>(_params._somigNu);
+	#else
+		auto somiglianaDeformer = std::make_shared<green::somig_deformer_3>(_params._somigNu, true);
+	#endif
 
-	if (_params._deformationType == DeformationType::Somigliana)
+	if (_params._deformationType == DeformationType::MVC || _params._deformationType == DeformationType::Somigliana)
 	{
-		std::vector<std::vector<unsigned int>> elements(mesh._faces.rows());
-		std::vector<point3d> model_verts(mesh._vertices.rows());
+		if (!somiglianaDeformer->load_mesh(_params._meshFilepath.string()))
+		{
+			LOG_ERROR("Failed to load mesh file using Somigliana.");
 
-		for (int i = 0; i < mesh._vertices.rows(); ++i) {
-			model_verts[i] = { mesh._vertices(i, 0), mesh._vertices(i, 1), mesh._vertices(i, 2) };
+			return ExecutionResult("Failed to load mesh file using Somigliana.");
 		}
-		for (int i = 0; i < mesh._faces.rows(); ++i) {
-			elements[i] = { static_cast<unsigned int>(mesh._faces(i, 0)),
-				static_cast<unsigned int>(mesh._faces(i, 1)), static_cast<unsigned int>(mesh._faces(i, 2)) };
-			/*if (msh) {
-				elements[i].push_back(static_cast<unsigned int>(T_model(i, 3)));
-			}*/
-		}
-
-		somiglianaDeformer->set_mesh(elements, model_verts);
 	}
+#endif
 
 	LOG_DEBUG("Loaded mesh {}.", _params._meshFilepath.string());
 
@@ -176,21 +173,21 @@ MeshLoadOperation::ExecutionResult MeshLoadOperation::Execute()
 		LOG_DEBUG("Loaded deformation mesh {}.", _params._cageFilepath.string());
 	}
 
-	if (_params._deformationType == DeformationType::Somigliana)
+#ifdef WITH_SOMIGLIANA
+	if (_params._deformationType == DeformationType::Somigliana || _params._deformationType == DeformationType::MVC)
 	{
-		std::vector<std::vector<unsigned int>> faces_somig(cage._faces.rows());
-		std::vector<point3d> verts_somig(cage._vertices.rows());
-		for (int i = 0; i < cage._faces.rows(); ++i) {
-			faces_somig[i] = { static_cast<unsigned int>(cage._faces(i, 0)), static_cast<unsigned int>(cage._faces(i, 1)),
-				static_cast<unsigned int>(cage._faces(i, 2)) };
+		if (somiglianaDeformer->load_cage(cage._vertices, cage._faces))
+		{
+			std::cerr << "Failed to load Somigliana cage!\n";
+
+			return ExecutionResult("Failed to load Somigliana cage.");
 		}
-		for (int i = 0; i < cage._vertices.rows(); ++i) {
-			verts_somig[i] = { cage._vertices(i, 0), cage._vertices(i, 1), cage._vertices(i, 2) };
-		}
-		somiglianaDeformer->set_cage(faces_somig, verts_somig);
 
 		// TODO: Fix Somigliana mesh scaling.
+
+		somiglianaDeformer->init();
 	}
+#endif
 
 	Eigen::MatrixXi BE;
 	Eigen::MatrixXi CE;
@@ -300,8 +297,10 @@ MeshLoadOperation::ExecutionResult MeshLoadOperation::Execute()
 		std::move(weights),
 		std::move(parametrization),
 		hasEmbedding ? std::move(embedding) : std::optional<EigenMesh>(),
+#ifdef WITH_SOMIGLIANA
 		somiglianaDeformer,
 		_params._somigNu,
+#endif
 		modelVerticesOffset,
 		_params._numBBWSteps,
 		_params._numSamples,

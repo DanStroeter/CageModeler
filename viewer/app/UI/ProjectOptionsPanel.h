@@ -60,4 +60,7 @@ private:
 	uint32_t _selectedDeformationTypeIndex = -1;
 	uint32_t _selectedWeightingSchemeIndex = -1;
 
+#if WITH_SOMIGLIANA
+	uint32_t _selectedBulgingTypeIndex = -1;
+#endif
 };

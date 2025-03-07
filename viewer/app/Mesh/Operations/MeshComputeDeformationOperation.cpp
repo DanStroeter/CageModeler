@@ -74,28 +74,24 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 				_params._weightsData._psiQuad,
 				vertexData[i]._vertices);
 		}
-		else if (_params._deformationType == DeformationType::MVC ||_params._deformationType == DeformationType::QMVC || _params._deformationType == DeformationType::MLC ||
-			_params._deformationType == DeformationType::MEC)
+		else if (_params._deformationType == DeformationType::QMVC || _params._deformationType == DeformationType::MLC || _params._deformationType == DeformationType::MEC)
 		{
 			vertexData[i]._vertices = _params._weightsData._weights.transpose() * _params._deformedCage._vertices;
 		}
+#ifdef WITH_SOMIGLIANA
 		else if (_params._deformationType == DeformationType::Somigliana)
 		{
-			std::vector<point3d> verts_deformed_somig(_params._mesh._vertices.rows()), cage_deformed_somig(_params._cage._vertices.rows());
+			_params._somiglianaDeformer->deform(_params._deformedCage._vertices, SOMIGLIANA, _params._somigBulgingType, _params._somigBulging, _params._somigBlendFactor);
 
-			for (Eigen::Index j = 0; j < _params._deformedCage._vertices.rows(); ++j)
-			{
-				cage_deformed_somig[j] = { _params._deformedCage._vertices(j, 0), _params._deformedCage._vertices(j, 1), _params._deformedCage._vertices(j, 2) };
-			}
-
-			_params._somiglianaDeformer->deform(cage_deformed_somig, verts_deformed_somig);
-
-			for (Eigen::Index j = 0; j < _params._mesh._vertices.rows(); ++j) 
-			{
-				auto const vert = verts_deformed_somig[j];
-				vertexData[i]._vertices.row(j) = Eigen::Vector3d(vert.x(), vert.y(), vert.z());
-			}
+			vertexData[i]._vertices = _params._somiglianaDeformer->V_.transpose();
 		}
+		else if (_params._deformationType == DeformationType::MVC)
+		{
+			_params._somiglianaDeformer->deform(_params._deformedCage._vertices, MEANVALUE, _params._somigBulgingType, _params._somigBulging, _params._somigBlendFactor);
+
+			vertexData[i]._vertices = _params._somiglianaDeformer->V_.transpose();
+		}
+#endif
 		else
 		{
 			U = _params._weightsData._skinningMatrix * finalTransformation;

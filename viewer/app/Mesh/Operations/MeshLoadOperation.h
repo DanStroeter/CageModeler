@@ -21,9 +21,11 @@ struct MeshLoadOperationParams
 		const float scalingFactor,
 		const bool interpolateWeights,
 		const bool findOffset,
-		const bool noOffset,
-		const double somigNu,
-		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer
+		const bool noOffset
+#if WITH_SOMIGLIANA
+		, const double somigNu
+		, const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer
+#endif
 		)
 		: _deformationType(deformationType)
 		, _LBCWeightingScheme(LBCWeightingScheme)
@@ -39,7 +41,9 @@ struct MeshLoadOperationParams
 		, _interpolateWeights(interpolateWeights)
 		, _findOffset(findOffset)
 		, _noOffset(noOffset)
+#if WITH_SOMIGLIANA
 		, _somigNu(somigNu)
+#endif
 	{ }
 
 	[[nodiscard]] bool IsFBX() const
@@ -84,7 +88,9 @@ struct MeshLoadOperationParams
 	bool _findOffset = false;
 	bool _noOffset = false;
 
+#if WITH_SOMIGLIANA
 	double _somigNu = 0;
+#endif
 };
 
 class MeshLoadOperation final : public MeshOperationTemplated<MeshLoadOperationParams, std::shared_ptr<ProjectData>>

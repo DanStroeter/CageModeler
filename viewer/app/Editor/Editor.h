@@ -132,7 +132,12 @@ private:
 		EigenMesh deformedCage,
 		const DeformationType deformationType,
 		const LBC::DataSetup::WeightingScheme weightingScheme,
-		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer,
+#if WITH_SOMIGLIANA
+		const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer,
+		const double bulging,
+		const double blendFactor,
+		const BulgingType bulgingType,
+#endif
 		const int32_t modelVerticesOffset,
 		const int32_t numSamples,
 		const bool interpolateWeights) const;
