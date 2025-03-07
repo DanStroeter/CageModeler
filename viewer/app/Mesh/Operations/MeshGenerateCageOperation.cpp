@@ -332,6 +332,7 @@ std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
 		}
 	}
 
+
 	global_min_point = grid_min;
 	base_cellsize = cell_size;
 
@@ -397,6 +398,7 @@ MIPMAP_TYPE generate_mipmap(VOXEL_GRID grid) {
 				}
 			}
 		}
+
 
 		mm_pyramid.push_back(mipmap);
 	}
@@ -851,6 +853,9 @@ ExactMesh extract_surface_from_voxels(
 		}
 	}
 
+
+
+
 	return output_mesh;
 }
 
@@ -864,6 +869,7 @@ void decimation(MyMesh& vcg_mesh) {
 	float TargetError = std::numeric_limits<float>::max();
 	std::cout << "target error: " << TargetError << "\n";
 	TargetError = 0.001f;
+
 	qparams.QualityCheck = true; 
 	qparams.NormalCheck = true;  
 	qparams.OptimalPlacement = true; 
@@ -874,6 +880,7 @@ void decimation(MyMesh& vcg_mesh) {
 	if (CleaningFlag) {
 		int dup = tri::Clean<MyMesh>::RemoveDuplicateVertex(vcg_mesh);
 		int unref = tri::Clean<MyMesh>::RemoveUnreferencedVertex(vcg_mesh);
+
 		//printf("Removed %i duplicate and %i unreferenced vertices from mesh \n", dup, unref);
 	}
 	int FinalSize = 400;
@@ -887,6 +894,7 @@ void decimation(MyMesh& vcg_mesh) {
 	int t1 = clock();
 	DeciSession.Init<MyTriEdgeCollapse>();
 	int t2 = clock();
+
 	// printf("BEFORE: mesh  %d %d \n", vcg_mesh.vn, vcg_mesh.fn);
 	// printf("Initial Heap Size %i\n", int(DeciSession.h.size()));
 
@@ -896,6 +904,7 @@ void decimation(MyMesh& vcg_mesh) {
 	//if (TargetError < std::numeric_limits<float>::max()) DeciSession.SetTargetMetric(TargetError);
 
 	//while (DeciSession.DoOptimization() && vcg_mesh.fn > FinalSize && DeciSession.currMetric < TargetError)
+
 	while (DeciSession.DoOptimization() && vcg_mesh.fn > FinalSize)
 		printf("Current Mesh size %7i heap sz %9i err %9g \n", vcg_mesh.fn, int(DeciSession.h.size()), DeciSession.currMetric);
 
@@ -907,6 +916,7 @@ void decimation(MyMesh& vcg_mesh) {
 		int dup_face = tri::Clean<MyMesh>::RemoveDuplicateFace(vcg_mesh);
 
 		//tri::UpdateNormal<MyMesh>::PerVertexPerFace(vcg_mesh);
+
 		//printf("Removed %i duplicate and %i unreferenced vertices from mesh \n", dup, unref);
 		//printf("Removed %i duplicate and %i unreferenced faces from mesh \n", dup_face, deg_face);
 	}
@@ -956,6 +966,6 @@ std::string intermediate_path=filepath+obj+"_interm.obj";
 	tri::io::ImporterOFF<MyMesh>::Open(final_mesh, intermediate_path.c_str());
 	decimation(final_mesh);
 	std::string output_path = filepath + obj + "_cage.obj";
-	
+
 	tri::io::ExporterOBJ<MyMesh>::Save(final_mesh,outputfilename.c_str(),tri::io::Mask::IOM_BITPOLYGONAL);
 }

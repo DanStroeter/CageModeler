@@ -4,6 +4,7 @@
 #include <cagedeformations/MaximumEntropyCoordinates.h>
 #include <cagedeformations/MaximumLikelihoodCoordinates.h>
 #include <cagedeformations/WeightInterpolation.h>
+#include <igl/normalize_row_sums.h>
 #include <igl/boundary_conditions.h>
 #include <igl/harmonic.h>
 #include <igl/bbw.h>
@@ -132,17 +133,16 @@ MeshComputeWeightsOperation::ExecutionResult MeshComputeWeightsOperation::Execut
 			psiTri,
 			psiQuad);
 	}
+#ifdef WITH_SOMIGLIANA
 	else if (_params._deformationType == DeformationType::Somigliana)
 	{
-		_params._somiglianaDeformer->precompute_somig_coords(false);
+		_params._somiglianaDeformer->precompute_somig_coords();
 	}
 	else if (_params._deformationType == DeformationType::MVC)
 	{
-		computeMVC(_params._cage._vertices,
-			_params._cage._faces,
-			_params._mesh._vertices,
-			weights);
+		_params._somiglianaDeformer->precompute_mvc_coords();
 	}
+#endif
 	else if (_params._deformationType == DeformationType::QMVC)
 	{
 		computeMVCTriQuad(_params._cage._vertices,
@@ -180,9 +180,14 @@ MeshComputeWeightsOperation::ExecutionResult MeshComputeWeightsOperation::Execut
 		}
 	}
 
-	if (DeformationTypeHelpers::RequiresEmbedding(_params._deformationType))
+	if (DeformationTypeHelpers::RequiresEmbedding(_params._deformationType)
+#if WITH_SOMIGLIANA
+		|| _params._deformationType == DeformationType::MVC
+		|| _params._deformationType == DeformationType::Somigliana
+#endif
+		)
 	{
-		weights  = (weights.array().colwise() / weights.array().rowwise().sum()).eval();
+		igl::normalize_row_sums(weights, weights);
 	}
 
 	LOG_DEBUG("Done computing weights.");

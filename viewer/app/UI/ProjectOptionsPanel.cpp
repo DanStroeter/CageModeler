@@ -4,7 +4,11 @@
 
 namespace
 {
+#if WITH_SOMIGLIANA
 	constexpr auto PanelSize = ImVec2(420.0f, 630.0f);
+#else
+	constexpr auto PanelSize = ImVec2(420.0f, 410.0f);
+#endif
 }
 
 ProjectOptionsPanel::ProjectOptionsPanel(const std::shared_ptr<ProjectModelData>& model,
@@ -218,6 +222,7 @@ void ProjectOptionsPanel::Layout()
 		}
 		ImGui::EndDisabled();
 
+#ifdef WITH_SOMIGLIANA
 		ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
 		ImGui::TableNextRow();
@@ -233,7 +238,8 @@ void ProjectOptionsPanel::Layout()
 
 		ImGui::Dummy(ImVec2(0.0f, 5.0f));
 
-		ImGui::BeginDisabled(_modifiedProjectModel._deformationType != DeformationType::Somigliana);
+		ImGui::BeginDisabled(_modifiedProjectModel._deformationType != DeformationType::Somigliana &&
+			_modifiedProjectModel._deformationType != DeformationType::MVC);
 		{
 			ImGui::TableNextRow();
 			{
@@ -248,7 +254,7 @@ void ProjectOptionsPanel::Layout()
 				ImGui::InputDouble("##Project_SomigNu", &_modifiedProjectModel._somigNu);
 			}
 
-			/*ImGui::TableNextRow();
+			ImGui::TableNextRow();
 			{
 				// Add the scale input at the bottom because it's valid for all meshes.
 				ImGui::TableSetColumnIndex(0);
@@ -319,9 +325,10 @@ void ProjectOptionsPanel::Layout()
 				}
 
 				_modifiedProjectModel._somigBulgingType = static_cast<BulgingType>(_selectedBulgingTypeIndex);
-			}*/
+			}
 		}
 		ImGui::EndDisabled();
+#endif
 
 		ImGui::EndTable();
 
@@ -448,6 +455,9 @@ void ProjectOptionsPanel::UpdateAfterNewModel()
 	_selectedDeformationTypeIndex = static_cast<uint32_t>(_model._projectData->_deformationType);
 	_selectedWeightingSchemeIndex = static_cast<uint32_t>(_model._projectData->_LBCWeightingScheme);
 
-	//_selectedBulgingTypeIndex = static_cast<uint32_t>(_model._projectData->_somigBulgingType);
+#ifdef WITH_SOMIGLIANA
+	_selectedBulgingTypeIndex = static_cast<uint32_t>(_model._projectData->_somigBulgingType);
+#endif
+
 	_modifiedProjectModel = *_model._projectData;
 }

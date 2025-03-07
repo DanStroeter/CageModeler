@@ -3,14 +3,19 @@
 #include <Mesh/GeometryUtils.h>
 
 #include <cagedeformations/Parametrization.h>
-#include <cagedeformations/somig.h>
 
 #include <Eigen/Core>
 #include <LBC/DataSetup.h>
 
+#ifdef WITH_SOMIGLIANA
+	#include <somigliana/somigliana_3d.h>
+#endif
+
 enum class DeformationType : uint8_t
 {
+#ifdef WITH_SOMIGLIANA
 	MVC,
+#endif
 	QMVC,
 	Harmonic,
 	BBW,
@@ -19,18 +24,22 @@ enum class DeformationType : uint8_t
 	MLC,
 	Green,
 	QGC,
+#ifdef WITH_SOMIGLIANA
 	Somigliana
+#endif
 };
 
 struct DeformationTypeHelpers
 {
 	[[nodiscard]] static std::string DeformationTypeToString(const DeformationType deformationType, const LBC::DataSetup::WeightingScheme LBCScheme)
 	{
+#ifdef WITH_SOMIGLIANA
 		if (deformationType == DeformationType::MVC)
 		{
 			return "MVC";
 		}
 		else
+#endif
 		if (deformationType == DeformationType::QMVC)
 		{
 			return "QMVC";
@@ -63,10 +72,12 @@ struct DeformationTypeHelpers
 		{
 			return "QGC";
 		}
+#ifdef WITH_SOMIGLIANA
 		else if (deformationType == DeformationType::Somigliana)
 		{
 			return "Somigliana";
 		}
+#endif
 
 		return { };
 	}
@@ -149,8 +160,10 @@ struct ProjectData
 		std::optional<Eigen::MatrixXd> weights,
 		std::optional<Parametrization> parametrization,
 		std::optional<EigenMesh> embedding,
-		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer,
+#ifdef WITH_SOMIGLIANA
+		const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer,
 		const double somigNu,
+#endif
 		const int32_t modelVerticesOffset,
 		const int32_t numBBWSteps,
 		const int32_t numSamples,
@@ -171,8 +184,10 @@ struct ProjectData
 		, _weights(std::move(weights))
 		, _parametrization(std::move(parametrization))
 		, _embedding(std::move(embedding))
+#ifdef WITH_SOMIGLIANA
 		, _somiglianaDeformer(somiglianaDeformer)
 		, _somigNu(somigNu)
+#endif
 		, _modelVerticesOffset(modelVerticesOffset)
 		, _numBBWSteps(numBBWSteps)
 		, _numSamples(numSamples)
@@ -226,9 +241,11 @@ struct ProjectData
 	std::optional<Parametrization> _parametrization;
 	std::optional<EigenMesh> _embedding;
 
-	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
+#ifdef WITH_SOMIGLIANA
+	std::shared_ptr<green::somig_deformer_3> _somiglianaDeformer = nullptr;
 
 	double _somigNu = 0;
+#endif
 
 	int32_t _modelVerticesOffset = 0;
 	int32_t _numBBWSteps = 300;
