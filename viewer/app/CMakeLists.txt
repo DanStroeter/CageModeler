@@ -224,6 +224,11 @@ include_directories(${EIGEN3_INCLUDE_DIR})
 
 target_link_libraries(${PROJECT_NAME} PUBLIC CGAL::CGAL )
 
+
+#include VCG
+set(VCG_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/viewer/external/vcglib")
+include_directories(${VCG_INCLUDE_DIR})
+
 # Precompiled header file includes.
 target_precompile_headers(
     ${PROJECT_NAME}
