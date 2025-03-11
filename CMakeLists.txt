@@ -39,7 +39,13 @@ endif()
 find_package(Eigen3 REQUIRED)
 
 # LAPACK 
-find_package(LAPACK REQUIRED)
+if(UNIX)
+    find_package(lapack REQUIRED)
+    enable_language(Fortran)
+else()
+    find_package(LAPACK REQUIRED)
+endif()
+
 
 # Additional dependencies required for the library.
 add_subdirectory("${CMAKE_SOURCE_DIR}/external/LBC" LBCLib)
@@ -51,7 +57,6 @@ if (UNIX)
     check_language(CUDA)
 
     if (CMAKE_CUDA_COMPILER)
-        message("Found CUDA compiler and adding Somgliana.")
 
         if (NOT DEFINED CMAKE_CUDA_STANDARD)
             set(CMAKE_CUDA_STANDARD 11)
