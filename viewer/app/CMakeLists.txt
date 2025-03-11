@@ -11,7 +11,7 @@ find_package(CGAL REQUIRED COMPONENTS Core )
 
 find_package(Eigen3 REQUIRED)
 
-set(CMAKE_PREFIX_PATH "/opt/homebrew/opt/cgal")
+#set(CMAKE_PREFIX_PATH "/opt/homebrew/opt/cgal")
 find_package(CGAL REQUIRED)
 
 
@@ -26,7 +26,7 @@ IF (APPLE)
 endif ()
 
 #OpenMP
-include_directories(/opt/homebrew/opt/libomp/include)
+#include_directories(/opt/homebrew/opt/libomp/include)
 
 # Set the startup project for the "play" button in MSVC.
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
@@ -162,7 +162,7 @@ target_link_libraries(
         Vulkan::Vulkan
         nfd
         SDL3::SDL3
-        /opt/homebrew/opt/libomp/lib/libomp.dylib
+        #/opt/homebrew/opt/libomp/lib/libomp.dylib
 )
 
 # On Linux the naming of the OpenMesh library is different.

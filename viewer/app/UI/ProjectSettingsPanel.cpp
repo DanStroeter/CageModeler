@@ -171,7 +171,7 @@ void ProjectSettingsPanel::Layout()
 
 				_applyButtonPressed = true;*/
 
-			std::string generatedCagePath=GenerateCageFromMesh(_modifiedProjectModel._meshFilepath.value(),_modifiedProjectModel._scalingFactor);
+			std::string generatedCagePath=GenerateCageFromMesh(_modifiedProjectModel._meshFilepath.value().string(), _modifiedProjectModel._scalingFactor);
 				_modifiedProjectModel._cageFilepath=generatedCagePath;
 			}
 		}
@@ -337,7 +337,6 @@ void ProjectSettingsPanel::Layout()
 		}
 		ImGui::EndDisabled();
 
-#ifdef WITH_SOMIGLIANA
 		ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
 		ImGui::TableNextRow();
@@ -359,7 +358,7 @@ void ProjectSettingsPanel::Layout()
 			ImGui::SameLine();
 			UIHelpers::HelpMarker("The material parameter nu for somigliana deformer.");
 
-			auto bulgingValue = _modifiedProjectModel._somigBulging.load();
+			/*auto bulgingValue = _modifiedProjectModel._somigBulging.load();
 			if (ImGui::InputDouble("##SomigBulging", &bulgingValue)) {
 				_modifiedProjectModel._somigBulging = bulgingValue;
 			}
@@ -399,10 +398,9 @@ void ProjectSettingsPanel::Layout()
 			_modifiedProjectModel._somigBulgingType = static_cast<BulgingType>(_selectedBulgingTypeIndex);
 
 			ImGui::SameLine();
-			UIHelpers::HelpMarker("The bulging type for somigliana deformer.");
+			UIHelpers::HelpMarker("The bulging type for somigliana deformer.");*/
 		}
 		ImGui::EndDisabled();
-#endif
 
 		ImGui::EndTable();
 
@@ -485,8 +483,6 @@ const auto meshOperationSystem = _meshOperationSystem.lock();
 	std::filesystem::path currentpath=__FILE__;
 	std::filesystem::path upperpath=currentpath.parent_path().parent_path().parent_path().parent_path();
 	std::string outputCageFile=upperpath.string() + "/models/cage.obj";
-
-	//std::string outputCageFile="/Users/liujiaqi/Desktop/opencv_Lab/CageModeler_1/models/cage1.obj";
 	 
 	meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(meshfilePath,outputCageFile,scale);
 
@@ -510,9 +506,7 @@ void ProjectSettingsPanel::SetModel(const std::shared_ptr<ProjectModelData>& mod
 	_selectedDeformationTypeIndex = static_cast<uint32_t>(_model->_deformationType);
 	_selectedWeightingSchemeIndex = static_cast<uint32_t>(_model->_LBCWeightingScheme);
 
-#ifdef WITH_SOMIGLIANA
-	_selectedBulgingTypeIndex = static_cast<uint32_t>(_model->_somigBulgingType);
-#endif
+	//_selectedBulgingTypeIndex = static_cast<uint32_t>(_model->_somigBulgingType);
 
 	_modifiedProjectModel = *_model;
 }

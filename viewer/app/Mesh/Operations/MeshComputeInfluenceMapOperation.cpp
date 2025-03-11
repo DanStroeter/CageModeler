@@ -12,11 +12,7 @@ MeshComputeInfluenceMapOperation::ExecutionResult MeshComputeInfluenceMapOperati
 		controlVerticesIdx.push_back(it.first);
 	}
 
-	bool usesSomigliana = false;
-
-#ifdef WITH_SOMIGLIANA
-	usesSomigliana = (_params._deformationType == DeformationType::Somigliana || _params._deformationType == DeformationType::MVC);
-#endif
+	bool usesSomigliana = (_params._deformationType == DeformationType::Somigliana || _params._deformationType == DeformationType::MVC);
 
 	const Eigen::MatrixXd* weights = nullptr;
 	int cageVerticesOffset = 0;
@@ -37,11 +33,9 @@ MeshComputeInfluenceMapOperation::ExecutionResult MeshComputeInfluenceMapOperati
 	}
 	else
 	{
-#if WITH_SOMIGLIANA
 		weights = &_params._somiglianaDeformer->getPhi();
 		cageVerticesOffset = 0;
 		transposeW = true;
-#endif
 	}
 
 	Eigen::MatrixXd vertexColors;

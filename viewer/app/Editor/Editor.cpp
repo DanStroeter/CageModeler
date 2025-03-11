@@ -528,12 +528,7 @@ void Editor::OnNewProjectCreated()
 			projectResult.GetValue()->_deformedCage,
 			projectResult.GetValue()->_deformationType,
 			projectResult.GetValue()->_LBCWeightingScheme,
-#if WITH_SOMIGLIANA
 			projectResult.GetValue()->_somiglianaDeformer,
-			_projectModel->GetSomiglianaBulging(),
-			_projectModel->GetSomiglianaBlendFactor(),
-			_projectModel->GetSomiglianaBulgingType(),
-#endif
 			projectResult.GetValue()->_modelVerticesOffset,
 			projectResult.GetValue()->_numSamples,
 			projectResult.GetValue()->CanInterpolateWeights());
@@ -842,12 +837,7 @@ void Editor::OnMouseClickReleased(const InputActionParams& actionParams)
 			mesh = _scene->GetMesh(_deformedMeshHandle)->CopyAsEigen(),
 			cage = _projectData->_cage,
 			deformedMesh = _scene->GetMesh(_deformedCageHandle)->CopyAsEigen(),
-#if WITH_SOMIGLIANA
 			somiglianaDeformer = _projectData->_somiglianaDeformer,
-			bulging = _projectModel->GetSomiglianaBulging(),
-			blendFactor = _projectModel->GetSomiglianaBlendFactor(),
-			bulgingType = _projectModel->GetSomiglianaBulgingType(),
-#endif
 			deformationType = _projectData->_deformationType,
 			weightingScheme = _projectData->_LBCWeightingScheme,
 			modelVerticesOffset = _projectData->_modelVerticesOffset,
@@ -861,12 +851,7 @@ void Editor::OnMouseClickReleased(const InputActionParams& actionParams)
 				std::move(deformedMesh),
 				deformationType,
 				weightingScheme,
-#if WITH_SOMIGLIANA
 				somiglianaDeformer,
-				bulging,
-				blendFactor,
-				bulgingType,
-#endif
 				modelVerticesOffset,
 				numSamples,
 				interpolateWeights);
@@ -1084,12 +1069,7 @@ void Editor::OnSequencerNumFramesChanged(const uint32_t currentFrameIndex, const
 		mesh = _scene->GetMesh(_deformedMeshHandle)->CopyAsEigen(),
 		cage = _projectData->_cage,
 		deformedMesh = _scene->GetMesh(_deformedCageHandle)->CopyAsEigen(),
-#if WITH_SOMIGLIANA
 		somiglianaDeformer = _projectData->_somiglianaDeformer,
-		bulging = _projectModel->GetSomiglianaBulging(),
-		blendFactor = _projectModel->GetSomiglianaBlendFactor(),
-		bulgingType = _projectModel->GetSomiglianaBulgingType(),
-#endif
 		deformationType = _projectData->_deformationType,
 		weightingScheme = _projectData->_LBCWeightingScheme,
 		modelVerticesOffset = _projectData->_modelVerticesOffset,
@@ -1104,12 +1084,7 @@ void Editor::OnSequencerNumFramesChanged(const uint32_t currentFrameIndex, const
 			std::move(deformedMesh),
 			deformationType,
 			weightingScheme,
-#if WITH_SOMIGLIANA
 			somiglianaDeformer,
-			bulging,
-			blendFactor,
-			bulgingType,
-#endif
 			modelVerticesOffset,
 			numSamples,
 			interpolateWeights);
@@ -1170,9 +1145,7 @@ void Editor::ExportCurrentDeformedMesh(std::filesystem::path filepath) const
 		_projectData->_deformationType,
 		_projectData->_LBCWeightingScheme,
 		_statusBar->GetCurrentFrameIndex(),
-#if WITH_SOMIGLIANA
 		_projectData->_somiglianaDeformer,
-#endif
 		_projectData->_mesh._faces,
 		std::move(filepath),
 		1.0f / _projectData->_scalingFactor);
@@ -1189,9 +1162,7 @@ void Editor::ExportDeformedMeshes(std::filesystem::path filepath) const
 		_projectData->_deformationType,
 		_projectData->_LBCWeightingScheme,
 		std::optional<std::size_t>(),
-#if WITH_SOMIGLIANA
 		_projectData->_somiglianaDeformer,
-#endif
 		_projectData->_mesh._faces,
 		std::move(filepath),
 		1.0f / _projectData->_scalingFactor);
@@ -1216,9 +1187,7 @@ void Editor::ExportInfluenceColorMap(std::filesystem::path filepath) const
 	_meshOperationSystem->ExecuteOperation<MeshExportInfluenceMapOperation>(
 		_projectData->_deformationType,
 		_projectData->_LBCWeightingScheme,
-#if WITH_SOMIGLIANA
 		_projectData->_somiglianaDeformer,
-#endif
 		_projectData->_mesh,
 		_projectData->_cage,
 		_projectData->_parametrization.value(),
@@ -1266,11 +1235,9 @@ MeshOperationResult<std::shared_ptr<ProjectData>> Editor::CreateProject() const
 		_projectModel->_scalingFactor,
 		_projectModel->_interpolateWeights,
 		_projectModel->_findOffset,
-		_projectModel->_noOffset
-#if WITH_SOMIGLIANA
-		, _projectModel->_somigNu
-		, _projectModel->_somiglianaDeformer
-#endif
+		_projectModel->_noOffset,
+		_projectModel->_somigNu,
+		_projectModel->_somiglianaDeformer
 		);
 }
 
@@ -1283,9 +1250,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> Editor::ComputeCageWeight
 		projectData._cage,
 		projectData._embedding,
 		projectData._weights,
-#if WITH_SOMIGLIANA
 		projectData._somiglianaDeformer,
-#endif
 		projectData._cagePoints,
 		projectData._normals,
 		projectData._b,
@@ -1300,12 +1265,7 @@ MeshOperationResult<MeshComputeDeformationOperationResult> Editor::ComputeDeform
 	EigenMesh deformedCage,
 	const DeformationType deformationType,
 	const LBC::DataSetup::WeightingScheme weightingScheme,
-#if WITH_SOMIGLIANA
-	const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer,
-	const double bulging,
-	const double blendFactor,
-	const BulgingType bulgingType,
-#endif
+	const std::shared_ptr<somig_deformer_3>& somiglianaDeformer,
 	const int32_t modelVerticesOffset,
 	const int32_t numSamples,
 	const bool interpolateWeights) const
@@ -1315,12 +1275,7 @@ MeshOperationResult<MeshComputeDeformationOperationResult> Editor::ComputeDeform
 	return _meshOperationSystem->ExecuteOperation<MeshComputeDeformationOperation>(
 		deformationType,
 		weightingScheme,
-#if WITH_SOMIGLIANA
 		somiglianaDeformer,
-		bulging,
-		blendFactor,
-		bulgingType,
-#endif
 		std::move(mesh),
 		std::move(cage),
 		std::move(deformedCage),
@@ -1421,9 +1376,7 @@ void Editor::UpdateMeshVertexColors(const bool shouldRenderInfluenceMap) const
 		const auto vertexColorsResult = _meshOperationSystem->ExecuteOperation<MeshComputeInfluenceMapOperation>(
 			_projectData->_deformationType,
 			_projectData->_LBCWeightingScheme,
-	#if WITH_SOMIGLIANA
 			_projectData->_somiglianaDeformer,
-	#endif
 			_projectData->_mesh._vertices,
 			_projectData->_parametrization.value(),
 			std::move(weights),

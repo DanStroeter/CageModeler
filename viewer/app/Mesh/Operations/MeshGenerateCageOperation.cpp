@@ -930,8 +930,8 @@ void decimation(MyMesh& vcg_mesh) {
 
 void GenerateCageFromMeshOperation::Execute(){
 
- std::string filename=_params._meshfilepath;
- std::string outputfilename=_params._cagefilepath;
+ std::string filename = _params._meshfilepath.string();
+ std::string outputfilename=_params._cagefilepath.string();
 
 //extract input model name
 std::string obj=filename.substr(filename.find_last_of('/')+1,filename.find_last_of('.')-1);

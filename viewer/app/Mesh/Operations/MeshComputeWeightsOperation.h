@@ -11,9 +11,7 @@ struct MeshComputeWeightsOperationParams
 		EigenMesh cageMesh,
 		std::optional<EigenMesh> embedding,
 		std::optional<Eigen::MatrixXd> weights,
-#if WITH_SOMIGLIANA
-		const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer,
-#endif
+		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer,
 		Eigen::MatrixXi cagePoints,
 		Eigen::MatrixXd normals,
 		Eigen::VectorXi b,
@@ -28,9 +26,7 @@ struct MeshComputeWeightsOperationParams
 		, _cage(std::move(cageMesh))
 		, _embedding(std::move(embedding))
 		, _weights(std::move(weights))
-#if WITH_SOMIGLIANA
 		, _somiglianaDeformer(somiglianaDeformer)
-#endif
 		, _cagePoints(std::move(cagePoints))
 		, _normals(std::move(normals))
 		, _b(std::move(b))
@@ -47,10 +43,7 @@ struct MeshComputeWeightsOperationParams
 	EigenMesh _cage;
 	std::optional<EigenMesh> _embedding;
 	std::optional<Eigen::MatrixXd> _weights;
-
-#if WITH_SOMIGLIANA
-	std::shared_ptr<green::somig_deformer_3> _somiglianaDeformer = nullptr;
-#endif
+	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
 
 	Eigen::MatrixXi _cagePoints;
 	Eigen::MatrixXd _normals;
