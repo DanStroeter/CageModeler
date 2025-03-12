@@ -80,10 +80,15 @@ target_compile_definitions(${LIBRARY_NAME} PUBLIC BOOST_ALL_DYN_LINK)
 # Add a 'd' suffix to debug targets.
 set_target_properties(${LIBRARY_NAME} PROPERTIES DEBUG_POSTFIX "d")
 
+if(UNIX)
+    target_link_libraries(${LIBRARY_NAME} PUBLIC lapack)
+else()
+    target_link_libraries(${LIBRARY_NAME} PUBLIC LAPACK::LAPACK)
+endif()
+
 target_link_libraries(${LIBRARY_NAME}
     PUBLIC
-        Eigen3::Eigen
-        LAPACK::LAPACK 
+        Eigen3::Eigen 
     PRIVATE
         LBC
         OpenFBX

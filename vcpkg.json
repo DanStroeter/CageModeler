@@ -11,7 +11,7 @@
     "eigen3",
     "boost-program-options",
     "blas",
-    "lapack",
+    "lapack-reference",
 	"cgal"
   ],
   "builtin-baseline": "c45ac46dcc16dd588daa029f7ce5bcacc5d7645b",
@@ -39,6 +39,10 @@
     {
       "name": "eigen3",
       "version": "3.4.0"
+    },
+    {
+      "name": "lapack",
+      "version": "2023-06-10#2"
     },
     {
       "name": "cgal",
