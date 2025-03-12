@@ -150,6 +150,8 @@ if (WIN32)
         COMMAND_EXPAND_LISTS)
 endif()
 
+find_package(OpenMP REQUIRED)
+
 # Link the libraries against the project.
 target_link_libraries(
     ${PROJECT_NAME}
@@ -162,6 +164,7 @@ target_link_libraries(
         Vulkan::Vulkan
         nfd
         SDL3::SDL3
+        OpenMP::OpenMP_CXX
         #/opt/homebrew/opt/libomp/lib/libomp.dylib
 )
 

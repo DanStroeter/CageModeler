@@ -292,12 +292,15 @@ std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
 	Tree tree(faces(poly).first, faces(poly).second, poly);
 	Point_inside inside_tester(tree);
 
-	// Exact_Polyhedron voxels;
+	//Exact_Polyhedron voxels;
 	//std::cout << "Check for intersection\n";
-	for (unsigned int i = 0; i < data_resolution[0]; i++) {
-		for (unsigned int j = 0; j < data_resolution[1]; j++) {
+
+#pragma omp parallel for collapse(2) schedule(dynamic)
+	for (int i = 0; i < data_resolution[0]; i++) {
+		for (int j = 0; j < data_resolution[1]; j++) {
 			//if (j % 30 == 0) printf("voxelizing (%d, %d)\n", i, j);
-			for (unsigned int k = 0; k < data_resolution[2]; k++) {
+#pragma omp parallel for schedule(dynamic)
+			for (int k = 0; k < data_resolution[2]; k++) {
 
 				unsigned int idx = i * pow(BASE_RESOLUTION, 2) + j * BASE_RESOLUTION + k;
 
@@ -308,8 +311,11 @@ std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
 
 				if (CGAL::Polygon_mesh_processing::do_intersect(voxel, poly))
 				{
-					intersecting_voxels.push_back(idx);
-					voxels_marking[idx] = true;
+#pragma omp critical
+					{
+						intersecting_voxels.push_back(idx);
+						voxels_marking[idx] = true;
+					}
 					continue;
 				}
 
@@ -325,8 +331,11 @@ std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
 
 				if (inside)
 				{
-					intersecting_voxels.push_back(idx);
-					voxels_marking[idx] = true;
+#pragma omp critical
+					{
+						intersecting_voxels.push_back(idx);
+						voxels_marking[idx] = true;
+					}
 				}
 			}
 		}
