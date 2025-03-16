@@ -69,7 +69,7 @@ void SceneRenderer::Initialize()
 
 void SceneRenderer::CreateScreenPasses()
 {
-	std::array<std::vector<VkDescriptorSet>, VulkanUtils::NumRenderFramesInFlight> descriptorSets { };
+	RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets { };
 	for (std::size_t i = 0; i < descriptorSets.size(); ++i)
 	{
 		descriptorSets[i] = std::vector { _matricesDescriptorSets[i] };
@@ -92,7 +92,7 @@ void SceneRenderer::CreateScreenPasses()
 
 std::shared_ptr<PolygonMesh> SceneRenderer::AddCage(const Eigen::MatrixXd& vertices, const Eigen::MatrixXi& indices)
 {
-	std::array<std::vector<VkDescriptorSet>, VulkanUtils::NumRenderFramesInFlight> descriptorSets { };
+	RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets { };
 	for (std::size_t i = 0; i < descriptorSets.size(); ++i)
 	{
 		descriptorSets[i] = std::vector { _matricesDescriptorSets[i], _objectDataDescriptorSets[i] };
@@ -115,13 +115,13 @@ std::shared_ptr<PolygonMesh> SceneRenderer::AddCage(const Eigen::MatrixXd& verti
 std::shared_ptr<PolygonMesh> SceneRenderer::AddMesh(const Eigen::MatrixXd& vertices,
 	const Eigen::MatrixXi& indices)
 {
-	std::array<std::vector<VkDescriptorSet>, VulkanUtils::NumRenderFramesInFlight> solidDescriptorSets { };
+	RenderArrayType<std::vector<VkDescriptorSet>> solidDescriptorSets { };
 	for (std::size_t i = 0; i < solidDescriptorSets.size(); ++i)
 	{
 		solidDescriptorSets[i] = std::vector { _matricesDescriptorSets[i], _lightsDescriptorSets[i], _objectDataDescriptorSets[i] };
 	}
 
-	std::array<std::vector<VkDescriptorSet>, VulkanUtils::NumRenderFramesInFlight> wireframeDescriptorSets { };
+	RenderArrayType<std::vector<VkDescriptorSet>> wireframeDescriptorSets { };
 	for (std::size_t i = 0; i < wireframeDescriptorSets.size(); ++i)
 	{
 		wireframeDescriptorSets[i] = std::vector { _matricesDescriptorSets[i], _objectDataDescriptorSets[i] };
@@ -143,7 +143,7 @@ std::shared_ptr<PolygonMesh> SceneRenderer::AddMesh(const Eigen::MatrixXd& verti
 
 std::shared_ptr<PolygonMesh> SceneRenderer::AddGizmo(const MeshGeometry& geom)
 {
-	std::array<std::vector<VkDescriptorSet>, VulkanUtils::NumRenderFramesInFlight> solidDescriptorSets { };
+	RenderArrayType<std::vector<VkDescriptorSet>> solidDescriptorSets { };
 	for (std::size_t i = 0; i < solidDescriptorSets.size(); ++i)
 	{
 		solidDescriptorSets[i] = std::vector { _matricesDescriptorSets[i], _objectDataDescriptorSets[i] };
@@ -420,13 +420,7 @@ void SceneRenderer::CreateWireframePipelines()
 	// Our attachments will write to all color channels, but no blending is enabled.
 	std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachments { };
 	colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachments[0].blendEnable = VK_TRUE;
-	colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
-	colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
+	colorBlendAttachments[0].blendEnable = VK_FALSE;
 
 	// Create the depth and stencil descriptions.
 	VkPipelineDepthStencilStateCreateInfo depthStencil { };
@@ -596,15 +590,15 @@ void SceneRenderer::AllocateDescriptorSets()
 {
 	CHECK_VK_HANDLE(_device);
 
-	std::array<VkDescriptorSetLayout, VulkanUtils::NumRenderFramesInFlight> matricesDescriptorSetLayouts { };
+	RenderArrayType<VkDescriptorSetLayout> matricesDescriptorSetLayouts { };
 	std::ranges::fill(matricesDescriptorSetLayouts, _matricesLayout);
 	_matricesDescriptorSets = _descriptorPool->AllocateDescriptorSets(matricesDescriptorSetLayouts);
 
-	std::array<VkDescriptorSetLayout, VulkanUtils::NumRenderFramesInFlight> objectDataDescriptorSetLayouts { };
+	RenderArrayType<VkDescriptorSetLayout> objectDataDescriptorSetLayouts { };
 	std::ranges::fill(objectDataDescriptorSetLayouts, _objectDataLayout);
 	_objectDataDescriptorSets = _descriptorPool->AllocateDescriptorSets(objectDataDescriptorSetLayouts);
 
-	std::array<VkDescriptorSetLayout, VulkanUtils::NumRenderFramesInFlight> lightsDescriptorSetLayouts { };
+	RenderArrayType<VkDescriptorSetLayout> lightsDescriptorSetLayouts { };
 	std::ranges::fill(lightsDescriptorSetLayouts, _lightsLayout);
 	_lightsDescriptorSets = _descriptorPool->AllocateDescriptorSets(lightsDescriptorSetLayouts);
 

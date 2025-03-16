@@ -149,7 +149,7 @@ target_link_libraries(
 )
 
 # On Linux the naming of the OpenMesh library is different.
-if (APPLE OR WIN32)
+if (WIN32)
     target_link_libraries(
         ${PROJECT_NAME}
         PRIVATE

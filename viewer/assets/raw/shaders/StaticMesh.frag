@@ -2,7 +2,7 @@
 
 #include "Common.inc.glsl"
 
-const int MAX_NUMBER_OF_LIGHTS = 4;
+const int MAX_NUMBER_OF_LIGHTS = 8;
 
 layout (constant_id = 0) const int RENDER_MODE = 0;
 
@@ -10,7 +10,7 @@ layout (set = 1, binding = 1) uniform LightUniform {
 	LightInfo Lights[MAX_NUMBER_OF_LIGHTS];
 };
 
-MaterialInfo Material;
+const MaterialInfo Material = MaterialInfo(vec3(0.07, 0.07, 0.07), vec3(0.03, 0.03, 0.03), vec3(0.01, 0.01, 0.01), 32.0);
 
 layout (location = 0) out vec4 OutColor;
 
@@ -21,7 +21,6 @@ layout (location = 2) in vec3 InOutVertexColor;
 vec3 BlinnPhong(vec3 Position, vec3 Normal, int LightIndex)
 {
 	vec3 PositionToLightDir = normalize(vec3(Lights[LightIndex].PositionAndIntensity.xyz) - Position);
-
 	vec3 Reflection = reflect(-PositionToLightDir, Normal);
 
 	vec3 Ambient = Lights[LightIndex].PositionAndIntensity.w * Material.AmbientReflectivity;
@@ -40,15 +39,10 @@ vec3 BlinnPhong(vec3 Position, vec3 Normal, int LightIndex)
 
 void main()
 {
-	Material.AmbientReflectivity = vec3(0.3, 0.3, 0.3);
-	Material.DiffuseReflectivity = vec3(0.4, 0.4, 0.4);
-	Material.SpecularReflectivity = vec3(0.01, 0.01, 0.01);
-	Material.Shininess = 0.0;
-
 	vec3 Color = vec3(0.0);
 	for (int LightIndex = 0; LightIndex < MAX_NUMBER_OF_LIGHTS; LightIndex++)
 	{
-		Color += BlinnPhong(InOutPosition, InOutNormal, LightIndex);
+		Color += BlinnPhong(InOutPosition, normalize(InOutNormal), LightIndex);
 	}
 
 	if (RENDER_MODE == 0)

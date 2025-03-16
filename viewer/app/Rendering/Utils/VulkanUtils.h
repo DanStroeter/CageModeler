@@ -12,14 +12,14 @@
 #define VK_CHECK(x)                                      \
 do                                                       \
 {                                                        \
-    VkResult err = x;                                    \
-    const auto errString = string_VkResult(err);         \
-    if (err != VK_SUCCESS) [[unlikely]]                  \
-    {                                                    \
-            LOG_ERROR("Vulkan error {}", errString);     \
-            abort();                                     \
-        }                                                \
-    } while (0)
+	VkResult err = x;                                    \
+	const auto errString = string_VkResult(err);         \
+	if (err != VK_SUCCESS) [[unlikely]]                  \
+	{                                                    \
+		LOG_ERROR("Vulkan error {}", errString);         \
+		abort();                                         \
+	}                                                    \
+} while (0)
 
 #if BUILD_DEVELOPMENT
 	#define CHECK_VK_HANDLE(handle)                      \
@@ -43,8 +43,6 @@ do                                                       \
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
 		VK_EXT_EXTENDED_DYNAMIC_STATE_2_EXTENSION_NAME,
-		// VK_EXT_EXTENDED_DYNAMIC_STATE_3_EXTENSION_NAME,
-		// VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
 
 		// On macOS we need to explicitly require the portability subset extension.
 #if PLATFORM_MAC
@@ -279,3 +277,6 @@ static void EndOneTimeCommandBuffer(const VkDevice device, const VkCommandPool c
 }
 
 }; // namespace VulkanUtils
+
+template <typename T>
+using RenderArrayType = std::array<T, VulkanUtils::NumRenderFramesInFlight>;

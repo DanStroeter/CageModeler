@@ -2,6 +2,8 @@
 #include <Rendering/Commands/RenderCommandScheduler.h>
 #include <Mesh/PolygonMesh.h>
 
+#include <glm/gtc/matrix_inverse.hpp>
+
 namespace
 {
 	constexpr std::size_t MaxNumRenderProxies = 16;
@@ -48,7 +50,7 @@ void RenderProxyCollector::UpdateObjectsData(AlignedDeviceVector<ModelInfo>& obj
 			auto& objectData = objectsData[i];
 			const auto modelMatrix = _renderProxies[i]->GetModelMatrix();
 			objectData._model = modelMatrix;
-			objectData._normalMatrix = glm::transpose(glm::inverse(viewInfo._view * modelMatrix));
+			objectData._normalMatrix = glm::inverseTranspose(glm::mat3(modelMatrix));
 		}
 	}
 

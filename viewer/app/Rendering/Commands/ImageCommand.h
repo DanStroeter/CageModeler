@@ -6,26 +6,25 @@
 class TransitionImageCommand : public RenderCommand<RenderCommandQueueType::Render>
 {
 public:
+	using RenderCommand::RenderCommand;
+
 	/**
 	 * Takes care of transitioning the image layout by automatically figuring out how to do it based on the old and new
 	 * layouts. This is going to be issued as a 1 time off command and execute immediately on the GPU.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 * @param image An image resource instance.
 	 * @param format The desired image format.
 	 * @param oldLayout The old transition layout.
 	 * @param newLayout THe new transition layout.
 	 */
-	void Execute(
-		const RenderCommandExecutionContext& context,
-		const Image& image,
+	void Execute(const Image& image,
 		const VkFormat format,
 		const VkImageLayout oldLayout,
 		const VkImageLayout newLayout) const
 	{
-		CHECK_VK_HANDLE(context._device);
-		CHECK_VK_HANDLE(context._commandPool);
+		CHECK_VK_HANDLE(_device);
+		CHECK_VK_HANDLE(_commandPool);
 
-		const auto commandBuffer = VulkanUtils::BeginOneTimeCommandBuffer(context._device, context._commandPool);
+		const auto commandBuffer = VulkanUtils::BeginOneTimeCommandBuffer(_device, _commandPool);
 
 		VkImageMemoryBarrier barrier { };
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -87,7 +86,7 @@ public:
 
 		vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-		VulkanUtils::EndOneTimeCommandBuffer(context._device, context._commandPool, commandBuffer, context._submitQueue);
+		VulkanUtils::EndOneTimeCommandBuffer(_device, _commandPool, commandBuffer, _submitQueue);
 	}
 };
 
@@ -97,22 +96,20 @@ public:
 	/**
 	 * Creates an image by uploading the image data directly to the GPU in a one-time command and returns the
 	 * allocated GPU memory as a result.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 * @param imageData A buffer holding the image data.
 	 * @param imageWidth The width of the image.
 	 * @param imageHeight The height of the image.
 	 * @param imageFormat The desired image format.
 	 * @return A new image containing the device memory that holds the image data on the GPU.
 	 */
-	Image Execute(const RenderCommandExecutionContext& context,
-		const std::vector<unsigned char*>& imageData,
+	Image Execute(const std::vector<unsigned char*>& imageData,
 		const std::uint32_t imageWidth,
 		const std::uint32_t imageHeight,
 		const VkFormat imageFormat) const
 	{
-		CHECK_VK_HANDLE(context._device);
+		CHECK_VK_HANDLE(_device);
 
-		const auto renderResourceManager = context._renderResourceManager.lock();
+		const auto renderResourceManager = _renderResourceManager.lock();
 		if (renderResourceManager == nullptr)
 		{
 			return { };
@@ -124,9 +121,9 @@ public:
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 		void *data;
-		vkMapMemory(context._device, stagingBuffer._deviceMemory, 0, imageSize, 0, &data);
+		vkMapMemory(_device, stagingBuffer._deviceMemory, 0, imageSize, 0, &data);
 		memcpy(data, imageData.data(), imageSize);
-		vkUnmapMemory(context._device, stagingBuffer._deviceMemory);
+		vkUnmapMemory(_device, stagingBuffer._deviceMemory);
 
 		const auto image = renderResourceManager->CreateImage(imageWidth,
 			imageHeight,
@@ -136,14 +133,14 @@ public:
 			VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
 		// Copy the buffer from the staging buffer to the device buffer.
-		if (const auto commandScheduler = context._renderCommandScheduler.lock())
+		if (const auto commandScheduler = _renderCommandScheduler.lock())
 		{
 			commandScheduler->ExecuteCommand<TransitionImageCommand>(image, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 			commandScheduler->ExecuteCommand<CopyBufferToImageCommand>(stagingBuffer, image, imageWidth, imageHeight);
 			commandScheduler->ExecuteCommand<TransitionImageCommand>(image, imageFormat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		}
 
-		stagingBuffer.ReleaseResource(context._device);
+		stagingBuffer.ReleaseResource(_device);
 
 		return image;
 	}
