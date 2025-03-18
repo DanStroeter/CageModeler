@@ -323,6 +323,19 @@ void ProjectOptionsPanel::Layout()
 		}
 		ImGui::EndDisabled();
 
+		ImGui::TableNextRow();
+		{
+			ImGui::TableSetColumnIndex(0);
+
+			ImGui::TextEx("Cage Smooth Iterations");
+			ImGui::SameLine();
+			UIHelpers::HelpMarker("The number of iterations for cage smoothing");
+
+			ImGui::TableSetColumnIndex(1);
+			UIHelpers::SetRightAligned(100.0f);
+			ImGui::InputInt("##Cage_Smooth_Iterations", &_modifiedProjectModel._smoothIterations, 1, 10, ImGuiInputTextFlags_NoHorizontalScroll);
+		}
+
 		ImGui::EndTable();
 
 		ImGui::Dummy(ImVec2(0.0f, 15.0f));

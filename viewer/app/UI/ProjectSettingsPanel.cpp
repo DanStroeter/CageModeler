@@ -171,7 +171,8 @@ void ProjectSettingsPanel::Layout()
 
 				_applyButtonPressed = true;*/
 
-			std::string generatedCagePath=GenerateCageFromMesh(_modifiedProjectModel._meshFilepath.value().string(), _modifiedProjectModel._scalingFactor);
+			//std::string generatedCagePath=GenerateCageFromMesh(_modifiedProjectModel._meshFilepath.value().string(), _modifiedProjectModel._scalingFactor);
+			std::string generatedCagePath=GenerateCageFromMesh();
 				_modifiedProjectModel._cageFilepath=generatedCagePath;
 			}
 		}
@@ -472,8 +473,10 @@ void ProjectSettingsPanel::Dismiss()
 }
 
 
-std::string ProjectSettingsPanel::GenerateCageFromMesh(const std::string& meshfilePath,int scale){
+std::string ProjectSettingsPanel::GenerateCageFromMesh(){
 
+std::cout << "removing e_grid\n";
+_modifiedProjectModel._closingResult.clear();
 const auto meshOperationSystem = _meshOperationSystem.lock();
 		if (meshOperationSystem == nullptr)
 		{
@@ -484,7 +487,14 @@ const auto meshOperationSystem = _meshOperationSystem.lock();
 	std::filesystem::path upperpath=currentpath.parent_path().parent_path().parent_path().parent_path();
 	std::string outputCageFile=upperpath.string() + "/models/cage.obj";
 	 
-	meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(meshfilePath,outputCageFile,scale);
+	meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(
+		_modifiedProjectModel._meshFilepath.value().string(),
+		outputCageFile,
+		_modifiedProjectModel._scalingFactor,
+		_modifiedProjectModel._smoothIterations,
+		false,
+		_modifiedProjectModel._closingResult
+	);
 
     std::ifstream input(outputCageFile);
      

@@ -27,6 +27,10 @@ struct ProjectModelData
 		_findOffset = other._findOffset;
 		_noOffset = other._noOffset;
 		_renderInfluenceMap = other._renderInfluenceMap;
+		_smoothIterations = other._smoothIterations;
+		_targetNumFaces = other._targetNumFaces;
+		_closingResult = other._closingResult;
+		
 	}
 
 	ProjectModelData(ProjectModelData&& other) noexcept
@@ -71,6 +75,9 @@ struct ProjectModelData
 		swap(lhs._findOffset, rhs._findOffset);
 		swap(lhs._noOffset, rhs._noOffset);
 		swap(lhs._renderInfluenceMap, rhs._renderInfluenceMap);
+		swap(lhs._smoothIterations, rhs._smoothIterations);
+		swap(lhs._targetNumFaces, rhs._targetNumFaces);
+		swap(lhs._closingResult, rhs._closingResult);
 	}
 
 	[[nodiscard]] bool IsFBX() const
@@ -110,7 +117,10 @@ struct ProjectModelData
 			lhs._scalingFactor == rhs._scalingFactor &&
 			lhs._interpolateWeights == rhs._interpolateWeights &&
 			lhs._findOffset == rhs._findOffset &&
-			lhs._noOffset == rhs._noOffset;
+			lhs._noOffset == rhs._noOffset &&
+			lhs._smoothIterations == rhs._smoothIterations &&
+			lhs._targetNumFaces == rhs._targetNumFaces;
+			lhs._closingResult == rhs._closingResult;
 	}
 
 	[[nodiscard]] bool friend operator!=(const ProjectModelData& lhs, const ProjectModelData& rhs)
@@ -163,6 +173,11 @@ struct ProjectModelData
 
 	int32_t _numBBWSteps = 300;
 	int32_t _numSamples = 2;
+
+	int32_t _smoothIterations = 3;
+	int32_t _targetNumFaces = 400;
+
+	std::vector<bool> _closingResult;
 
 	std::optional<std::filesystem::path> _meshFilepath;
 	std::optional<std::filesystem::path> _weightsFilepath;

@@ -9,6 +9,7 @@
 #include <Mesh/Operations/MeshComputeWeightsOperation.h>
 #include <Mesh/Operations/MeshExportOperation.h>
 #include <Mesh/Operations/MeshLoadOperation.h>
+#include <Mesh/Operations/MeshGenerateCageOperation.h>
 #include <Mesh/MeshLibrary.h>
 #include <Navigation/CameraSubsystem.h>
 #include <UI/UIStyle.h>
@@ -454,7 +455,8 @@ void Editor::SetUpUIElements()
 	_projectOptionsPanel = std::make_shared<ProjectOptionsPanel>(_projectModel,
 		_meshOperationSystem,
 		[this](const bool shouldCompute) { OnComputeInfluenceColorMap(shouldCompute); },
-		[this] { OnNewProjectCreated(); });
+		//[this] { OnNewProjectCreated(); });
+		[this] { OnProjectOptionUpdated(); });
 	_toolBar = std::make_shared<ToolBar>(_inputSubsystem, _meshOperationSystem, _toolSystem);
 }
 
@@ -472,13 +474,186 @@ void Editor::OnProjectSettingsApplied()
 	OnNewProjectCreated();
 }
 
+void Editor::ResetCageParams() 
+{
+	_projectModel -> _smoothIterations = 3;
+	_projectModel->_closingResult.clear();
+}
+
 void Editor::OnNewProjectCreated()
+{
+
+	if (_projectModel->CheckMissingFiles())
+	{
+		_statusBar->SetError("Unable to load all files, check if some of them are missing.");
+
+		return;
+	}
+
+	_threadPool->Submit([this]()
+		{
+			_isComputingWeightsData.store(true, std::memory_order_seq_cst);
+
+			auto projectResult = CreateProject();
+
+			if (projectResult.HasError())
+			{
+				// Update the status with an error.
+				_mainThreadQueue->Push([this, error = std::move(projectResult.GetError())]() mutable
+					{
+						_statusBar->SetError(std::move(error));
+					});
+
+				return;
+			}
+
+			// Compute the weights, but do it off the main thread, because it's the most expensive operation.
+			auto weightsResult = ComputeCageWeights(*projectResult.GetValue());
+
+			if (weightsResult.HasError())
+			{
+				// Update the status with an error.
+				_mainThreadQueue->Push([this, error = std::move(projectResult.GetError())]() mutable
+					{
+						_statusBar->SetError(std::move(error));
+					});
+
+				return;
+			}
+
+			_isComputingWeightsData.store(false, std::memory_order_seq_cst);
+
+			_weightsData.Update(std::move(weightsResult.GetValue()._skinningMatrix),
+				std::move(weightsResult.GetValue()._weights),
+				std::move(weightsResult.GetValue()._interpolatedWeights),
+				std::move(weightsResult.GetValue()._psi),
+				std::move(weightsResult.GetValue()._psiTri),
+				std::move(weightsResult.GetValue()._psiQuad));
+
+			_isComputingDeformationData.store(true, std::memory_order_seq_cst);
+
+			auto deformedMeshResult = ComputeDeformedMesh(projectResult.GetValue()->_mesh,
+				projectResult.GetValue()->_cage,
+				projectResult.GetValue()->_deformedCage,
+				projectResult.GetValue()->_deformationType,
+				projectResult.GetValue()->_LBCWeightingScheme,
+				projectResult.GetValue()->_somiglianaDeformer,
+				projectResult.GetValue()->_modelVerticesOffset,
+				projectResult.GetValue()->_numSamples,
+				projectResult.GetValue()->CanInterpolateWeights());
+			_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
+
+			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
+
+			_mainThreadQueue->Push([this, projectResultValue = projectResult.GetValue()]() mutable
+				{
+					const auto& viewInfo = _cameraSubsystem->GetCamera().GetViewInfo();
+					_gizmo->SetPosition(viewInfo, glm::vec3(0.0f));
+
+					// Remove the old meshes first and then re-add them back to the scene.
+					if (_deformedMeshHandle != InvalidHandle)
+					{
+						_scene->RemoveMesh(_deformedMeshHandle);
+						_deformedMeshHandle = InvalidHandle;
+					}
+
+					if (_deformedCageHandle != InvalidHandle)
+					{
+						_scene->RemoveMesh(_deformedCageHandle);
+						_deformedCageHandle = InvalidHandle;
+					}
+
+					_projectData = projectResultValue;
+
+					const auto translation = glm::translate(glm::mat4(1.0f), glm::vec3(_projectData->_centerOffset));
+					const auto scale = glm::scale(glm::mat4(1.0f), glm::vec3(_projectData->_scalingFactor));
+					const auto newModelMatrix = scale * translation;
+
+					// Add the mesh and the cage to the rendered meshes. We are not going to render the original mesh and original cage for now.
+					_deformedMeshHandle = _scene->AddMesh(_projectData->_mesh._vertices, _projectData->_mesh._faces);
+					const auto mesh = _scene->GetMesh(_deformedMeshHandle);
+					mesh->SetModelMatrix(newModelMatrix);
+
+					_deformedCageHandle = _scene->AddCage(_projectData->_deformedCage._vertices, _projectData->_deformedCage._faces);
+					const auto cageMesh = _scene->GetMesh(_deformedCageHandle);
+					cageMesh->SetModelMatrix(newModelMatrix);
+
+					// We only recompute the vertex colors if they were previously on.
+					const auto renderInfluenceMap = _projectModel->CanRenderInfluenceMap();
+					if (renderInfluenceMap)
+					{
+						UpdateMeshVertexColors(renderInfluenceMap);
+					}
+
+					// Update the settings panel.
+					_projectOptionsPanel->SetDeformableMesh(_scene->GetMesh(_deformedMeshHandle));
+					_projectOptionsPanel->SetCageMesh(_scene->GetMesh(_deformedCageHandle));
+
+					// Update the mesh and the cage. We do this only once to compute the weights and any other operation is executed simply on the deformed cage.
+					_toolBar->SetModel(std::make_shared<ToolBarModel>(_projectData));
+
+					// Update the status bar to display the new meshes.
+					_statusBar->SetModel(std::make_shared<StatusBarModel>(_projectData,
+						[this]<typename T>(T && selectionType) { OnSelectionTypeChanged(std::forward<T>(selectionType)); },
+						[this](const uint32_t newFrameIndex) { OnSequencerFrameIndexChanged(newFrameIndex); },
+						[this](const uint32_t frameIndex, const uint32_t numFrames) { OnSequencerNumFramesChanged(frameIndex, numFrames); },
+						[this]() { OnSequencerStartedDragging(); },
+						[this]() { OnSequencerEndedDragging(); }));
+
+					// Updates the vertex data with the last sample.
+					UpdateDeformedMeshPositionsFromDeformationData();
+
+					// Rebuild the entire BVH.
+					{
+						auto bvhBuilder = _scene->BeginGeometryBVH();
+						bvhBuilder.AddGeometry(_deformedMeshHandle);
+						bvhBuilder.AddGeometry(_deformedCageHandle);
+					}
+
+					//add new code here
+					const auto geo = _scene->GetMesh(_deformedMeshHandle)->GetGeometry();
+
+
+					// Ready to dismiss the project panel when we are done.
+					if (_newProjectPanel != nullptr)
+					{
+						_newProjectPanel->Dismiss();
+						_newProjectPanel = nullptr;
+					}
+
+					// Ready to dismiss the project panel when we are done.
+					if (_projectSettingsPanel != nullptr)
+					{
+						_projectSettingsPanel->Dismiss();
+						_projectSettingsPanel = nullptr;
+					}
+				});
+		});
+}
+
+void Editor::OnProjectOptionUpdated()
 {
 	if (_projectModel->CheckMissingFiles())
 	{
 		_statusBar->SetError("Unable to load all files, check if some of them are missing.");
 
 		return;
+	}
+
+	if(_projectModel->_closingResult.size() > 0){
+
+		std::filesystem::path currentpath=__FILE__;
+		std::filesystem::path upperpath=currentpath.parent_path().parent_path().parent_path().parent_path();
+		std::string outputCageFile=upperpath.string() + "/models/cage.obj";
+
+		_meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(
+			_projectModel->_meshFilepath.value().string(),
+			outputCageFile,
+			_projectModel->_scalingFactor,
+			_projectModel->_smoothIterations,
+			false,
+			_projectModel->_closingResult
+		);
 	}
 
 	_threadPool->Submit([this]()

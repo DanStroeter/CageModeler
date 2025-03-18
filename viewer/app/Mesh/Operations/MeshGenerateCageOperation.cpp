@@ -711,9 +711,9 @@ bool does_overlap_erode(Node cell, CGAL::Bbox_3 p_bbox) {
 	return false;
 }
 
-VOXEL_GRID execute_erosion(MIPMAP_TYPE& contour_mipmap, VOXEL_GRID& d_grid, VOXEL_GRID& voxel_grid) {
+void execute_erosion(MIPMAP_TYPE& contour_mipmap, VOXEL_GRID& e_grid, VOXEL_GRID& voxel_grid) {
 
-	VOXEL_GRID e_grid = d_grid;
+	//VOXEL_GRID e_grid = d_grid;
 
 	int mipmap_depth = contour_mipmap.size();
 
@@ -752,7 +752,7 @@ VOXEL_GRID execute_erosion(MIPMAP_TYPE& contour_mipmap, VOXEL_GRID& d_grid, VOXE
 			}
 		}
 	}
-	return e_grid;
+	//return e_grid;
 }
 
 
@@ -868,9 +868,9 @@ ExactMesh extract_surface_from_voxels(
 	return output_mesh;
 }
 
-void decimation(MyMesh& vcg_mesh) {
+void decimation(MyMesh& vcg_mesh, const int smoothIterations) {
 
-	tri::Smooth<MyMesh>::VertexCoordLaplacianHC(vcg_mesh, 3);
+	tri::Smooth<MyMesh>::VertexCoordLaplacianHC(vcg_mesh, smoothIterations);
 
 	TriEdgeCollapseQuadricParameter qparams;
 	qparams.QualityThr = .3;
@@ -947,23 +947,29 @@ std::string obj=filename.substr(filename.find_last_of('/')+1,filename.find_last_
 std::string filepath=filename.substr(0,filename.find_last_of('/')+1);
 std::string intermediate_path=filepath+obj+"_interm.obj";
 
+VOXEL_GRID& e_grid = _params._closingResult;
+
  // generate voxel grid and mipmap
-	MIPMAP_TYPE mipmap = voxelize_and_mipmap(filename);
-	
-	// dilation
-	VOXEL_GRID d_grid = executeDilation(mipmap);
+	if(e_grid.size() == 0)
+	{
+		MIPMAP_TYPE mipmap = voxelize_and_mipmap(filename);
+		
+		// dilation
+		VOXEL_GRID d_grid = executeDilation(mipmap);
 
-	// extract contour and generate mipmap of the contour
-	//std::cout << "drawing done. start contour extraction\n";
-	VOXEL_GRID contour = extract_contour(d_grid);
+		// extract contour and generate mipmap of the contour
+		//std::cout << "drawing done. start contour extraction\n";
+		VOXEL_GRID contour = extract_contour(d_grid);
 
-	//std::cout << "contour extraction done\n";
-	MIPMAP_TYPE contour_pyramid = generate_mipmap(contour);
+		//std::cout << "contour extraction done\n";
+		MIPMAP_TYPE contour_pyramid = generate_mipmap(contour);
 
-	// erosion
-	VOXEL_GRID e_grid = execute_erosion(contour_pyramid, d_grid, mipmap[0]);
-	//std::cout << "erosion done, start surface extraction\n";
-
+		// erosion
+		e_grid.resize(d_grid.size());
+		e_grid.assign(d_grid.begin(), d_grid.end());
+		execute_erosion(contour_pyramid, e_grid, mipmap[0]);
+		//std::cout << "erosion done, start surface extraction\n";
+	}
 	// Extract the surface from the closed grid
 	std::array<ExactVector, 3> voxel_strides = { ExactVector(base_cellsize, 0, 0),
 	ExactVector(0, base_cellsize, 0), ExactVector(0, 0, base_cellsize) };
@@ -973,8 +979,9 @@ std::string intermediate_path=filepath+obj+"_interm.obj";
      // Simplification
 	MyMesh final_mesh;
 	tri::io::ImporterOFF<MyMesh>::Open(final_mesh, intermediate_path.c_str());
-	decimation(final_mesh);
+	decimation(final_mesh, _params._smoothIterations);
 	std::string output_path = filepath + obj + "_cage.obj";
 
 	tri::io::ExporterOBJ<MyMesh>::Save(final_mesh,outputfilename.c_str(),tri::io::Mask::IOM_BITPOLYGONAL);
+	
 }

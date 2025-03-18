@@ -55,6 +55,11 @@ private:
 	void OnNewProjectCreated();
 
 	/**
+	 * Invoked when project options have changed.
+	 */
+	void OnProjectOptionUpdated();
+
+	/**
 	 * Invoked for cage generation
 	 */
 	void OnCageGeneration();
@@ -229,6 +234,8 @@ private:
 
 	/// The handle to the deformed cage.
 	MeshHandle _deformedCageHandle = InvalidHandle;
+
+	bool _cageAutoGen = false;
 
 	/// Executes all operations on a given mesh.
 	std::shared_ptr<MeshOperationSystem> _meshOperationSystem = nullptr;
