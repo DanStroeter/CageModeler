@@ -165,15 +165,7 @@ void ProjectSettingsPanel::Layout()
 		{
 			if (ImGui::Button("Generate Cage"))
 			{
-				/*
-				// Update the value of the actual model pointer.
-				*_model = _modifiedProjectModel;
-
-				_applyButtonPressed = true;*/
-
-			//std::string generatedCagePath=GenerateCageFromMesh(_modifiedProjectModel._meshFilepath.value().string(), _modifiedProjectModel._scalingFactor);
-			std::string generatedCagePath=GenerateCageFromMesh();
-				_modifiedProjectModel._cageFilepath=generatedCagePath;
+				_modifiedProjectModel._cageFilepath = GenerateCageFromMesh();
 			}
 		}
 		ImGui::EndDisabled();
@@ -475,7 +467,7 @@ void ProjectSettingsPanel::Dismiss()
 
 std::string ProjectSettingsPanel::GenerateCageFromMesh(){
 
-std::cout << "removing e_grid\n";
+
 _modifiedProjectModel._closingResult.clear();
 const auto meshOperationSystem = _meshOperationSystem.lock();
 		if (meshOperationSystem == nullptr)

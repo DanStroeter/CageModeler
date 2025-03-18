@@ -713,8 +713,6 @@ bool does_overlap_erode(Node cell, CGAL::Bbox_3 p_bbox) {
 
 void execute_erosion(MIPMAP_TYPE& contour_mipmap, VOXEL_GRID& e_grid, VOXEL_GRID& voxel_grid) {
 
-	//VOXEL_GRID e_grid = d_grid;
-
 	int mipmap_depth = contour_mipmap.size();
 
 	std::stack<Node> node_stack;
@@ -752,7 +750,6 @@ void execute_erosion(MIPMAP_TYPE& contour_mipmap, VOXEL_GRID& e_grid, VOXEL_GRID
 			}
 		}
 	}
-	//return e_grid;
 }
 
 
@@ -798,7 +795,6 @@ void add_voxel_faces(
 			mesh.add_face(mesh_vertices[faces[i][0]], mesh_vertices[faces[i][1]], mesh_vertices[faces[i][2]]);
 			mesh.add_face(mesh_vertices[faces[i][2]], mesh_vertices[faces[i][3]], mesh_vertices[faces[i][0]]);
 		}
-
 	}
 }
 
@@ -950,7 +946,7 @@ std::string intermediate_path=filepath+obj+"_interm.obj";
 VOXEL_GRID& e_grid = _params._closingResult;
 
  // generate voxel grid and mipmap
-	if(e_grid.size() == 0)
+	if(e_grid.empty())
 	{
 		MIPMAP_TYPE mipmap = voxelize_and_mipmap(filename);
 		
