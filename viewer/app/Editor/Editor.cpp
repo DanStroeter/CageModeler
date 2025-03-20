@@ -639,7 +639,7 @@ void Editor::OnProjectOptionUpdated()
 			outputCageFile,
 			_projectModel->_scalingFactor,
 			_projectModel->_smoothIterations,
-			false,
+			_projectModel->_targetNumFaces,
 			_projectModel->_closingResult
 		);
 	}

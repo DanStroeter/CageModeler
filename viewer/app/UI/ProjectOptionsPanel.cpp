@@ -323,6 +323,37 @@ void ProjectOptionsPanel::Layout()
 		}
 		ImGui::EndDisabled();
 
+		ImGui::Dummy(ImVec2(0.0f, 8.0f));
+
+		ImGui::TableNextRow();
+		{
+			ImGui::TableSetColumnIndex(0);
+
+			ImGui::PushFont(UIStyle::BoldFont);
+			ImGui::SetWindowFontScale(1.05f);
+			ImGui::TextEx("Cage Settings");
+			ImGui::SetWindowFontScale(1.0f);
+			ImGui::PopFont();
+		}
+
+		ImGui::TableNextRow();
+		{
+			ImGui::TableSetColumnIndex(0);
+
+			ImGui::TextEx("Target Number of Faces");
+			ImGui::SameLine();
+			UIHelpers::HelpMarker("The number of faces for cage");
+
+			ImGui::TableSetColumnIndex(1);
+			UIHelpers::SetRightAligned(100.0f);
+			ImGui::InputInt("##Cage_target_faces", &_modifiedProjectModel._targetNumFaces, 50, 100, ImGuiInputTextFlags_NoHorizontalScroll);
+			if (_modifiedProjectModel._targetNumFaces < 100)
+				_modifiedProjectModel._targetNumFaces = 100;
+			else if (_modifiedProjectModel._targetNumFaces > 500)
+				_modifiedProjectModel._targetNumFaces = 500;
+		
+		}
+
 		ImGui::TableNextRow();
 		{
 			ImGui::TableSetColumnIndex(0);

@@ -484,7 +484,7 @@ const auto meshOperationSystem = _meshOperationSystem.lock();
 		outputCageFile,
 		_modifiedProjectModel._scalingFactor,
 		_modifiedProjectModel._smoothIterations,
-		false,
+		_modifiedProjectModel._targetNumFaces,
 		_modifiedProjectModel._closingResult
 	);
 

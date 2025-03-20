@@ -864,7 +864,7 @@ ExactMesh extract_surface_from_voxels(
 	return output_mesh;
 }
 
-void decimation(MyMesh& vcg_mesh, const int smoothIterations) {
+void decimation(MyMesh& vcg_mesh, const int smoothIterations, const int targetNumFaces) {
 
 	tri::Smooth<MyMesh>::VertexCoordLaplacianHC(vcg_mesh, smoothIterations);
 
@@ -903,14 +903,14 @@ void decimation(MyMesh& vcg_mesh, const int smoothIterations) {
 	// printf("BEFORE: mesh  %d %d \n", vcg_mesh.vn, vcg_mesh.fn);
 	// printf("Initial Heap Size %i\n", int(DeciSession.h.size()));
 
-	DeciSession.SetTargetSimplices(FinalSize);
+	DeciSession.SetTargetSimplices(targetNumFaces);
 	DeciSession.SetTimeBudget(0.5f);
 	DeciSession.SetTargetOperations(100000);
 	//if (TargetError < std::numeric_limits<float>::max()) DeciSession.SetTargetMetric(TargetError);
 
 	//while (DeciSession.DoOptimization() && vcg_mesh.fn > FinalSize && DeciSession.currMetric < TargetError)
 
-	while (DeciSession.DoOptimization() && vcg_mesh.fn > FinalSize)
+	while (DeciSession.DoOptimization() && vcg_mesh.fn > targetNumFaces)
 		printf("Current Mesh size %7i heap sz %9i err %9g \n", vcg_mesh.fn, int(DeciSession.h.size()), DeciSession.currMetric);
 
 	int t3 = clock();
@@ -975,7 +975,7 @@ VOXEL_GRID& e_grid = _params._closingResult;
      // Simplification
 	MyMesh final_mesh;
 	tri::io::ImporterOFF<MyMesh>::Open(final_mesh, intermediate_path.c_str());
-	decimation(final_mesh, _params._smoothIterations);
+	decimation(final_mesh, _params._smoothIterations, _params._targetNumFaces);
 	std::string output_path = filepath + obj + "_cage.obj";
 
 	tri::io::ExporterOBJ<MyMesh>::Save(final_mesh,outputfilename.c_str(),tri::io::Mask::IOM_BITPOLYGONAL);

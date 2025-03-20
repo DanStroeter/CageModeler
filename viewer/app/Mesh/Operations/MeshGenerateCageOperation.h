@@ -9,7 +9,7 @@ GenerateCageFromMeshOperationParams(std::filesystem::path meshFilepath,
                                std::filesystem::path cageFilepath, 
                                const int scale,
                                const int smoothIterations,
-                               bool smoothParamUpdated,
+                               const int targetNumFaces,
                                std::vector<bool>& closingResult
                                ):
 
@@ -17,7 +17,7 @@ GenerateCageFromMeshOperationParams(std::filesystem::path meshFilepath,
                                _cagefilepath(std::move(cageFilepath)),
                                _scale(scale),
                                _smoothIterations(smoothIterations),
-                               _smoothParamUpdated(smoothParamUpdated),
+                               _targetNumFaces(targetNumFaces),
                                _closingResult(closingResult)
                                {}
 
@@ -25,7 +25,7 @@ std::filesystem::path _meshfilepath;
 std::filesystem::path _cagefilepath;
 int _scale;
 int _smoothIterations;
-bool _smoothParamUpdated;
+int _targetNumFaces;
 std::vector<bool>& _closingResult;
 
 
