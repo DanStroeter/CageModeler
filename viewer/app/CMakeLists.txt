@@ -10,6 +10,9 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 find_package(CGAL REQUIRED COMPONENTS Core )
 
 find_package(Eigen3 REQUIRED)
+find_package(OpenGL REQUIRED)
+find_package(glew REQUIRED)
+find_package(glfw3 REQUIRED)
 
 #set(CMAKE_PREFIX_PATH "/opt/homebrew/opt/cgal")
 find_package(CGAL REQUIRED)
@@ -165,6 +168,9 @@ target_link_libraries(
         nfd
         SDL3::SDL3
         OpenMP::OpenMP_CXX
+	GLEW::GLEW
+	OpenGL::GL
+	glfw
         #/opt/homebrew/opt/libomp/lib/libomp.dylib
 )
 

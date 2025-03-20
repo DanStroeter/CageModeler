@@ -12,7 +12,9 @@
     "boost-program-options",
     "blas",
     "lapack-reference",
-	"cgal"
+	"cgal",
+	"glew",
+	"glfw3"
   ],
   "builtin-baseline": "c45ac46dcc16dd588daa029f7ce5bcacc5d7645b",
   "overrides": [

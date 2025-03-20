@@ -90,6 +90,11 @@ namespace SMS = CGAL::Surface_mesh_simplification;
 // stuff to define the mesh
 #include <vcg/complex/complex.h>
 
+//#define GLEW_STATIC 1
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+//#include <GL/glut.h>
+
 // io
 #include <wrap/io_trimesh/import_obj.h>
 #include <wrap/io_trimesh/import_off.h>
@@ -233,6 +238,36 @@ void calc_voxel_from_idx_hex(unsigned int idx, std::array<unsigned int, 3> numVo
 float base_cellsize;
 ExactPoint global_min_point;
 int data_res[3];
+//
+//void setupVBO(Mesh mesh){
+//	// 1. extract vertex and index list
+//	std::vector<float> vertices; // (x, y, z)
+//	std::vector<unsigned int> indices;
+//
+//	std::map<Mesh::Vertex_index, unsigned int> vertexMap;
+//    unsigned int indexCounter = 0;
+//
+//    for (auto v : mesh.vertices()) {
+//        ExactPoint p(mesh.point(v));
+//        vertices.push_back((float)p.x());
+//        vertices.push_back((float)p.y());
+//        vertices.push_back((float)p.z());
+//        vertexMap[v] = indexCounter++;
+//    }
+//
+//    for (auto f : mesh.faces()) {
+//        std::vector<unsigned int> faceIndices;
+//        for (auto v : CGAL::vertices_around_face(mesh.halfedge(f), mesh)) {
+//            faceIndices.push_back(vertexMap[v]);
+//        }
+//        if (faceIndices.size() == 3) { // 삼각형일 경우
+//            indices.insert(indices.end(), faceIndices.begin(), faceIndices.end());
+//        }
+//    }
+//
+//}
+
+
 std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
 {
 
@@ -933,8 +968,63 @@ void decimation(MyMesh& vcg_mesh, const int smoothIterations) {
 
 }
 
+int initOpenGL() {
+	//glewExperimental = GL_TRUE; 
+	//GLenum err = glewInit();
+	//if (err != GLEW_OK) {
+	//	std::cerr << "GLEW init failed: " << glewGetErrorString(err) << std::endl;
+	//	exit(EXIT_FAILURE);
+	//}
+
+	//std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
+	//std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+
+	if (!glfwInit()) {
+		std::cerr << "Failed to initialize GLFW" << std::endl;
+		return -1;
+	}
+
+	// OpenGL 컨텍스트 버전 설정 (예: OpenGL 3.3)
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+	// 윈도우 생성
+	GLFWwindow* window = glfwCreateWindow(800, 600, "OpenGL Context Test", NULL, NULL);
+	if (!window) {
+		std::cerr << "Failed to create GLFW window" << std::endl;
+		glfwTerminate();
+		return -1;
+	}
+
+	// OpenGL 컨텍스트를 현재 쓰레드에 바인딩
+	glfwMakeContextCurrent(window);
+
+	// GLEW 초기화
+	glewExperimental = GL_TRUE;
+	GLenum err = glewInit();
+	if (err != GLEW_OK) {
+		std::cerr << "GLEW init failed: " << glewGetErrorString(err) << std::endl;
+		return -1;
+	}
+
+	// 이제 OpenGL 함수 호출 가능!
+	std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
+	std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+
+	// 루프 (임시)
+	while (!glfwWindowShouldClose(window)) {
+		glfwPollEvents();
+	}
+
+	glfwDestroyWindow(window);
+	glfwTerminate();
+	return 0;
+}
+
 void GenerateCageFromMeshOperation::Execute(){
 
+	int r = initOpenGL();
  std::string filename = _params._meshfilepath.string();
  std::string outputfilename=_params._cagefilepath.string();
 
