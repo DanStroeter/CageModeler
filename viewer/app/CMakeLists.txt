@@ -167,27 +167,12 @@ target_link_libraries(
         Vulkan::Vulkan
         nfd
         SDL3::SDL3
-        OpenMP::OpenMP_CXX
-	GLEW::GLEW
-	OpenGL::GL
-	glfw
-        #/opt/homebrew/opt/libomp/lib/libomp.dylib
-)
-
-# On Linux the naming of the OpenMesh library is different.
-if (APPLE OR WIN32)
-    target_link_libraries(
-        ${PROJECT_NAME}
-        PRIVATE
-        ${OPENMESH_LIBRARIES}
-    )
-else ()
-    target_link_libraries(
-        ${PROJECT_NAME}
-        PRIVATE
         OpenMeshCore
-    )
-endif()
+        OpenMP::OpenMP_CXX
+		GLEW::GLEW
+		OpenGL::GL
+		glfw
+)
 
 # On Windows will enable SDL2 to recognize high DPI monitors.
 if (WIN32)

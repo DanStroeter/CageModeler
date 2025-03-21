@@ -2,20 +2,6 @@
 #include <Rendering/Commands/RenderCommandScheduler.h>
 #include <Rendering/Core/Device.h>
 
-PipelineObject RenderCommandExecutionContext::GetPipelineObject(const PipelineHandle pipelineHandle) const
-{
-	const auto pipelineManagerPtr = _renderPipelineManager.lock();
-	if (pipelineManagerPtr == nullptr)
-	{
-		return PipelineObject();
-	}
-
-	const auto& pipelineObject = pipelineManagerPtr->GetPipelineObject(pipelineHandle);
-	CheckFormat(pipelineObject._handle != VK_NULL_HANDLE, "Pipeline object is a nullptr.");
-
-	return pipelineObject;
-}
-
 RenderCommandScheduler::RenderCommandScheduler(const RenderResourceRef<Device>& device,
 	const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
 	const std::shared_ptr<RenderResourceManager>& renderResourceManager)

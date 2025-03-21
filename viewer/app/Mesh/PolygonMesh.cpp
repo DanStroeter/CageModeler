@@ -12,8 +12,8 @@
 namespace
 {
 	constexpr auto HighlightedVertexColor = glm::vec3(0.95f);
-	constexpr auto SelectedVertexColor = glm::vec3(0.6f);
-	constexpr auto DeselectedVertexColor = glm::vec3(0.2f);
+	constexpr auto SelectedVertexColor = glm::vec3(0.96f, 0.66f, 0.25f);
+	constexpr auto DeselectedVertexColor = glm::vec3(0.35f);
 }
 
 PolygonMesh::PolygonMesh(const Eigen::MatrixXd& vertices,
