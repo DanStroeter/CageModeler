@@ -607,7 +607,7 @@ int main(int argc, char** argv)
 		if (!somigliana)
 		{
 			write_influence_color_map_OBJ(base_name + "_influence_" + variant_string + ".obj", V_model, T_model, interpolate_weights ? W_interpolated : W,
-				control_vertices_idx, (green || QGC || MLC || MEC || interpolate_weights) ? 0 : model_vertices_offset, green || QGC || MLC || MEC);
+				control_vertices_idx, (green || QGC || MLC || MEC || MVC || QMVC || interpolate_weights) ? 0 : model_vertices_offset, MVC || QMVC || green || QGC || MLC || MEC);
 		}
 		else
 		{

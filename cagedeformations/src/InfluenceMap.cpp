@@ -2,7 +2,43 @@
 
 #include <iostream>
 #include <algorithm>
-#include <igl/writeOBJ.h>
+#include <fstream>
+#include <iomanip>
+
+/// Modified from libigl
+bool writeOBJVertexColors(
+	const std::string& str,
+	const Eigen::MatrixXd& V,
+	const Eigen::MatrixXd& V_colors,
+	const Eigen::MatrixXi& F)
+{
+	using namespace std;
+	assert(V.cols() == 3 && "V should have 3 columns");
+	ofstream s(str);
+	if (!s.is_open())
+	{
+		fprintf(stderr, "IOError: writeOBJ() could not open %s\n", str.c_str());
+		return false;
+	}
+
+	for (int i = 0; i < V.rows(); ++i)
+	{
+		const Eigen::Vector3d vert = V.row(i);
+		const Eigen::Vector3d col = V_colors.row(i);
+
+		s << "v " << std::fixed << std::setprecision(17) << vert.x() << " " <<
+			std::fixed << std::setprecision(17) << vert.y() << " " <<
+			std::fixed << std::setprecision(17) << vert.z() << " " <<
+			std::fixed << std::setprecision(17) << col.x() << " " <<
+			std::fixed << std::setprecision(17) << col.y() << " " <<
+			std::fixed << std::setprecision(17) << col.z() << " \n";
+	}
+
+	s << (F.array() + 1).format(Eigen::IOFormat(Eigen::FullPrecision, Eigen::DontAlignCols, " ", "\n", "f ", "", "", "\n"));
+
+	return true;
+}
+
 
 Eigen::Vector3d HSVtoRGB(double H, double S, double V) {
 	if (H > 360 || H < 0 || S>100 || S < 0 || V>100 || V < 0) {
@@ -73,6 +109,6 @@ void write_influence_color_map_OBJ(const std::string & file_name, const Eigen::M
 
 		V_colors.row(i) = HSVtoRGB(240. * (1. - interpolate(influences(i))), 100., 100.);
 	}
-	// NOTE - Influence Map feature no longer supported by CageModeler
-	igl::writeOBJ(file_name, V, T/*, V_colors*/);
+
+	writeOBJVertexColors(file_name, V, V_colors, T);
 }
