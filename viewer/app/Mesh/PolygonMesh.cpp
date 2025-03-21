@@ -17,11 +17,11 @@ namespace
 }
 
 PolygonMesh::PolygonMesh(const Eigen::MatrixXd& vertices,
-						 const Eigen::MatrixXi& indices,
-						 MeshProxySolidPipeline solidPipeline,
-						 MeshProxyWireframePipeline wireframePipeline,
-						 const bool supportsWireframeRendering,
-						 const WireframeRenderMode wireframeRenderMode)
+	const Eigen::MatrixXi& indices,
+	MeshProxySolidPipeline solidPipeline,
+	MeshProxyWireframePipeline wireframePipeline,
+	const bool supportsWireframeRendering,
+	const WireframeRenderMode wireframeRenderMode)
 	: _solidPipeline(std::move(solidPipeline))
 	, _wireframePipeline(std::move(wireframePipeline))
 	, _wireframeRenderMode(wireframeRenderMode)
@@ -126,8 +126,74 @@ void PolygonMesh::CollectRenderProxy(const std::shared_ptr<RenderProxyCollector>
 {
 	TrianglesListProxyBuffers solidMeshBuffers;
 
-	auto triMesh = *_mesh;
-	triMesh.triangulate();
+	bool containsQuads = false;
+	bool nonTriQuad = false;
+	for (auto faceIt = _mesh->faces_begin(); faceIt != _mesh->faces_end(); ++faceIt)
+	{
+		auto const val = faceIt->valence();
+		if (val == 4)
+		{
+			containsQuads = true;
+		}
+		if (val > 4 || val < 3)
+		{
+			nonTriQuad = true;
+		}
+	}
+
+	PolyMeshKernel triMesh;
+
+	if (!containsQuads || nonTriQuad)
+	{
+		triMesh = *_mesh;
+	}
+	else
+	{
+		for (PolyMeshKernel::VertexIter v_it = _mesh->vertices_begin(); v_it != _mesh->vertices_end(); ++v_it) {
+			triMesh.add_vertex(_mesh->point(*v_it));
+		}
+
+		for (auto faceIt = _mesh->faces_begin(); faceIt != _mesh->faces_end(); ++faceIt)
+		{
+			std::vector<PolyMeshKernel::VertexHandle> face_vertices;
+
+			for (auto fv_it = _mesh->fv_iter(*faceIt); fv_it.is_valid(); ++fv_it)
+			{
+				face_vertices.push_back(*fv_it);
+			}
+
+			assert(faceIt->valence() == face_vertices.size());
+
+			if (faceIt->valence() == 3)
+			{
+				std::vector<PolyMeshKernel::VertexHandle> triangle;
+				triangle.push_back(PolyMeshKernel::VertexHandle(face_vertices[0].idx()));
+				triangle.push_back(PolyMeshKernel::VertexHandle(face_vertices[1].idx()));
+				triangle.push_back(PolyMeshKernel::VertexHandle(face_vertices[2].idx()));
+				triMesh.add_face(triangle);
+			}
+			else
+			{
+				std::vector<PolyMeshKernel::VertexHandle> triangle1;
+				triangle1.push_back(PolyMeshKernel::VertexHandle(face_vertices[0].idx()));
+				triangle1.push_back(PolyMeshKernel::VertexHandle(face_vertices[1].idx()));
+				triangle1.push_back(PolyMeshKernel::VertexHandle(face_vertices[2].idx()));
+				triMesh.add_face(triangle1);
+
+				std::vector<PolyMeshKernel::VertexHandle> triangle2;
+				triangle2.push_back(PolyMeshKernel::VertexHandle(face_vertices[0].idx()));
+				triangle2.push_back(PolyMeshKernel::VertexHandle(face_vertices[2].idx()));
+				triangle2.push_back(PolyMeshKernel::VertexHandle(face_vertices[3].idx()));
+				triMesh.add_face(triangle2);
+			}
+		}
+	}
+
+	if (nonTriQuad)
+	{
+		triMesh.triangulate();
+	}
+
 	triMesh.request_vertex_normals();
 
 	const auto numVertices = triMesh.n_vertices();
@@ -437,7 +503,7 @@ void PolygonMesh::SetColors(const std::span<glm::vec3> colors, const bool drawIn
 ClosestPolygonResult PolygonMesh::QueryRayHit(const Ray& ray) const
 {
 	float closestT = (std::numeric_limits<float>::max)();
-	FaceHandle closestFaceHandle { };
+	FaceHandle closestFaceHandle{ };
 
 	for (auto it = _mesh->faces_begin(); it != _mesh->faces_end(); ++it)
 	{
@@ -473,10 +539,10 @@ ClosestPolygonResult PolygonMesh::QueryRayHit(const Ray& ray) const
 
 	if (closestFaceHandle.is_valid())
 	{
-		return ClosestPolygonResult { closestFaceHandle, closestT };
+		return ClosestPolygonResult{ closestFaceHandle, closestT };
 	}
 
-	return ClosestPolygonResult { FaceHandle(), (std::numeric_limits<float>::max)() };
+	return ClosestPolygonResult{ FaceHandle(), (std::numeric_limits<float>::max)() };
 }
 
 std::optional<ClosestVertexResult> PolygonMesh::QueryClosestPointScreenSpace(const ViewInfo& viewInfo,
@@ -503,7 +569,7 @@ std::optional<ClosestVertexResult> PolygonMesh::QueryClosestPointScreenSpace(con
 	{
 		const VertexHandle vertexHandle(static_cast<int>(closestVertexIndex));
 
-		return ClosestVertexResult { vertexHandle,
+		return ClosestVertexResult{ vertexHandle,
 			GetPosition(vertexHandle),
 			GetNormal(vertexHandle) };
 	}
@@ -515,7 +581,7 @@ std::optional<ClosestPolygonResult> PolygonMesh::QueryClosestPolygonScreenSpace(
 	const glm::vec2 screenSpacePosition,
 	const float minScreenSpaceDistance) const
 {
-	FaceHandle closestFaceHandle { };
+	FaceHandle closestFaceHandle{ };
 	float minDistance = minScreenSpaceDistance;
 
 	for (auto it = _mesh->faces_begin(); it != _mesh->faces_end(); ++it)
@@ -548,7 +614,7 @@ std::optional<ClosestPolygonResult> PolygonMesh::QueryClosestPolygonScreenSpace(
 
 	if (closestFaceHandle.is_valid())
 	{
-		return ClosestPolygonResult { closestFaceHandle, minDistance };
+		return ClosestPolygonResult{ closestFaceHandle, minDistance };
 	}
 
 	return { };
@@ -558,7 +624,7 @@ std::optional<ClosestEdgeResult> PolygonMesh::QueryClosestEdgeScreenSpace(const 
 	const glm::vec2 screenSpacePosition,
 	const float minScreenSpaceDistance) const
 {
-	EdgeHandle closestEdgeHandle { };
+	EdgeHandle closestEdgeHandle{ };
 	float minDistance = minScreenSpaceDistance;
 
 	for (auto it = _mesh->edges_begin(); it != _mesh->edges_end(); ++it)
@@ -580,7 +646,7 @@ std::optional<ClosestEdgeResult> PolygonMesh::QueryClosestEdgeScreenSpace(const 
 
 	if (closestEdgeHandle.is_valid())
 	{
-		return ClosestEdgeResult { closestEdgeHandle };
+		return ClosestEdgeResult{ closestEdgeHandle };
 	}
 
 	return { };
