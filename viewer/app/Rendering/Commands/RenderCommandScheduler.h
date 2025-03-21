@@ -27,19 +27,18 @@ public:
 	 * @return Any result if the function returns something.
 	 */
 	template <typename CommandType, typename... Args>
-	auto ExecuteCommand(Args&&... args) -> decltype(std::declval<CommandType>().Execute(RenderCommandExecutionContext { }, std::forward<Args>(args)...))
+	auto ExecuteCommand(Args&&... args) -> decltype(std::declval<CommandType>().Execute(std::forward<Args>(args)...))
 	{
 		const auto queue = GetQueueForType(CommandType::GetQueueType());
-		RenderCommandExecutionContext context { this->weak_from_this(),
-			_device,
-			_renderPipelineManager,
-			_renderResourceManager,
-			_commandPool,
-			queue };
 
-		CommandType newCommand { };
+		CommandType newCommand(this->weak_from_this(),
+							   _renderPipelineManager,
+							   _renderResourceManager,
+							   _device,
+							   _commandPool,
+							   queue);
 
-		return newCommand.Execute(context, std::forward<Args>(args)...);
+		return newCommand.Execute(std::forward<Args>(args)...);
 	}
 
 	/**

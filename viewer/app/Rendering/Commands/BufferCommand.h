@@ -7,22 +7,22 @@
 class CreateBufferCommand : public RenderCommand<RenderCommandQueueType::Render>
 {
 public:
+	using RenderCommand::RenderCommand;
+
 	/**
 	 * Creates a new buffer and allocates memory on the GPU, then copies the contents of the buffer data into the buffer
 	 * memory. This will happen using an intermediate transfer buffer.
 	 * @tparam T The type of buffer data.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 * @param bufferData The buffer data.
 	 * @param bufferUsage Buffer usage flags.
 	 */
 	template <typename T>
-	Buffer Execute(const RenderCommandExecutionContext& context,
-		std::span<T> bufferData,
+	Buffer Execute(std::span<T> bufferData,
 		const VkBufferUsageFlags bufferUsage) const
 	{
-		CHECK_VK_HANDLE(context._device);
+		CHECK_VK_HANDLE(_device);
 
-		const auto renderResourceManager = context._renderResourceManager.lock();
+		const auto renderResourceManager = _renderResourceManager.lock();
 		if (renderResourceManager == nullptr)
 		{
 			return { };
@@ -34,9 +34,9 @@ public:
 
 		// Map the actual memory block on to the GPU.
 		void *data;
-		vkMapMemory(context._device, stagingBuffer._deviceMemory, 0, stagingBuffer._allocatedSize, 0, &data);
+		vkMapMemory(_device, stagingBuffer._deviceMemory, 0, stagingBuffer._allocatedSize, 0, &data);
 		memcpy(data, bufferData.data(), stagingBuffer._allocatedSize);
-		vkUnmapMemory(context._device, stagingBuffer._deviceMemory);
+		vkUnmapMemory(_device, stagingBuffer._deviceMemory);
 
 		const auto deviceBuffer = renderResourceManager->AllocateDeviceBuffer(bufferData.size_bytes(),
 			bufferUsage,
@@ -44,7 +44,7 @@ public:
 
 		// Copy the buffer from the staging buffer to the device buffer.
 		{
-			const auto commandBuffer = VulkanUtils::BeginOneTimeCommandBuffer(context._device, context._commandPool);
+			const auto commandBuffer = VulkanUtils::BeginOneTimeCommandBuffer(_device, _commandPool);
 
 			VkBufferCopy copyRegion { };
 			copyRegion.srcOffset = 0;
@@ -53,10 +53,10 @@ public:
 
 			vkCmdCopyBuffer(commandBuffer, stagingBuffer._deviceBuffer, deviceBuffer._deviceBuffer, 1, &copyRegion);
 
-			VulkanUtils::EndOneTimeCommandBuffer(context._device, context._commandPool, commandBuffer, context._submitQueue);
+			VulkanUtils::EndOneTimeCommandBuffer(_device, _commandPool, commandBuffer, _submitQueue);
 		}
 
-		stagingBuffer.ReleaseResource(context._device);
+		stagingBuffer.ReleaseResource(_device);
 
 		return deviceBuffer;
 	}
@@ -65,27 +65,27 @@ public:
 class UpdateBufferCommand : public RenderCommand<RenderCommandQueueType::Render>
 {
 public:
+	using RenderCommand::RenderCommand;
+
 	/**
 	 * Updates an existing buffer and allocates memory on the GPU, then copies the contents of the buffer data into the buffer
 	 * memory. This will happen using an intermediate transfer buffer.
 	 * @tparam T The type of buffer data.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 * @param bufferData The buffer data.
 	 * @param dstBuffer Already allocated buffer on the GPU.
 	 * @return A new buffer with contents from the input data.
 	 */
 	template <typename T>
-	void Execute(const RenderCommandExecutionContext& context,
-		std::span<T> bufferData,
+	void Execute(std::span<T> bufferData,
 		const Buffer& dstBuffer) const
 	{
-		CHECK_VK_HANDLE(context._device);
+		CHECK_VK_HANDLE(_device);
 		CHECK_VK_HANDLE(dstBuffer._deviceBuffer);
 		CHECK_VK_HANDLE(dstBuffer._deviceMemory);
 
 		CheckFormat(dstBuffer._allocatedSize == bufferData.size_bytes(), "Buffer sizes are different, use CreateBuffer to create a new buffer on the GPU.");
 
-		const auto renderResourceManager = context._renderResourceManager.lock();
+		const auto renderResourceManager = _renderResourceManager.lock();
 		if (renderResourceManager == nullptr)
 		{
 			return;
@@ -97,13 +97,13 @@ public:
 
 		// Map the actual memory block on to the GPU.
 		void *data;
-		vkMapMemory(context._device, stagingBuffer._deviceMemory, 0, stagingBuffer._allocatedSize, 0, &data);
+		vkMapMemory(_device, stagingBuffer._deviceMemory, 0, stagingBuffer._allocatedSize, 0, &data);
 		memcpy(data, bufferData.data(), stagingBuffer._allocatedSize);
-		vkUnmapMemory(context._device, stagingBuffer._deviceMemory);
+		vkUnmapMemory(_device, stagingBuffer._deviceMemory);
 
 		// Copy the buffer from the staging buffer to the device buffer.
 		{
-			const auto commandBuffer = VulkanUtils::BeginOneTimeCommandBuffer(context._device, context._commandPool);
+			const auto commandBuffer = VulkanUtils::BeginOneTimeCommandBuffer(_device, _commandPool);
 
 			VkBufferCopy copyRegion { };
 			copyRegion.srcOffset = 0;
@@ -112,10 +112,10 @@ public:
 
 			vkCmdCopyBuffer(commandBuffer, stagingBuffer._deviceBuffer, dstBuffer._deviceBuffer, 1, &copyRegion);
 
-			VulkanUtils::EndOneTimeCommandBuffer(context._device, context._commandPool, commandBuffer, context._submitQueue);
+			VulkanUtils::EndOneTimeCommandBuffer(_device, _commandPool, commandBuffer, _submitQueue);
 		}
 
-		stagingBuffer.ReleaseResource(context._device);
+		stagingBuffer.ReleaseResource(_device);
 	}
 };
 
@@ -124,18 +124,16 @@ class CopyBufferCommand : public RenderCommand<RenderCommandQueueType::Render>
 public:
 	/**
 	 * Copies the contents of the source buffer into the destination buffer. The copy happens immediately on the GPU.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 * @param srcBuffer A reference to a source buffer.
 	 * @param dstBuffer A reference to the destination buffer.
 	 */
-	void Execute(const RenderCommandExecutionContext& context,
-		const Buffer& srcBuffer,
+	void Execute(const Buffer& srcBuffer,
 		const Buffer& dstBuffer) const
 	{
-		CHECK_VK_HANDLE(context._commandPool);
-		CHECK_VK_HANDLE(context._submitQueue);
+		CHECK_VK_HANDLE(_commandPool);
+		CHECK_VK_HANDLE(_submitQueue);
 
-		const auto commandBuffer = VulkanUtils::BeginOneTimeCommandBuffer(context._device, context._commandPool);
+		const auto commandBuffer = VulkanUtils::BeginOneTimeCommandBuffer(_device, _commandPool);
 
 		VkBufferCopy copyRegion { };
 		copyRegion.srcOffset = 0;
@@ -144,32 +142,32 @@ public:
 
 		vkCmdCopyBuffer(commandBuffer, srcBuffer._deviceBuffer, dstBuffer._deviceBuffer, 1, &copyRegion);
 
-		VulkanUtils::EndOneTimeCommandBuffer(context._device, context._commandPool, commandBuffer, context._submitQueue);
+		VulkanUtils::EndOneTimeCommandBuffer(_device, _commandPool, commandBuffer, _submitQueue);
 	}
 };
 
 class CopyBufferToImageCommand : public RenderCommand<RenderCommandQueueType::Render>
 {
 public:
+	using RenderCommand::RenderCommand;
+
 	/**
 	 * Copies a memory from a buffer into an image.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 * @param sourceBuffer A buffer reference.
 	 * @param targetImage An image reference.
 	 * @param width The width of the image.
 	 * @param height The height of the image.
 	 */
-	void Execute(const RenderCommandExecutionContext& context,
-		const Buffer& sourceBuffer,
+	void Execute(const Buffer& sourceBuffer,
 		const Image& targetImage,
 		const uint32_t width,
 		const uint32_t height) const
 	{
-		CHECK_VK_HANDLE(context._device);
-		CHECK_VK_HANDLE(context._commandPool);
-		CHECK_VK_HANDLE(context._submitQueue);
+		CHECK_VK_HANDLE(_device);
+		CHECK_VK_HANDLE(_commandPool);
+		CHECK_VK_HANDLE(_submitQueue);
 
-		const auto commandBuffer = VulkanUtils::BeginOneTimeCommandBuffer(context._device, context._commandPool);
+		const auto commandBuffer = VulkanUtils::BeginOneTimeCommandBuffer(_device, _commandPool);
 
 		VkBufferImageCopy copy { };
 		copy.bufferOffset = 0;
@@ -184,7 +182,7 @@ public:
 
 		vkCmdCopyBufferToImage(commandBuffer, sourceBuffer._deviceBuffer, targetImage._deviceBuffer, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 
-		VulkanUtils::EndOneTimeCommandBuffer(context._device, context._commandPool, commandBuffer, context._submitQueue);
+		VulkanUtils::EndOneTimeCommandBuffer(_device, _commandPool, commandBuffer, _submitQueue);
 	}
 };
 
@@ -193,12 +191,11 @@ class QueueWaitCommand : public RenderCommand<RenderCommandQueueType::Render>
 public:
 	/**
 	 * Waits for the graphics queue to finish work.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 */
-	void Execute(const RenderCommandExecutionContext& context) const
+	void Execute() const
 	{
-		CHECK_VK_HANDLE(context._submitQueue);
+		CHECK_VK_HANDLE(_submitQueue);
 
-		vkQueueWaitIdle(context._submitQueue);
+		vkQueueWaitIdle(_submitQueue);
 	}
 };

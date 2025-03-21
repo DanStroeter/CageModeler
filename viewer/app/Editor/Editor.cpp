@@ -150,10 +150,10 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer)
 
 void Editor::CreateSceneLights() const
 {
-	_scene->AddLightSource(PointLight(glm::vec3(8.0f, 8.0f, 8.0f), 0.05f));
-	_scene->AddLightSource(PointLight(glm::vec3(-5.0f, -15.0f, 11.0f), 0.08f));
-	_scene->AddLightSource(PointLight(glm::vec3(0.0f, 12.0f, 6.0f), 0.12f));
-	_scene->AddLightSource(PointLight(glm::vec3(14.0f, -14.0f, 14.0f), 0.02f));
+	_scene->AddLightSource(PointLight(glm::vec3(4.0f, 4.0f, 4.0f), 0.75f));
+	_scene->AddLightSource(PointLight(glm::vec3(-3.0f, -7.5f, 6.0f), 1.08f));
+	_scene->AddLightSource(PointLight(glm::vec3(0.0f, 8.0f, 6.0f), 0.92f));
+	_scene->AddLightSource(PointLight(glm::vec3(8.0f, -8.0f, 8.0f), 1.52f));
 }
 
 void Editor::RecordUI()

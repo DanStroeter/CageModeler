@@ -4,8 +4,8 @@
 
 layout (location = 0) out vec4 OutColor;
 
-const vec3 StartGradientColor = vec3(0.035, 0.055, 0.05);
-const vec3 EndGradientColor = vec3(0.02, 0.03, 0.025);
+const vec3 StartGradientColor = vec3(0.125, 0.145, 0.14);
+const vec3 EndGradientColor = vec3(0.09, 0.12, 0.115);
 const vec2 GradientOffset = vec2(0.0, -0.25);
 
 layout (set = 0, binding = 0) uniform FrameDataBlock

@@ -10,7 +10,7 @@ class TranslateTool final : public ToolTemplated<TranslateTool>
 public:
 	using ToolTemplated::ToolTemplated;
 
-	TranslateTool(std::function<void (ToolType)> delegate)
+	explicit TranslateTool(std::function<void (ToolType)> delegate)
 		: _delegate(std::move(delegate))
 	{ }
 
@@ -52,7 +52,7 @@ private:
 class RotateTool final : public ToolTemplated<RotateTool>
 {
 public:
-	RotateTool(std::function<void (ToolType)> delegate)
+	explicit RotateTool(std::function<void (ToolType)> delegate)
 		: _delegate(std::move(delegate))
 	{ }
 
@@ -94,7 +94,7 @@ private:
 class ScaleTool final : public ToolTemplated<ScaleTool>
 {
 public:
-	ScaleTool(std::function<void (ToolType)> delegate)
+	explicit ScaleTool(std::function<void (ToolType)> delegate)
 		: _delegate(std::move(delegate))
 	{ }
 

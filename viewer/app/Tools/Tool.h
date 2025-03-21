@@ -49,20 +49,12 @@ struct std::hash<ToolType>
 	}
 };
 
-namespace Tools
+namespace Tools::Transform
 {
-	namespace Transform
-	{
-		const auto inline Translate = ToolType();
-		const auto inline Rotate = ToolType();
-		const auto inline Scale = ToolType();
-		
-	}
+	const auto inline Translate = ToolType();
+	const auto inline Rotate = ToolType();
+	const auto inline Scale = ToolType();
 
-	namespace Cage
-	{
-		const auto inline Brush=ToolType();
-	}
 }
 
 struct ToolDescription

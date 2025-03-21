@@ -7,26 +7,25 @@
 class SubmitCommand : public RenderCommand<RenderCommandQueueType::Render>
 {
 public:
+	using RenderCommand::RenderCommand;
+
 	/**
 	 * Takes care of transitioning the image layout by automatically figuring out how to do it based on the old and new
 	 * layouts. This is going to be issued as a 1 time off command and execute immediately on the GPU.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 * @param waitSemaphores Semaphores to wait on before we do the submit.
 	 * @param signalSemaphores Semaphores to signal after the submit is finished.
 	 * @param waitStages Stages to wait on before we do the submit.
 	 * @param commandBuffers Command buffers to be submitted.
 	 * @param signalFence A fence to signal when the submit is finished.
 	 */
-	void Execute(
-		const RenderCommandExecutionContext& context,
-		const std::span<VkSemaphore> waitSemaphores,
+	void Execute(const std::span<VkSemaphore> waitSemaphores,
 		const std::span<VkSemaphore> signalSemaphores,
 		const std::span<VkPipelineStageFlags> waitStages,
 		const std::span<VkCommandBuffer> commandBuffers,
 		const RenderResourceRef<Fence>& signalFence) const
 	{
-		CHECK_VK_HANDLE(context._device);
-		CHECK_VK_HANDLE(context._commandPool);
+		CHECK_VK_HANDLE(_device);
+		CHECK_VK_HANDLE(_commandPool);
 
 		VkSubmitInfo drawSubmitInfo { };
 		drawSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -37,28 +36,27 @@ public:
 		drawSubmitInfo.pCommandBuffers = commandBuffers.data();
 		drawSubmitInfo.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphores.size());
 		drawSubmitInfo.pSignalSemaphores = signalSemaphores.data();
-		VK_CHECK(vkQueueSubmit(context._submitQueue, 1, &drawSubmitInfo, signalFence));
+		VK_CHECK(vkQueueSubmit(_submitQueue, 1, &drawSubmitInfo, signalFence));
 	}
 };
 
 class PresentCommand : public RenderCommand<RenderCommandQueueType::Present>
 {
 public:
+	using RenderCommand::RenderCommand;
+
 	/**
 	 * Schedules a present command onto the present queue.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 * @param swapchains Swapchains that will be presented.
 	 * @param signalSemaphores Semaphores that we will wait on before we execute the presentation.
 	 * @param imageIndex Index of the swapchain image that should be presented.
 	 */
-	VkResult Execute(
-		const RenderCommandExecutionContext& context,
-		const std::span<VkSwapchainKHR> swapchains,
+	VkResult Execute(const std::span<VkSwapchainKHR> swapchains,
 		const std::span<VkSemaphore> signalSemaphores,
 		const uint32_t& imageIndex) const
 	{
-		CHECK_VK_HANDLE(context._device);
-		CHECK_VK_HANDLE(context._commandPool);
+		CHECK_VK_HANDLE(_device);
+		CHECK_VK_HANDLE(_commandPool);
 
 		VkPresentInfoKHR presentInfo { };
 		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -68,7 +66,7 @@ public:
 		presentInfo.pSwapchains = swapchains.data();
 		presentInfo.pImageIndices = &imageIndex;
 		presentInfo.pResults = nullptr;
-		const auto presentResult = vkQueuePresentKHR(context._submitQueue, &presentInfo);
+		const auto presentResult = vkQueuePresentKHR(_submitQueue, &presentInfo);
 
 		return presentResult;
 	}
@@ -77,23 +75,22 @@ public:
 class BeginRenderPass : public RenderCommand<RenderCommandQueueType::Render>
 {
 public:
+	using RenderCommand::RenderCommand;
+
 	/**
 	 * Schedules a present command onto the present queue.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 * @param renderPass The current render pass to begin.
 	 * @param commandBuffer The command buffer to schedule commands on.
 	 * @param framebuffer The framebuffer we are rendering onto.
 	 * @param swapchainExtent The swapchain extent.
 	 */
-	void Execute(
-		const RenderCommandExecutionContext& context,
-		const VkRenderPass renderPass,
+	void Execute(const VkRenderPass renderPass,
 		const VkCommandBuffer commandBuffer,
 		const VkFramebuffer framebuffer,
 		const VkExtent2D swapchainExtent) const
 	{
-		CHECK_VK_HANDLE(context._device);
-		CHECK_VK_HANDLE(context._commandPool);
+		CHECK_VK_HANDLE(_device);
+		CHECK_VK_HANDLE(_commandPool);
 
 		CHECK_VK_HANDLE(renderPass);
 		CHECK_VK_HANDLE(framebuffer);
@@ -142,17 +139,16 @@ public:
 class EndRenderPass : public RenderCommand<RenderCommandQueueType::Render>
 {
 public:
+	using RenderCommand::RenderCommand;
+
 	/**
 	 * Schedules a present command onto the present queue.
-	 * @param context A context containing relevant data to schedule and execute the command.
 	 * @param commandBuffer The command buffer to schedule commands on.
 	 */
-	void Execute(
-		const RenderCommandExecutionContext& context,
-		const VkCommandBuffer commandBuffer) const
+	void Execute(const VkCommandBuffer commandBuffer) const
 	{
-		CHECK_VK_HANDLE(context._device);
-		CHECK_VK_HANDLE(context._commandPool);
+		CHECK_VK_HANDLE(_device);
+		CHECK_VK_HANDLE(_commandPool);
 
 		// End and submit render pass
 		vkCmdEndRenderPass(commandBuffer);
