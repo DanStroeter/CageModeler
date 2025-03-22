@@ -153,6 +153,32 @@ void ProjectSettingsPanel::Layout()
 					{ nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
 			}
 
+          ImGui::TableNextRow();
+			{
+				// Add the scale input at the bottom because it's valid for all meshes.
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextEx("Cage Smooth Iterations");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("Set Smoothness of the cage. default is 3");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(100.0f);
+				ImGui::InputInt("##Smooth", &_modifiedProjectModel._smoothIterations, 1,10 , ImGuiInputTextFlags_NoHorizontalScroll);
+			}
+
+           	ImGui::TableNextRow();
+			{
+				// Add the scale input at the bottom because it's valid for all meshes.
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextEx("Target Number of Faces");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("Set face number of the cage. default is 400");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(100.0f);
+				ImGui::InputInt("##CageFaces", &_modifiedProjectModel._targetNumFaces, 1,10 , ImGuiInputTextFlags_NoHorizontalScroll);
+			}
+
           const auto hasNoMesh1 = !_modifiedProjectModel._meshFilepath.has_value();
 			ImGui::TableNextRow();
 			{
