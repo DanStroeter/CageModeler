@@ -292,12 +292,15 @@ std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
 	Tree tree(faces(poly).first, faces(poly).second, poly);
 	Point_inside inside_tester(tree);
 
-	// Exact_Polyhedron voxels;
+	//Exact_Polyhedron voxels;
 	//std::cout << "Check for intersection\n";
-	for (unsigned int i = 0; i < data_resolution[0]; i++) {
-		for (unsigned int j = 0; j < data_resolution[1]; j++) {
+
+#pragma omp parallel for collapse(2) schedule(dynamic)
+	for (int i = 0; i < data_resolution[0]; i++) {
+		for (int j = 0; j < data_resolution[1]; j++) {
 			//if (j % 30 == 0) printf("voxelizing (%d, %d)\n", i, j);
-			for (unsigned int k = 0; k < data_resolution[2]; k++) {
+#pragma omp parallel for schedule(dynamic)
+			for (int k = 0; k < data_resolution[2]; k++) {
 
 				unsigned int idx = i * pow(BASE_RESOLUTION, 2) + j * BASE_RESOLUTION + k;
 
@@ -308,8 +311,11 @@ std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
 
 				if (CGAL::Polygon_mesh_processing::do_intersect(voxel, poly))
 				{
-					intersecting_voxels.push_back(idx);
-					voxels_marking[idx] = true;
+#pragma omp critical
+					{
+						intersecting_voxels.push_back(idx);
+						voxels_marking[idx] = true;
+					}
 					continue;
 				}
 
@@ -325,8 +331,11 @@ std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
 
 				if (inside)
 				{
-					intersecting_voxels.push_back(idx);
-					voxels_marking[idx] = true;
+#pragma omp critical
+					{
+						intersecting_voxels.push_back(idx);
+						voxels_marking[idx] = true;
+					}
 				}
 			}
 		}
@@ -702,9 +711,7 @@ bool does_overlap_erode(Node cell, CGAL::Bbox_3 p_bbox) {
 	return false;
 }
 
-VOXEL_GRID execute_erosion(MIPMAP_TYPE& contour_mipmap, VOXEL_GRID& d_grid, VOXEL_GRID& voxel_grid) {
-
-	VOXEL_GRID e_grid = d_grid;
+void execute_erosion(MIPMAP_TYPE& contour_mipmap, VOXEL_GRID& e_grid, VOXEL_GRID& voxel_grid) {
 
 	int mipmap_depth = contour_mipmap.size();
 
@@ -743,7 +750,6 @@ VOXEL_GRID execute_erosion(MIPMAP_TYPE& contour_mipmap, VOXEL_GRID& d_grid, VOXE
 			}
 		}
 	}
-	return e_grid;
 }
 
 
@@ -789,7 +795,6 @@ void add_voxel_faces(
 			mesh.add_face(mesh_vertices[faces[i][0]], mesh_vertices[faces[i][1]], mesh_vertices[faces[i][2]]);
 			mesh.add_face(mesh_vertices[faces[i][2]], mesh_vertices[faces[i][3]], mesh_vertices[faces[i][0]]);
 		}
-
 	}
 }
 
@@ -859,9 +864,9 @@ ExactMesh extract_surface_from_voxels(
 	return output_mesh;
 }
 
-void decimation(MyMesh& vcg_mesh) {
+void decimation(MyMesh& vcg_mesh, const int smoothIterations, const int targetNumFaces) {
 
-	tri::Smooth<MyMesh>::VertexCoordLaplacianHC(vcg_mesh, 3);
+	tri::Smooth<MyMesh>::VertexCoordLaplacianHC(vcg_mesh, smoothIterations);
 
 	TriEdgeCollapseQuadricParameter qparams;
 	qparams.QualityThr = .3;
@@ -898,14 +903,14 @@ void decimation(MyMesh& vcg_mesh) {
 	// printf("BEFORE: mesh  %d %d \n", vcg_mesh.vn, vcg_mesh.fn);
 	// printf("Initial Heap Size %i\n", int(DeciSession.h.size()));
 
-	DeciSession.SetTargetSimplices(FinalSize);
+	DeciSession.SetTargetSimplices(targetNumFaces);
 	DeciSession.SetTimeBudget(0.5f);
 	DeciSession.SetTargetOperations(100000);
 	//if (TargetError < std::numeric_limits<float>::max()) DeciSession.SetTargetMetric(TargetError);
 
 	//while (DeciSession.DoOptimization() && vcg_mesh.fn > FinalSize && DeciSession.currMetric < TargetError)
 
-	while (DeciSession.DoOptimization() && vcg_mesh.fn > FinalSize)
+	while (DeciSession.DoOptimization() && vcg_mesh.fn > targetNumFaces)
 		printf("Current Mesh size %7i heap sz %9i err %9g \n", vcg_mesh.fn, int(DeciSession.h.size()), DeciSession.currMetric);
 
 	int t3 = clock();
@@ -930,31 +935,37 @@ void decimation(MyMesh& vcg_mesh) {
 
 void GenerateCageFromMeshOperation::Execute(){
 
- std::string filename=_params._meshfilepath;
- std::string outputfilename=_params._cagefilepath;
+ std::string filename = _params._meshfilepath.string();
+ std::string outputfilename=_params._cagefilepath.string();
 
 //extract input model name
 std::string obj=filename.substr(filename.find_last_of('/')+1,filename.find_last_of('.')-1);
 std::string filepath=filename.substr(0,filename.find_last_of('/')+1);
 std::string intermediate_path=filepath+obj+"_interm.obj";
 
+VOXEL_GRID& e_grid = _params._closingResult;
+
  // generate voxel grid and mipmap
-	MIPMAP_TYPE mipmap = voxelize_and_mipmap(filename);
-	
-	// dilation
-	VOXEL_GRID d_grid = executeDilation(mipmap);
+	if(e_grid.empty())
+	{
+		MIPMAP_TYPE mipmap = voxelize_and_mipmap(filename);
+		
+		// dilation
+		VOXEL_GRID d_grid = executeDilation(mipmap);
 
-	// extract contour and generate mipmap of the contour
-	//std::cout << "drawing done. start contour extraction\n";
-	VOXEL_GRID contour = extract_contour(d_grid);
+		// extract contour and generate mipmap of the contour
+		//std::cout << "drawing done. start contour extraction\n";
+		VOXEL_GRID contour = extract_contour(d_grid);
 
-	//std::cout << "contour extraction done\n";
-	MIPMAP_TYPE contour_pyramid = generate_mipmap(contour);
+		//std::cout << "contour extraction done\n";
+		MIPMAP_TYPE contour_pyramid = generate_mipmap(contour);
 
-	// erosion
-	VOXEL_GRID e_grid = execute_erosion(contour_pyramid, d_grid, mipmap[0]);
-	//std::cout << "erosion done, start surface extraction\n";
-
+		// erosion
+		e_grid.resize(d_grid.size());
+		e_grid.assign(d_grid.begin(), d_grid.end());
+		execute_erosion(contour_pyramid, e_grid, mipmap[0]);
+		//std::cout << "erosion done, start surface extraction\n";
+	}
 	// Extract the surface from the closed grid
 	std::array<ExactVector, 3> voxel_strides = { ExactVector(base_cellsize, 0, 0),
 	ExactVector(0, base_cellsize, 0), ExactVector(0, 0, base_cellsize) };
@@ -964,8 +975,9 @@ std::string intermediate_path=filepath+obj+"_interm.obj";
      // Simplification
 	MyMesh final_mesh;
 	tri::io::ImporterOFF<MyMesh>::Open(final_mesh, intermediate_path.c_str());
-	decimation(final_mesh);
+	decimation(final_mesh, _params._smoothIterations, _params._targetNumFaces);
 	std::string output_path = filepath + obj + "_cage.obj";
 
 	tri::io::ExporterOBJ<MyMesh>::Save(final_mesh,outputfilename.c_str(),tri::io::Mask::IOM_BITPOLYGONAL);
+	
 }

@@ -16,5 +16,5 @@ void main()
 
 	vec3 Color = max(dot(normalize(InOutNormal), normalize(InOutEyePosition - InOutPosition)), 0.5) + vec3(0.25);
 
-	OutColor = vec4(InOutVertexColor * Color, 1.0);
+	OutColor = vec4(LinearToSRGB(InOutVertexColor * Color), 1.0);
 }

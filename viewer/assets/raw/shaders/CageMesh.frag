@@ -8,5 +8,5 @@ layout (location = 0) in vec3 InOutVertexColor;
 
 void main()
 {
-	OutColor = vec4(LinearToSRGB(InOutVertexColor), 0.35);
+	OutColor = vec4(LinearToSRGB(InOutVertexColor), 0.45);
 }

@@ -21,9 +21,7 @@ struct DeformedMeshExportOperationParams
 		const DeformationType deformationType,
 		const LBC::DataSetup::WeightingScheme LBCScheme,
 		const std::optional<std::size_t> frameIndex,
-#if WITH_SOMIGLIANA
-		const std::shared_ptr<green::somig_deformer_3>& somiglianaDeformer,
-#endif
+		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer,
 		Eigen::MatrixXi faces,
 		std::filesystem::path outputFilename,
 		const float scalingFactor)
@@ -31,9 +29,7 @@ struct DeformedMeshExportOperationParams
 		, _deformationType(deformationType)
 		, _LBCScheme(LBCScheme)
 		, _frameIndex(frameIndex)
-#if WITH_SOMIGLIANA
 		, _somiglianaDeformer(somiglianaDeformer)
-#endif
 		, _faces(std::move(faces))
 		, _outputFilename(std::move(outputFilename))
 		, _scalingFactor(scalingFactor)
@@ -43,9 +39,7 @@ struct DeformedMeshExportOperationParams
 	DeformationType _deformationType;
 	LBC::DataSetup::WeightingScheme _LBCScheme;
 	std::optional<std::size_t> _frameIndex;
-#if WITH_SOMIGLIANA
-	std::shared_ptr<green::somig_deformer_3> _somiglianaDeformer;
-#endif
+	std::shared_ptr<somig_deformer_3> _somiglianaDeformer;
 	Eigen::MatrixXi _faces;
 	std::filesystem::path _outputFilename;
 	float _scalingFactor = 1.0f;

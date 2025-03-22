@@ -51,18 +51,9 @@ class point3
 public:
     typedef T               type_t;
 
-    point3< T >( T x_ , T y_ , T z_) { v[0] = x_; v[1] = y_; v[2] = z_; }
+    point3( T x_ , T y_ , T z_) { v[0] = x_; v[1] = y_; v[2] = z_; }
 
-    /*
-    point3< T >(point3< T > const& p)
-    {
-        v[0] = (T)(p[0]);
-        v[1] = (T)(p[1]);
-        v[2] = (T)(p[2]);
-    }
-    */
-
-    template< class point_t > point3< T >(point_t const& p)
+    template< class point_t > point3(point_t const& p)
     {
         // IMPORTANT NOTE: if you have a weird compilation error here, it is probably because you are trying to 
         // assign a wrong variable to a point3.
@@ -76,7 +67,7 @@ public:
         v[2] = (T)(p[2]);
     }
 
-    point3< T >(){v[0] = 0; v[1] = 0; v[2] = 0;}
+    point3(){v[0] = 0; v[1] = 0; v[2] = 0;}
 
     inline  T x() const {return v[0];}
     inline  T y() const {return v[1];}
@@ -91,7 +82,7 @@ public:
         return v[c];
     }
 
-    static point3<T> Zero() { return point3<T>(0,0,0); }
+    static point3 Zero() { return point3<T>(0,0,0); }
 
     void setZero()
     {
@@ -950,7 +941,7 @@ public:
     typedef T                       type_t;
 
     ////////////         CONSTRUCTORS          //////////////
-    mat33<T>()
+    mat33()
     {
         vals[0] = 0;
         vals[1] = 0;
@@ -962,7 +953,7 @@ public:
         vals[7] = 0;
         vals[8] = 0;
     }
-    mat33<T>( T v1 , T v2 , T v3 , T v4 , T v5 , T v6 , T v7 , T v8 , T v9)
+    mat33( T v1 , T v2 , T v3 , T v4 , T v5 , T v6 , T v7 , T v8 , T v9)
     {
         vals[0] = v1;
         vals[1] = v2;
@@ -981,7 +972,7 @@ public:
             vals[i]=cc[i];
     }
     */
-    template< typename m2 > mat33<T>( const m2 & m )
+    template< typename m2 > mat33( const m2 & m )
     {
         for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)

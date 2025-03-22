@@ -56,7 +56,7 @@ struct MeshProxySolidPipeline
 {
 	PipelineHandle _handle = InvalidHandle;
 	PipelineHandle _vertexColorHandle = InvalidHandle;
-	std::array<std::vector<VkDescriptorSet>, VulkanUtils::NumRenderFramesInFlight> _descriptorSets;
+	RenderArrayType<std::vector<VkDescriptorSet>> _descriptorSets;
 };
 
 class RenderProxy
@@ -150,7 +150,7 @@ struct MeshProxyWireframePipeline
 	PipelineHandle _pointsHandle = InvalidHandle;
 	PipelineHandle _edgesHandle = InvalidHandle;
 	PipelineHandle _polyHandle = InvalidHandle;
-	std::array<std::vector<VkDescriptorSet>, VulkanUtils::NumRenderFramesInFlight> _descriptorSets;
+	RenderArrayType<std::vector<VkDescriptorSet>> _descriptorSets;
 };
 
 class MeshRenderProxy : public RenderProxy

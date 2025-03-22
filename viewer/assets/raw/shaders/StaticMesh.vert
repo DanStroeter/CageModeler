@@ -21,11 +21,11 @@ layout (location = 2) out vec3 InOutVertexColor;
 
 void main()
 {
-	vec4 vertexPosition = FrameData.View * ObjectData.Model * vec4(InPosition, 1.0);
+	vec4 VertexPosition = ObjectData.Model * vec4(InPosition, 1.0);
 
-	InOutPosition = vec3(vertexPosition) / vertexPosition.w;
+	InOutPosition = vec3(VertexPosition);
 	InOutNormal = normalize(ObjectData.NormalMatrix * InNormal);
 	InOutVertexColor = InVertexColor;
 
-	gl_Position = FrameData.Projection * vertexPosition;
+	gl_Position = FrameData.Projection * FrameData.View * VertexPosition;
 }

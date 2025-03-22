@@ -11,7 +11,7 @@ find_package(CGAL REQUIRED COMPONENTS Core )
 
 find_package(Eigen3 REQUIRED)
 
-set(CMAKE_PREFIX_PATH "/opt/homebrew/opt/cgal")
+#set(CMAKE_PREFIX_PATH "/opt/homebrew/opt/cgal")
 find_package(CGAL REQUIRED)
 
 
@@ -26,7 +26,7 @@ IF (APPLE)
 endif ()
 
 #OpenMP
-include_directories(/opt/homebrew/opt/libomp/include)
+#include_directories(/opt/homebrew/opt/libomp/include)
 
 # Set the startup project for the "play" button in MSVC.
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
@@ -150,6 +150,8 @@ if (WIN32)
         COMMAND_EXPAND_LISTS)
 endif()
 
+find_package(OpenMP REQUIRED)
+
 # Link the libraries against the project.
 target_link_libraries(
     ${PROJECT_NAME}
@@ -162,23 +164,8 @@ target_link_libraries(
         Vulkan::Vulkan
         nfd
         SDL3::SDL3
-        /opt/homebrew/opt/libomp/lib/libomp.dylib
-)
-
-# On Linux the naming of the OpenMesh library is different.
-if (APPLE OR WIN32)
-    target_link_libraries(
-        ${PROJECT_NAME}
-        PRIVATE
-        ${OPENMESH_LIBRARIES}
-    )
-else ()
-    target_link_libraries(
-        ${PROJECT_NAME}
-        PRIVATE
         OpenMeshCore
-    )
-endif()
+        OpenMP::OpenMP_CXX)
 
 # On Windows will enable SDL2 to recognize high DPI monitors.
 if (WIN32)
