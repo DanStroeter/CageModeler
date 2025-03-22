@@ -302,7 +302,6 @@ void NewProjectPanel::Layout()
 		}
 		ImGui::EndDisabled();
 
-#ifdef WITH_SOMIGLIANA
 		ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
 		ImGui::TableNextRow();
@@ -318,13 +317,13 @@ void NewProjectPanel::Layout()
 
 		ImGui::Dummy(ImVec2(0.0f, 5.0f));
 
-		ImGui::BeginDisabled(_model->_deformationType != DeformationType::Somigliana && _model->_deformationType != DeformationType::MVC);
+		ImGui::BeginDisabled(_model->_deformationType != DeformationType::Somigliana);
 		{
 			ImGui::InputDouble("##SomigNu", &_model->_somigNu);
 			ImGui::SameLine();
 			UIHelpers::HelpMarker("The material parameter nu for somigliana deformer.");
 
-			auto bulgingValue = _model->_somigBulging.load();
+			/*auto bulgingValue = _model->_somigBulging.load();
 			if (ImGui::InputDouble("##SomigBulging", &bulgingValue)) {
 				_model->_somigBulging = bulgingValue;
 			}
@@ -364,10 +363,9 @@ void NewProjectPanel::Layout()
 			_model->_somigBulgingType = static_cast<BulgingType>(_selectedBulgingTypeIndex);
 
 			ImGui::SameLine();
-			UIHelpers::HelpMarker("The bulging type for somigliana deformer.");
+			UIHelpers::HelpMarker("The bulging type for somigliana deformer.");*/
 		}
 		ImGui::EndDisabled();
-#endif
 
 		ImGui::EndTable();
 
@@ -424,9 +422,7 @@ void NewProjectPanel::SetModel(const std::shared_ptr<ProjectModelData>& model)
 	_selectedDeformationTypeIndex = static_cast<uint32_t>(_model->_deformationType);
 	_selectedWeightingSchemeIndex = static_cast<uint32_t>(_model->_LBCWeightingScheme);
 
-#ifdef WITH_SOMIGLIANA
-	_selectedBulgingTypeIndex = static_cast<uint32_t>(_model->_somigBulgingType);
-#endif
+	//_selectedBulgingTypeIndex = static_cast<uint32_t>(_model->_somigBulgingType);
 }
 
 void NewProjectPanel::Present()

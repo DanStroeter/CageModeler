@@ -10,9 +10,7 @@ struct ProjecSettingsHelpers
 	static constexpr auto ClearButtonSize = ImVec2(24.0f, 24.0f);
 
 	static constexpr std::array DeformationMethodNames {
-#ifdef WITH_SOMIGLIANA
 		"MVC",
-#endif
 		"QMVC",
 		"Harmonic",
 		"BBW",
@@ -21,9 +19,7 @@ struct ProjecSettingsHelpers
 		"MLC",
 		"Green",
 		"QGC",
-#ifdef WITH_SOMIGLIANA
 		"Somigliana"
-#endif
 	};
 
 	static constexpr std::array LBCWeightingSchemeNames = {
@@ -32,13 +28,6 @@ struct ProjecSettingsHelpers
 		"Square",
 		"Square Root"
 	};
-
-#ifdef WITH_SOMIGLIANA
-	static constexpr std::array SomiglianaBulgingTypeNames = {
-		"Solid Angle",
-		"Swept Volume"
-	};
-#endif
 
 	[[nodiscard]] static std::filesystem::path SanitizeFilepath(const std::filesystem::path& filepath)
 	{

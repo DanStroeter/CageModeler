@@ -153,6 +153,32 @@ void ProjectSettingsPanel::Layout()
 					{ nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
 			}
 
+          ImGui::TableNextRow();
+			{
+				// Add the scale input at the bottom because it's valid for all meshes.
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextEx("Cage Smooth Iterations");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("Set Smoothness of the cage. default is 3");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(100.0f);
+				ImGui::InputInt("##Smooth", &_modifiedProjectModel._smoothIterations, 1,10 , ImGuiInputTextFlags_NoHorizontalScroll);
+			}
+
+           	ImGui::TableNextRow();
+			{
+				// Add the scale input at the bottom because it's valid for all meshes.
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextEx("Target Number of Faces");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("Set face number of the cage. default is 400");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(100.0f);
+				ImGui::InputInt("##CageFaces", &_modifiedProjectModel._targetNumFaces, 1,10 , ImGuiInputTextFlags_NoHorizontalScroll);
+			}
+
           const auto hasNoMesh1 = !_modifiedProjectModel._meshFilepath.has_value();
 			ImGui::TableNextRow();
 			{
@@ -165,14 +191,7 @@ void ProjectSettingsPanel::Layout()
 		{
 			if (ImGui::Button("Generate Cage"))
 			{
-				/*
-				// Update the value of the actual model pointer.
-				*_model = _modifiedProjectModel;
-
-				_applyButtonPressed = true;*/
-
-			std::string generatedCagePath=GenerateCageFromMesh(_modifiedProjectModel._meshFilepath.value(),_modifiedProjectModel._scalingFactor);
-				_modifiedProjectModel._cageFilepath=generatedCagePath;
+				_modifiedProjectModel._cageFilepath = GenerateCageFromMesh();
 			}
 		}
 		ImGui::EndDisabled();
@@ -337,7 +356,6 @@ void ProjectSettingsPanel::Layout()
 		}
 		ImGui::EndDisabled();
 
-#ifdef WITH_SOMIGLIANA
 		ImGui::Dummy(ImVec2(0.0f, 8.0f));
 
 		ImGui::TableNextRow();
@@ -359,7 +377,7 @@ void ProjectSettingsPanel::Layout()
 			ImGui::SameLine();
 			UIHelpers::HelpMarker("The material parameter nu for somigliana deformer.");
 
-			auto bulgingValue = _modifiedProjectModel._somigBulging.load();
+			/*auto bulgingValue = _modifiedProjectModel._somigBulging.load();
 			if (ImGui::InputDouble("##SomigBulging", &bulgingValue)) {
 				_modifiedProjectModel._somigBulging = bulgingValue;
 			}
@@ -399,10 +417,9 @@ void ProjectSettingsPanel::Layout()
 			_modifiedProjectModel._somigBulgingType = static_cast<BulgingType>(_selectedBulgingTypeIndex);
 
 			ImGui::SameLine();
-			UIHelpers::HelpMarker("The bulging type for somigliana deformer.");
+			UIHelpers::HelpMarker("The bulging type for somigliana deformer.");*/
 		}
 		ImGui::EndDisabled();
-#endif
 
 		ImGui::EndTable();
 
@@ -474,8 +491,10 @@ void ProjectSettingsPanel::Dismiss()
 }
 
 
-std::string ProjectSettingsPanel::GenerateCageFromMesh(const std::string& meshfilePath,int scale){
+std::string ProjectSettingsPanel::GenerateCageFromMesh(){
 
+
+_modifiedProjectModel._closingResult.clear();
 const auto meshOperationSystem = _meshOperationSystem.lock();
 		if (meshOperationSystem == nullptr)
 		{
@@ -485,10 +504,15 @@ const auto meshOperationSystem = _meshOperationSystem.lock();
 	std::filesystem::path currentpath=__FILE__;
 	std::filesystem::path upperpath=currentpath.parent_path().parent_path().parent_path().parent_path();
 	std::string outputCageFile=upperpath.string() + "/models/cage.obj";
-
-	//std::string outputCageFile="/Users/liujiaqi/Desktop/opencv_Lab/CageModeler_1/models/cage1.obj";
 	 
-	meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(meshfilePath,outputCageFile,scale);
+	meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(
+		_modifiedProjectModel._meshFilepath.value().string(),
+		outputCageFile,
+		_modifiedProjectModel._scalingFactor,
+		_modifiedProjectModel._smoothIterations,
+		_modifiedProjectModel._targetNumFaces,
+		_modifiedProjectModel._closingResult
+	);
 
     std::ifstream input(outputCageFile);
      
@@ -510,9 +534,7 @@ void ProjectSettingsPanel::SetModel(const std::shared_ptr<ProjectModelData>& mod
 	_selectedDeformationTypeIndex = static_cast<uint32_t>(_model->_deformationType);
 	_selectedWeightingSchemeIndex = static_cast<uint32_t>(_model->_LBCWeightingScheme);
 
-#ifdef WITH_SOMIGLIANA
-	_selectedBulgingTypeIndex = static_cast<uint32_t>(_model->_somigBulgingType);
-#endif
+	//_selectedBulgingTypeIndex = static_cast<uint32_t>(_model->_somigBulgingType);
 
 	_modifiedProjectModel = *_model;
 }
