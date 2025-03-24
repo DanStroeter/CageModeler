@@ -147,6 +147,12 @@ execute_process(
     ${Python3_EXECUTABLE}
     "${CMAKE_SOURCE_DIR}/viewer/scripts/CompileShaders.py" "${CMAKE_SOURCE_DIR}/viewer/assets/raw/shaders" "${ASSETS_OUTPUT_DIR}/shaders")
 
+# Copy GLSL shaders for	Voxelization
+execute_process(
+    COMMAND
+    ${Python3_EXECUTABLE}
+    "${CMAKE_SOURCE_DIR}/viewer/scripts/PackageAssets.py" "${CMAKE_SOURCE_DIR}/viewer/assets/raw/shaders/voxelizer" "${ASSETS_OUTPUT_DIR}/shaders/voxelizer")
+
 if (WIN32)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:${PROJECT_NAME}> $<TARGET_RUNTIME_DLLS:${PROJECT_NAME}>
