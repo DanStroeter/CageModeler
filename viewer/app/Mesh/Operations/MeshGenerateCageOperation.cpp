@@ -159,9 +159,8 @@ public:
 	inline MyTriEdgeCollapse(const VertexPair& p, int i, BaseParameterClass* pp) :TECQ(p, i, pp) {}
 };
 
-//#define BASE_RESOLUTION 32
-int BASE_RESOLUTION = 32;
-float SE_SIZE = 2.f;
+int BASE_RESOLUTION = 64;
+float SE_SIZE = 4.f;
 typedef struct {
 	int level;
 	unsigned int pos;
@@ -241,39 +240,24 @@ void calc_voxel_from_idx_hex(unsigned int idx, std::array<unsigned int, 3> numVo
 float base_cellsize;
 ExactPoint global_min_point;
 int data_res[3];
-//
-//void setupVBO(Mesh mesh){
-//	// 1. extract vertex and index list
-//	std::vector<float> vertices; // (x, y, z)
-//	std::vector<unsigned int> indices;
-//
-//	std::map<Mesh::Vertex_index, unsigned int> vertexMap;
-//    unsigned int indexCounter = 0;
-//
-//    for (auto v : mesh.vertices()) {
-//        ExactPoint p(mesh.point(v));
-//        vertices.push_back((float)p.x());
-//        vertices.push_back((float)p.y());
-//        vertices.push_back((float)p.z());
-//        vertexMap[v] = indexCounter++;
-//    }
-//
-//    for (auto f : mesh.faces()) {
-//        std::vector<unsigned int> faceIndices;
-//        for (auto v : CGAL::vertices_around_face(mesh.halfedge(f), mesh)) {
-//            faceIndices.push_back(vertexMap[v]);
-//        }
-//        if (faceIndices.size() == 3) { // 삼각형일 경우
-//            indices.insert(indices.end(), faceIndices.begin(), faceIndices.end());
-//        }
-//    }
-//
-//}
 
 
-std::vector<bool> voxelize(Mesh surface, Exact_Polyhedron poly)
+std::vector<bool> voxelize(std::string input_path)
 {
 
+	std::cout << "Loading surface\n";
+	Exact_Polyhedron poly;
+	if (!PMP::IO::read_polygon_mesh(input_path, poly) || !CGAL::is_triangle_mesh(poly))
+	{
+		std::cerr << "Invalid input.\n";
+		exit(-1);
+	}
+	Mesh surface;
+	if (!CGAL::Polygon_mesh_processing::IO::read_polygon_mesh(input_path, surface) || surface.is_empty())
+	{
+		std::cerr << "Invalid input file.\n";
+		exit(-1);
+	}
 	float se_size = 0.1f;
 	float margin = se_size + 2.0f / (2 * BASE_RESOLUTION);
 
@@ -587,9 +571,6 @@ VOXEL_GRID executeDilation(MIPMAP_TYPE mipmap) {
 
 					if (top_node.level == 0) {
 						d_grid[flat_idx] = true;
-						//d_grid[top_node.pos] = true;
-						std::stack<Node> empty_stack;
-						node_stack.swap(empty_stack);
 						break;
 					}
 					else {
@@ -597,7 +578,7 @@ VOXEL_GRID executeDilation(MIPMAP_TYPE mipmap) {
 						for (auto& subcell : subcells) {
 							bool subcell_val = mipmap[subcell.level][subcell.pos];
 							bool overlap = does_overlap(subcell, se);
-							if (subcell_val == true && does_overlap(subcell, se)) {
+							if (subcell_val && overlap) {
 								node_stack.push(subcell);
 							}
 						}
@@ -608,38 +589,38 @@ VOXEL_GRID executeDilation(MIPMAP_TYPE mipmap) {
 	}
 	return d_grid;
 }
-
-MIPMAP_TYPE voxelize_and_mipmap(std::string input_path) {
-
-	std::cout << "Loading surface\n";
-	Exact_Polyhedron poly;
-	if (!PMP::IO::read_polygon_mesh(input_path, poly) || !CGAL::is_triangle_mesh(poly))
-	{
-		std::cerr << "Invalid input.\n";
-		exit(-1);
-	}
-	Mesh surface;
-	if (!CGAL::Polygon_mesh_processing::IO::read_polygon_mesh(input_path, surface) || surface.is_empty())
-	{
-		std::cerr << "Invalid input file.\n";
-		exit(-1);
-	}
-	int t1 = clock();
-	auto voxel_grid = voxelize(surface, poly);
-
-	int t2 = clock();
-
-	std::cout << "start generating mipmap\n";
-	MIPMAP_TYPE mipmap_pyramid = generate_mipmap(voxel_grid);
-	int t3 = clock();
-	std::cout << "mipmap done. start dilation\n";
-
-	printf("Voxelize elapsed time: %5.3f sec\n", float(t2 - t1) / CLOCKS_PER_SEC);
-	printf("Generate Mipmap elapsed time: %5.3f sec\n", float(t3 - t2) / CLOCKS_PER_SEC);
-	printf("Total elapsed time (from voxelization to mipmap): %5.3f sec\n", float(t3 - t1) / CLOCKS_PER_SEC);
-	return mipmap_pyramid;
-}
-
+//
+//MIPMAP_TYPE voxelize_and_mipmap(std::string input_path) {
+//
+//	std::cout << "Loading surface\n";
+//	Exact_Polyhedron poly;
+//	if (!PMP::IO::read_polygon_mesh(input_path, poly) || !CGAL::is_triangle_mesh(poly))
+//	{
+//		std::cerr << "Invalid input.\n";
+//		exit(-1);
+//	}
+//	Mesh surface;
+//	if (!CGAL::Polygon_mesh_processing::IO::read_polygon_mesh(input_path, surface) || surface.is_empty())
+//	{
+//		std::cerr << "Invalid input file.\n";
+//		exit(-1);
+//	}
+//	int t1 = clock();
+//	auto voxel_grid = voxelize(surface, poly);
+//
+//	int t2 = clock();
+//
+//	std::cout << "start generating mipmap\n";
+//	MIPMAP_TYPE mipmap_pyramid = generate_mipmap(voxel_grid);
+//	int t3 = clock();
+//	std::cout << "mipmap done. start dilation\n";
+//
+//	printf("Voxelize elapsed time: %5.3f sec\n", float(t2 - t1) / CLOCKS_PER_SEC);
+//	printf("Generate Mipmap elapsed time: %5.3f sec\n", float(t3 - t2) / CLOCKS_PER_SEC);
+//	printf("Total elapsed time (from voxelization to mipmap): %5.3f sec\n", float(t3 - t1) / CLOCKS_PER_SEC);
+//	return mipmap_pyramid;
+//}
+//
 bool check_neighbor(VOXEL_GRID& d_grid, char axis, int center_x, int center_y, int center_z) {
 	int radius = 1;
 
@@ -727,7 +708,8 @@ bool does_overlap_erode(Node cell, CGAL::Bbox_3 p_bbox) {
 	int resol = BASE_RESOLUTION / pow(2, cell.level);
 	float cell_size = base_cellsize * pow(2, cell.level);
 
-	float scale = 0.6f;
+	//float scale = 0.6f;
+	float scale = SE_SIZE * 0.7;
 	float base_radius = base_cellsize;
 	float radius = base_radius * scale;
 
@@ -983,96 +965,6 @@ void decimation(MyMesh& vcg_mesh, const int smoothIterations, const int targetNu
 
 }
 
-GLFWwindow* initOpenGL() {
-
-	if (!glfwInit()) {
-		std::cerr << "Failed to initialize GLFW" << std::endl;
-		return nullptr;
-	}
-
-	// Set OpenGL context version (OpenGL 4.5)
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-	// Create window
-	GLFWwindow* window = glfwCreateWindow(1, 1, "OpenGL 4.5 - GLSL 450", NULL, NULL);
-	if (!window) {
-		std::cerr << "Failed to create GLFW window" << std::endl;
-		glfwTerminate();
-		return nullptr;
-	}
-
-	// Bind OpenGL 
-	glfwMakeContextCurrent(window);
-
-	// GLEW 초기화
-	glewExperimental = GL_TRUE;
-	GLenum err = glewInit();
-	if (err != GLEW_OK) {
-		std::cerr << "GLEW init failed: " << glewGetErrorString(err) << std::endl;
-		return nullptr;
-	}
-
-	// 이제 OpenGL 함수 호출 가능!
-	std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-	std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
-
-	return window;
-}
-
-
-// TODO: test whether this is needed and remove if not.
-
-void ConvertBucketToUnpackedGrid(const std::vector<unsigned int>& buck_vox_grid,
-	int res, int num_bit_vox,
-	std::vector<bool>& unpack_vox_grid) {
-	// Unpacked grid의 크기는 2x2x2 범위로 하나의 voxel이 정의된 크기만큼 나눔
-	int unpack_res_x = res / 2, unpack_res_y = res / 2, unpack_res_z = res / 2;
-	unpack_vox_grid.resize(unpack_res_x * unpack_res_y * unpack_res_z, false);
-
-	int res_x = res, res_y = res, res_z = res / ((32 / num_bit_vox));
-
-	// 2x2x2 block to one voxel
-	for (int i = 0; i < res_x; i++) {
-		for (int j = 0; j < res_y; j++) {
-			for (int k = 0; k < res_z; k++) {
-				unsigned int value = buck_vox_grid[i + res_x * j + res_x * res_y * k];
-
-				// 2x2x2 영역에 대해 비트 연산 (OR 연산)하여 하나의 큰 voxel을 만듬
-				if (value != 0) {
-
-					if (num_bit_vox == 1) {
-						// 1 비트씩 처리
-						for (int s = 0; s < 32; s++) {
-							if ((value & (0x00000001)) == 0x00000001) {
-								// 위치 계산 (현재 i, j, k는 각 2x2x2 블록의 시작 위치)
-								int pos[3] = { i, j, k * 32 + s };
-								int target_pos[3] = { pos[0] / 2, pos[1] / 2, pos[2] / 2 };
-
-								int target_pos_flat = target_pos[2] + target_pos[1] * unpack_res_z + target_pos[0] * unpack_res_z * unpack_res_y;
-								unpack_vox_grid[target_pos_flat] = true;
-							}
-							value /= 2;  // 2^(1 bit shifts)
-						}
-					}
-
-					if (num_bit_vox == 8) {
-						// 8 비트씩 처리
-						for (int s = 0; s < 4; s++) {
-							if ((value & (0x00000001)) == 0x00000001) {
-								// 위치 계산 (현재 i, j, k는 각 2x2x2 블록의 시작 위치)
-								int position = (i / 2) + unpack_res_x * (j / 2) + unpack_res_x * unpack_res_y * (k / 2);
-								unpack_vox_grid[position] = true;  // Set bit to true
-							}
-							value /= 256;  // 2^(8 bit shifts)
-						}
-					}
-				}
-			}
-		}
-	}
-}
 
 void run_voxlize_shader(GLuint program, bool is_surface, float *bbox_min, float rescale, int res, float sq_ar_thresh, GLuint vao, int num_indices) {
 	////////////// SURFACE VOXELIZATION
@@ -1160,8 +1052,8 @@ void run_voxlize_shader(GLuint program, bool is_surface, float *bbox_min, float 
 }
 
 std::vector<bool> opengl_voxelization(std::string filename) {
-	GLFWwindow* window = initOpenGL();
-
+	
+	Voxelizer voxelizer(BASE_RESOLUTION);
 	Eigen::MatrixXd V_model, N_model;
 	Eigen::MatrixXi T_model;
 
@@ -1174,260 +1066,15 @@ std::vector<bool> opengl_voxelization(std::string filename) {
 
 	calcNormals(V_model, T_model, N_model);
 
-	std::vector<float> vertices;
-	std::vector<float> normals;
-	std::vector<unsigned int> indices;
+	auto voxel_grid = voxelizer.GenerateVoxelGrid(V_model, N_model, T_model);
 
-	float bbox_min[3] = { FLT_MAX, FLT_MAX, FLT_MAX };
-	float bbox_max[3] = { FLT_MIN, FLT_MIN, FLT_MIN };
-
-	// Convert Eigen::MatrixXd (vertices) to std::vector<float>
-	for (int i = 0; i < V_model.rows(); ++i) {
-		for (int j = 0; j < V_model.cols(); ++j) {
-			vertices.push_back(static_cast<float>(V_model(i, j)));
-
-			if (V_model(i, j) < bbox_min[j]) bbox_min[j] = static_cast<float>(V_model(i, j));
-			else if (V_model(i, j) > bbox_max[j]) bbox_max[j] = static_cast<float>(V_model(i, j));
-		}
-	}
-
-	for (int i = 0; i < N_model.rows(); ++i) {
-		for (int j = 0; j < N_model.cols(); ++j) {
-			normals.push_back(static_cast<float>(N_model(i, j)));
-		}
-	}
-
-	// Convert Eigen::MatrixXi (faces) to std::vector<unsigned int>
-	for (int i = 0; i < T_model.rows(); ++i) {
-		for (int j = 0; j < T_model.cols(); ++j) {
-			indices.push_back(static_cast<unsigned int>(T_model(i, j)));
-		}
-	}
-
-	// 0) Set the cell size
-	float se_size = 0.1f;
-	float margin = se_size + 2.0f / (2 * BASE_RESOLUTION);
-	float longest_axis = std::max(bbox_max[0] - bbox_min[0],
-		std::max(bbox_max[1] - bbox_min[1], bbox_max[2] - bbox_min[2]));
-	float thickness = longest_axis / BASE_RESOLUTION;
-	float offset = 2 * thickness + margin;
-	float axis_len = longest_axis + 2 * offset;
-	float cell_size = axis_len / BASE_RESOLUTION;
-	base_cellsize = cell_size;
-
-	float new_xmin = bbox_min[0] - offset;
-	float new_ymin = bbox_min[1] - offset;
-	float new_zmin = bbox_min[2] - offset;
-
-	float grid_bbox_min[3] = {
-		new_xmin,
-		new_ymin,
-		new_zmin,
-	};
-
-	float grid_bbox_max[3] = {
-		new_xmin + axis_len,
-		new_ymin + axis_len,
-		new_zmin + axis_len
-	};
-
-	ExactPoint grid_min(new_xmin, new_ymin, new_zmin);
+	std::array<float, 3> bboxMin = voxelizer.GetBboxMin();
+	ExactPoint grid_min(bboxMin[0], bboxMin[1], bboxMin[2]);
 	global_min_point = grid_min;
 
-	// 1) init vbo
-	GLuint vertex_vbo_id_ = 0;
-	GLuint normal_vbo_id_ = 0;
-	GLuint index_vbo_id_ = 0;
-	bool use_vbo_ = true;
+	base_cellsize = voxelizer.GetCellSize();
 
-	GLuint vao = 0;
-
-	{
-		glGenVertexArrays(1, &vao);
-		glBindVertexArray(vao);
-
-		// Create vertex vbo and write data
-		glGenBuffers(1, &vertex_vbo_id_);
-		glBindBuffer(GL_ARRAY_BUFFER, vertex_vbo_id_);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertices.size(), vertices.data(), GL_STATIC_DRAW);
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-		glEnableVertexAttribArray(0);
-
-		// Create normal vbo and write data
-		glGenBuffers(1, &normal_vbo_id_);
-		glBindBuffer(GL_ARRAY_BUFFER, normal_vbo_id_);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(float) * normals.size(), normals.data(), GL_STATIC_DRAW);
-		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-		glEnableVertexAttribArray(1);
-
-		// Create EBO (Index Buffer Object) and write data
-		glGenBuffers(1, &index_vbo_id_);
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_vbo_id_);
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-
-		// Unbind VAO
-		glBindVertexArray(0);
-	}
-
-
-	int base_res_ = BASE_RESOLUTION;
-	int res = 2 * base_res_; // the base_res_ is the resolution of the packed layout
-	int num_bit_vox = 1; // number of bits in one bucket
-
-	// Load shader programs
-	GLuint program_volume = genVGFProgram(
-		"assets/shaders/voxelizer/vol_vox.vert",
-		"assets/shaders/voxelizer/vol_vox.geo",
-		"assets/shaders/voxelizer/vol_vox_bit.frag");
-
-	GLuint program_surface = genVGFProgram(
-		"assets/shaders/voxelizer/surf_vox_conserv.vert",
-		"assets/shaders/voxelizer/surf_vox_conserv.geo",
-		"assets/shaders/voxelizer/surf_vox_conserv_bit.frag");
-
-	// func: buildFBO
-	GLuint vox_fbo_;
-	GLuint vox_fbo_tex_;
-	GLuint vox_tex_;
-	int bucket_size = 32;
-	//int num_bit_vox = 1;
-	int res_x = res, res_y = res, res_z = res / ((bucket_size / num_bit_vox));
-	// Some general OpenGL setup :	
-	// Render Target (FBO + attached texture), viewport, depth test etc.
-	glGenFramebuffers(1, &vox_fbo_);
-	glBindFramebuffer(GL_FRAMEBUFFER, vox_fbo_);
-	//("Binding to a dummy fbo");
-
-	glEnable(GL_TEXTURE_2D);
-	glGenTextures(1, &vox_fbo_tex_);
-	glBindTexture(GL_TEXTURE_2D, vox_fbo_tex_);
-	//("Binding dummy texture");
-
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	printf("Setting dummy texture Tex Parameters");
-
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, res_x, res_y, 0,
-		GL_RGBA, GL_FLOAT, NULL);
-	printf("Allocating dummy texture");
-
-	glFramebufferTexture2D(GL_FRAMEBUFFER,
-		GL_COLOR_ATTACHMENT0,
-		GL_TEXTURE_2D,
-		vox_fbo_tex_, 0);
-	printf("Attaching dummy texture to dummy fbo");
-
-	glViewport(0, 0, res_x, res_y);
-	printf("Setting viewport");
-
-	glDisable(GL_DEPTH_TEST);
-	//printOpenGLError ("Disabling Depth Test");
-
-	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-	//printOpenGLError ("Disabling framebuffer writing");
-
-	// Necessary with the non-conservative rasterizer
-	glDisable(GL_CULL_FACE);
-	printf("Disabling Face Culling");
-
-	// Create the texture we're going to render to
-	glEnable(GL_TEXTURE_3D);
-	glGenTextures(1, &vox_tex_);
-	printf("Generating voxel texture");
-
-	// "Bind" the newly created texture : all future texture
-	// functions will modify this texture
-	glBindTexture(GL_TEXTURE_3D, vox_tex_);
-	printf("Binding voxel texture");
-
-	// Give an empty image to OpenGL ( the last "0" )
-	int tex_level = 0;
-	int border = 0;
-	glTexImage3D(GL_TEXTURE_3D, tex_level, GL_R32UI, res_x, res_y, res_z,
-		border, GL_RED_INTEGER, GL_UNSIGNED_INT, 0);
-	printf("Allocating voxel texture");
-
-	// The two following line are absolutely needed !!!!!
-	// But I don't know exactly why :-( ....
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	printf("Setting magic Tex Parameter");
-
-	// Clear the texture
-	unsigned int vox_tex_clear_value = 0;
-	glBindTexture(GL_TEXTURE_3D, vox_tex_);
-	printf("Binding voxel texture");
-	glClearTexImage(vox_tex_, tex_level, GL_RED_INTEGER, GL_UNSIGNED_INT,
-		&vox_tex_clear_value);
-	printf("Clearing voxel texture");
-
-	// Not sure if this barrier is necessary
-	glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
-	printf("Querying Texture Update Barrier");
-
-	// Bind the texture to an image unit
-	glBindImageTexture(0, vox_tex_, tex_level,
-		GL_TRUE,
-		0,
-		GL_READ_WRITE,
-		GL_R32UI
-	);
-	printf("Binding voxel texture to image unit");
-
-	// func: voxelizevolume
-
-	float rescale = 2.0 / axis_len;
-	// Timing related query
-	run_voxlize_shader(program_volume, false, grid_bbox_min, rescale, res, 0, vao, indices.size());
-	run_voxlize_shader(program_surface, true, grid_bbox_min, rescale, res, 50.f * 50.f, vao, indices.size());
-
-	
-	// function clearFBO()
-	// 4) Delete the dummy fbo and its attached texture
-	glDeleteTextures(1, &vox_fbo_tex_);
-	printf("Deleting the dummy texture");
-	glDeleteFramebuffers(1, &vox_fbo_);
-	printf("Deleting the dummy fbo");
-
-	// 4) Restore a "standard" OpenGL state
-	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-	printf("Enabling Back-buffer writing");
-
-	glEnable(GL_CULL_FACE);
-	printf("Enabling Face Culling");
-
-	glDisable(GL_TEXTURE_3D);
-	printf("Disabling 3D Textures");
-
-	glEnable(GL_DEPTH_TEST);
-	printf("Enabling Depth Test");
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	printf("Binding to backbuffer");
-
-	std::vector<unsigned int> buck_vox_grid(res_x * res_y * res_z, 0);
-	glBindTexture(GL_TEXTURE_3D, vox_tex_);
-	printf("Binding voxel texture");
-	int get_tex_level = 0;
-	glGetTexImage(GL_TEXTURE_3D, get_tex_level,
-		GL_RED_INTEGER,
-		GL_UNSIGNED_INT,
-		&buck_vox_grid[0]);
-	printf("Retrieving Data");
-
-	// Delete VBO and VAO
-	glDeleteBuffers(1, &vertex_vbo_id_);
-	glDeleteBuffers(1, &normal_vbo_id_);
-	glDeleteBuffers(1, &index_vbo_id_);
-	glDeleteVertexArrays(1, &vao);
-
-	std::vector<bool> result_grid;
-	ConvertBucketToUnpackedGrid(buck_vox_grid, res, num_bit_vox, result_grid);
-	glfwDestroyWindow(window);
-	glfwTerminate();
-	return result_grid;
+	return voxel_grid;
 
 }
 
@@ -1457,13 +1104,14 @@ void GenerateCageFromMeshOperation::Execute() {
 		//MIPMAP_TYPE mipmap = voxelize_and_mipmap(filename);
 		int clock_voxel_start = clock();
 		std::vector<bool> voxel_result = opengl_voxelization(filename);
+		//std::vector<bool> voxel_result = voxelize(filename);
 		int clock_voxel_end = clock();
 		printf("[Voxelization] elapsed time: %5.3f sec\n", float(clock_voxel_end - clock_voxel_start) / CLOCKS_PER_SEC);
 
-		/*std::array<ExactVector, 3> voxel_strides_v = { ExactVector(base_cellsize, 0, 0),
+		std::array<ExactVector, 3> voxel_strides_v = { ExactVector(base_cellsize, 0, 0),
 		ExactVector(0, base_cellsize, 0), ExactVector(0, 0, base_cellsize) };
 		ExactMesh extracted_surface_v = extract_surface_from_voxels(voxel_result, voxel_strides_v, global_min_point);
-		CGAL::write_off(voxel_result_path.c_str(), extracted_surface_v);*/
+		CGAL::write_off(voxel_result_path.c_str(), extracted_surface_v);
 		int mipmap_start = clock();
 		MIPMAP_TYPE mipmap = generate_mipmap(voxel_result); std::cout << "mipmap done\n";
 		int mipmap_end = clock();
@@ -1474,6 +1122,10 @@ void GenerateCageFromMeshOperation::Execute() {
 		VOXEL_GRID d_grid = executeDilation(mipmap); std::cout << "dilation done\n";
 		int dil_end = clock();
 		printf("[Dilation] elapsed time: %5.3f sec\n", float(dil_end - dil_start) / CLOCKS_PER_SEC);
+		ExactMesh extracted_dil = extract_surface_from_voxels(d_grid, voxel_strides_v, global_min_point);
+		std::string dil_result_path = filepath + obj + "_dil.off";
+		CGAL::write_off(dil_result_path.c_str(), extracted_dil);
+
 
 
 		// extract contour and generate mipmap of the contour
@@ -1482,6 +1134,10 @@ void GenerateCageFromMeshOperation::Execute() {
 		VOXEL_GRID contour = extract_contour(d_grid); std::cout << "contour done\n";
 		int con_end = clock();
 		printf("[Contour] elapsed time: %5.3f sec\n", float(con_end - con_start) / CLOCKS_PER_SEC);
+		ExactMesh extracted_con = extract_surface_from_voxels(contour, voxel_strides_v, global_min_point);
+		std::string con_result_path = filepath + obj + "_con.off";
+		CGAL::write_off(con_result_path.c_str(), extracted_con);
+
 
 		//std::cout << "contour extraction done\n";
 		MIPMAP_TYPE contour_pyramid = generate_mipmap(contour);
@@ -1493,6 +1149,9 @@ void GenerateCageFromMeshOperation::Execute() {
 		execute_erosion(contour_pyramid, e_grid, mipmap[0]); std::cout << "erosion done\n";
 		int erose_end = clock();
 		printf("[Erosion] elapsed time: %5.3f sec\n", float(erose_end - erose_start) / CLOCKS_PER_SEC);
+		ExactMesh extracted_er = extract_surface_from_voxels(e_grid, voxel_strides_v, global_min_point);
+		std::string er_result_path = filepath + obj + "_er.off";
+		CGAL::write_off(er_result_path.c_str(), extracted_er);
 
 	}
 	// Extract the surface from the closed grid
@@ -1508,7 +1167,7 @@ void GenerateCageFromMeshOperation::Execute() {
 	std::string output_path = filepath + obj + "_cage.obj";
 
 	tri::io::ExporterOBJ<MyMesh>::Save(final_mesh, outputfilename.c_str(), tri::io::Mask::IOM_BITPOLYGONAL);
-
+	tri::io::ExporterOBJ<MyMesh>::Save(final_mesh, output_path.c_str(), tri::io::Mask::IOM_BITPOLYGONAL);
 	int cage_end = clock();
 	printf("[Cage Generation] elapsed time: %5.3f sec\n", float(cage_end - cage_start) / CLOCKS_PER_SEC);
 }
