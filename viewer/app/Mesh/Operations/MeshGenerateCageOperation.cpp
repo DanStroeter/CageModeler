@@ -852,9 +852,6 @@ ExactMesh extract_surface_from_voxels(
 		}
 	}
 
-
-
-
 	return output_mesh;
 }
 
@@ -882,9 +879,7 @@ void decimation(MyMesh& vcg_mesh, const int smoothIterations, const int targetNu
 
 		//printf("Removed %i duplicate and %i unreferenced vertices from mesh \n", dup, unref);
 	}
-	int FinalSize = 400;
-	//printf("reducing it to %i\n", FinalSize);
-
+	
 	vcg::tri::UpdateBounding<MyMesh>::Box(vcg_mesh);
 
 	// decimator initialization
@@ -923,163 +918,8 @@ void decimation(MyMesh& vcg_mesh, const int smoothIterations, const int targetNu
 	//printf("mesh  %d %d Error %g \n", vcg_mesh.vn, vcg_mesh.fn, DeciSession.currMetric);
 	printf("\nCompleted decimation in (%5.3f+%5.3f) sec\n", float(t2 - t1) / CLOCKS_PER_SEC, float(t3 - t2) / CLOCKS_PER_SEC);
 
-	//return vcg_mesh;
-
 }
 
-
-////
-//void GenerateCageFromMeshOperation::Execute() {
-//
-//	std::cout << "Resol: ";
-//	std::cin >> BASE_RESOLUTION;
-//
-//	int repeat = 0;
-//	std::cout << "Repeat: ";
-//	std::cin >> repeat;
-//
-//	int voxel_option = 0;
-//	std::cout << "Option 0. OpenGL   1. CGAL : ";
-//	std::cin >> voxel_option;
-//	SE_SIZE = BASE_RESOLUTION / 16;
-//	int total_voxel = 0, total_mipmap = 0, total_dil = 0, total_con = 0, total_er = 0, total_meshing = 0;
-//
-//
-//	std::string filename = _params._meshfilepath.string();
-//	std::string outputfilename = _params._cagefilepath.string();
-//
-//	//extract input model name
-//	std::string obj = filename.substr(filename.find_last_of('\\') + 1, filename.find_last_of('.') - 1);
-//	std::string filepath = filename.substr(0, filename.find_last_of('\\') + 1);
-//	std::string intermediate_path = filepath + obj + "_interm.obj";
-//
-//	VOXEL_GRID& e_grid = _params._closingResult;
-//
-//	std::cout << "Generating Cage for " << obj << std::endl;
-//	// generate voxel grid and mipmap
-//	for (int i = 0; i < repeat; i++) {
-//		int cage_start = clock();
-//
-//		int clock_voxel_start = clock();
-//		std::vector<bool> voxel_result; 
-//		if (voxel_option == 0)
-//			voxel_result = opengl_voxelization(filename);
-//		else voxel_result = voxelize(filename);
-//		//std::vector<bool> voxel_result = voxelize(filename);
-//
-//		int clock_voxel_end = clock();
-//		//printf("[Voxelization] elapsed time: %5.3f sec\n", float(clock_voxel_end - clock_voxel_start) / CLOCKS_PER_SEC);
-//		total_voxel += (clock_voxel_end - clock_voxel_start);
-//
-//	}
-//	std::cout << "\nModel: " << obj << ", Resol : " << BASE_RESOLUTION << ", Option : " << voxel_option  << std::endl;
-//	printf("Avg voxel time: %5.3f\n", (float)total_voxel / ((float)repeat * CLOCKS_PER_SEC));
-//	
-//
-//}
-//
-//void GenerateCageFromMeshOperation::Execute() {
-//
-//	std::cout << "Resol: ";
-//	std::cin >> BASE_RESOLUTION;
-//
-//	int repeat = 0;
-//	std::cout << "Repeat: ";
-//	std::cin >> repeat;
-//	SE_SIZE = BASE_RESOLUTION / 16;
-//	int total_voxel = 0, total_mipmap = 0, total_dil = 0, total_con = 0, total_er = 0, total_meshing = 0;
-//
-//	
-//	std::string filename = _params._meshfilepath.string();
-//	std::string outputfilename = _params._cagefilepath.string();
-//
-//	//extract input model name
-//	std::string obj = filename.substr(filename.find_last_of('\\') + 1, filename.find_last_of('.') - 1);
-//	std::string filepath = filename.substr(0, filename.find_last_of('\\') + 1);
-//	std::string intermediate_path = filepath + obj + "_interm.obj";
-//	
-//	VOXEL_GRID& e_grid = _params._closingResult;
-//
-//	std::cout << "Generating Cage for " << obj << std::endl;
-//	// generate voxel grid and mipmap
-//	for (int i = 0; i < repeat; i++) {
-//		int cage_start = clock();
-//
-//		int clock_voxel_start = clock();
-//		//std::vector<bool> voxel_result = opengl_voxelization(filename);
-//		std::vector<bool> voxel_result = voxelize(filename);
-//		
-//		int clock_voxel_end = clock();
-//		//printf("[Voxelization] elapsed time: %5.3f sec\n", float(clock_voxel_end - clock_voxel_start) / CLOCKS_PER_SEC);
-//		total_voxel += (clock_voxel_end - clock_voxel_start);
-//
-//		int mipmap_start = clock();
-//		MIPMAP_TYPE mipmap = generate_mipmap(voxel_result);
-//		int mipmap_end = clock();
-//		total_mipmap += (mipmap_end - mipmap_start);
-//		//printf("[Mipmap] elapsed time: %5.3f sec\n", float(mipmap_end - mipmap_start) / CLOCKS_PER_SEC);
-//
-//
-//		// dilation
-//		int dil_start = clock();
-//		VOXEL_GRID d_grid = executeDilation(mipmap);
-//		int dil_end = clock();
-//		total_dil += (dil_end - dil_start);
-//		//printf("[Dilation] elapsed time: %5.3f sec\n", float(dil_end - dil_start) / CLOCKS_PER_SEC);
-//		
-//
-//		// extract contour and generate mipmap of the contour
-//		//std::cout << "drawing done. start contour extraction\n";
-//		int con_start = clock();
-//		VOXEL_GRID contour = extract_contour(d_grid);
-//		int con_end = clock();
-//		total_con += (con_end - con_start);
-//		//printf("[Contour] elapsed time: %5.3f sec\n", float(con_end - con_start) / CLOCKS_PER_SEC);
-//		
-//
-//		//std::cout << "contour extraction done\n";
-//		MIPMAP_TYPE contour_pyramid = generate_mipmap(contour);
-//
-//		// erosion
-//		e_grid.resize(d_grid.size());
-//		e_grid.assign(d_grid.begin(), d_grid.end());
-//		int erose_start = clock();
-//		execute_erosion(contour_pyramid, e_grid, mipmap[0]); std::cout << "erosion done\n";
-//		int erose_end = clock();
-//		total_er += (erose_end - erose_start);
-//		//printf("[Erosion] elapsed time: %5.3f sec\n", float(erose_end - erose_start) / CLOCKS_PER_SEC);
-//		
-//		// Extract the surface from the closed grid
-//		int remesh_start = clock();
-//		std::array<ExactVector, 3> voxel_strides = { ExactVector(base_cellsize, 0, 0),
-//		ExactVector(0, base_cellsize, 0), ExactVector(0, 0, base_cellsize) };
-//		ExactMesh extracted_surface = extract_surface_from_voxels(e_grid, voxel_strides, global_min_point);
-//		CGAL::write_off(intermediate_path.c_str(), extracted_surface); std::cout << "extraction done\n";
-//
-//		// Simplification
-//		MyMesh final_mesh;
-//		tri::io::ImporterOFF<MyMesh>::Open(final_mesh, intermediate_path.c_str());
-//		decimation(final_mesh, _params._smoothIterations, _params._targetNumFaces);
-//		//std::string output_path = filepath + "result\\" + obj + "_cage" + std::to_string(erode_scale) + ".obj";
-//
-//		tri::io::ExporterOBJ<MyMesh>::Save(final_mesh, outputfilename.c_str(), tri::io::Mask::IOM_BITPOLYGONAL);
-//		//tri::io::ExporterOBJ<MyMesh>::Save(final_mesh, output_path.c_str(), tri::io::Mask::IOM_BITPOLYGONAL);
-//		int remesh_end = clock();
-//		total_meshing += (remesh_end - remesh_start);
-//
-//		int cage_end = clock();
-//		printf("[Cage Generation] elapsed time: %5.3f sec\n", float(cage_end - cage_start) / CLOCKS_PER_SEC);
-//	}
-//	std::cout << "\nModel: " << obj << ", Resol : " << BASE_RESOLUTION << std::endl;
-//	printf("Avg voxel time: %5.3f\n", (float)total_voxel / ((float)repeat * CLOCKS_PER_SEC));
-//	printf("Avg mipmap time: %5.3f\n", (float)total_mipmap / ((float)repeat * CLOCKS_PER_SEC));
-//	printf("Avg dilation time: %5.3f\n", (float)total_dil / ((float)repeat * CLOCKS_PER_SEC));
-//	printf("Avg contour time: %5.3f\n", (float)total_con / ((float)repeat * CLOCKS_PER_SEC));
-//	printf("Avg erosion time: %5.3f\n", (float)total_er / ((float)repeat * CLOCKS_PER_SEC));
-//	printf("Avg remeshing time: %5.3f\n", (float)total_meshing / ((float)repeat * CLOCKS_PER_SEC));
-//	printf("Avg total time: %5.3f\n", (float)(total_voxel + total_mipmap + total_dil + total_con + total_er + total_meshing) / ((float)repeat * CLOCKS_PER_SEC));
-//
-//}
 void GenerateCageFromMeshOperation::Execute() {
 	std::cout << "Enter resolution: ";
 	std::cin >> BASE_RESOLUTION;
@@ -1087,7 +927,7 @@ void GenerateCageFromMeshOperation::Execute() {
 	SE_SIZE = BASE_RESOLUTION / 2.0;
 	erode_scale = 0.4;
 
-	int cage_start = clock();
+	//int cage_start = clock();
 
 	std::string filename = _params._meshfilepath.string();
 	std::string outputfilename = _params._cagefilepath.string();
@@ -1096,23 +936,19 @@ void GenerateCageFromMeshOperation::Execute() {
 	std::string obj = filename.substr(filename.find_last_of('\\') + 1, filename.find_last_of('.') - 1);
 	std::string filepath = filename.substr(0, filename.find_last_of('\\') + 1);
 	std::string intermediate_path = filepath + obj + "_interm.obj";
-	std::string voxel_result_path = filepath + "result\\" + obj + "_voxel.off";
-	std::cout << "filepath: " << filepath << std::endl;
-	std::cout << "obj: " << obj << std::endl;
+	
 	VOXEL_GRID& e_grid = _params._closingResult;
 
 	std::cout << "Generating Cage for " << obj << std::endl;
 	// generate voxel grid and mipmap
 	if (e_grid.empty())
 	{
-		//MIPMAP_TYPE mipmap = voxelize_and_mipmap(filename);
-		int clock_voxel_start = clock();
-
+		//int voxel_start = clock();
 		Voxelizer voxelizer(BASE_RESOLUTION, SE_SIZE);
 		std::vector<bool> voxel_result = voxelizer.GenerateVoxelGrid(filename);
+		//int voxel_end = clock();
+		//printf("[Voxelization] elapsed time: %5.3f sec\n", float(voxel_end - voxel_start) / CLOCKS_PER_SEC);
 		
-		int clock_voxel_end = clock();
-		printf("[Voxelization] elapsed time: %5.3f sec\n", float(clock_voxel_end - clock_voxel_start) / CLOCKS_PER_SEC);
 		base_cellsize = voxelizer.GetCellSize();
 		auto bbox_min = voxelizer.GetBboxMin();
 		global_min_point = ExactPoint(
@@ -1120,50 +956,32 @@ void GenerateCageFromMeshOperation::Execute() {
 			bbox_min[1],
 			bbox_min[2]);
 
-		std::array<ExactVector, 3> voxel_strides_v = { ExactVector(base_cellsize, 0, 0),
-		ExactVector(0, base_cellsize, 0), ExactVector(0, 0, base_cellsize) };
-		ExactMesh extracted_surface_v = extract_surface_from_voxels(voxel_result, voxel_strides_v, global_min_point);
-		CGAL::write_off(voxel_result_path.c_str(), extracted_surface_v);
-		int mipmap_start = clock();
+		//int mipmap_start = clock();
 		MIPMAP_TYPE mipmap = generate_mipmap(voxel_result); std::cout << "mipmap done\n";
-		int mipmap_end = clock();
-		printf("[Mipmap] elapsed time: %5.3f sec\n", float(mipmap_end - mipmap_start) / CLOCKS_PER_SEC);
+		/*int mipmap_end = clock();
+		printf("[Mipmap] elapsed time: %5.3f sec\n", float(mipmap_end - mipmap_start) / CLOCKS_PER_SEC);*/
 
 		// dilation
-		int dil_start = clock();
+		//int dil_start = clock();
 		VOXEL_GRID d_grid = executeDilation(mipmap); std::cout << "dilation done\n";
-		int dil_end = clock();
-		printf("[Dilation] elapsed time: %5.3f sec\n", float(dil_end - dil_start) / CLOCKS_PER_SEC);
-		ExactMesh extracted_dil = extract_surface_from_voxels(d_grid, voxel_strides_v, global_min_point);
-		std::string dil_result_path = filepath + "result\\" + obj + "_dil.off";
-		CGAL::write_off(dil_result_path.c_str(), extracted_dil);
-		std::cout << dil_result_path;
-
-
+		/*int dil_end = clock();
+		printf("[Dilation] elapsed time: %5.3f sec\n", float(dil_end - dil_start) / CLOCKS_PER_SEC);*/
+		
 		// extract contour and generate mipmap of the contour
-		//std::cout << "drawing done. start contour extraction\n";
-		int con_start = clock();
+		//int con_start = clock();
 		VOXEL_GRID contour = extract_contour(d_grid); std::cout << "contour done\n";
-		int con_end = clock();
-		printf("[Contour] elapsed time: %5.3f sec\n", float(con_end - con_start) / CLOCKS_PER_SEC);
-		ExactMesh extracted_con = extract_surface_from_voxels(contour, voxel_strides_v, global_min_point);
-		std::string con_result_path = filepath + "/result" + obj + "_con.off";
-		CGAL::write_off(con_result_path.c_str(), extracted_con);
-
-
-		//std::cout << "contour extraction done\n";
+		//int con_end = clock();
+		//printf("[Contour] elapsed time: %5.3f sec\n", float(con_end - con_start) / CLOCKS_PER_SEC);
+	
 		MIPMAP_TYPE contour_pyramid = generate_mipmap(contour);
 
 		// erosion
 		e_grid.resize(d_grid.size());
 		e_grid.assign(d_grid.begin(), d_grid.end());
-		int erose_start = clock();
+		//int erose_start = clock();
 		execute_erosion(contour_pyramid, e_grid, mipmap[0]); std::cout << "erosion done\n";
-		int erose_end = clock();
-		printf("[Erosion] elapsed time: %5.3f sec\n", float(erose_end - erose_start) / CLOCKS_PER_SEC);
-		ExactMesh extracted_er = extract_surface_from_voxels(e_grid, voxel_strides_v, global_min_point);
-		std::string er_result_path = filepath + "result\\" + obj + "_er.off";
-		CGAL::write_off(er_result_path.c_str(), extracted_er);
+		//int erose_end = clock();
+		//printf("[Erosion] elapsed time: %5.3f sec\n", float(erose_end - erose_start) / CLOCKS_PER_SEC);
 
 	}
 	// Extract the surface from the closed grid
@@ -1179,7 +997,7 @@ void GenerateCageFromMeshOperation::Execute() {
 	std::string output_path = filepath + "result\\" + obj + "_cage" + std::to_string(BASE_RESOLUTION) + "new.obj";
 
 	tri::io::ExporterOBJ<MyMesh>::Save(final_mesh, outputfilename.c_str(), tri::io::Mask::IOM_BITPOLYGONAL);
-	tri::io::ExporterOBJ<MyMesh>::Save(final_mesh, output_path.c_str(), tri::io::Mask::IOM_BITPOLYGONAL);
-	int cage_end = clock();
-	printf("[Cage Generation] elapsed time: %5.3f sec\n", float(cage_end - cage_start) / CLOCKS_PER_SEC);
+
+	//int cage_end = clock();
+	//printf("[Cage Generation] elapsed time: %5.3f sec\n", float(cage_end - cage_start) / CLOCKS_PER_SEC);
 }
