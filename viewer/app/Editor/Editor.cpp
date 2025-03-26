@@ -517,19 +517,6 @@ void Editor::OnNewProjectCreated()
 
 			_isComputingWeightsData.store(false, std::memory_order_seq_cst);
 
-			auto normal_w = weightsResult.GetValue()._weights;
-
-			if (normal_w.minCoeff() < 0) {
-				std::cout << "normal_w contains negative values." << std::endl;
-			}
-			std::cout << "min and max from normal_w: " << normal_w.minCoeff() << ", " << normal_w.maxCoeff() << std::endl;
-			/*auto inter_w = weightsResult.GetValue()._interpolatedWeights;
-
-			if (inter_w.minCoeff() < 0) {
-				std::cout << "inter_w contains negative values." << std::endl;
-			}
-			std::cout << "min and max from inter_w: " << inter_w.minCoeff() << ", " << inter_w.maxCoeff() << std::endl;*/
-
 			_weightsData.Update(std::move(weightsResult.GetValue()._skinningMatrix),
 				std::move(weightsResult.GetValue()._weights),
 				std::move(weightsResult.GetValue()._interpolatedWeights),

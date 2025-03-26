@@ -1,14 +1,105 @@
 #pragma once
 
-#include<Mesh/Operations/MeshOperation.h>
-#include<filesystem>
+#include <Mesh/Operations/MeshOperation.h>
+#include <cagedeformations/LoadMesh.h>
+#include <cagedeformations/GreenCoordinates.h>
+#include <filesystem>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <fstream>
 #include <iostream>
 #include <Eigen/Core>
+#include <omp.h>
 
+#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
+#include <CGAL/Polyhedron_3.h>
+#include <CGAL/Polygon_mesh_processing/IO/polygon_mesh_io.h>
+#include <CGAL/boost/graph/convert_nef_polyhedron_to_polygon_mesh.h>
+
+#include <CGAL/Polygon_mesh_processing/intersection.h>
+#include <CGAL/Polygon_mesh_processing/stitch_borders.h>
+#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
+#include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
+#include <CGAL/Polygon_mesh_processing/polygon_mesh_to_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/repair_degeneracies.h>
+#include <CGAL/Polygon_mesh_processing/compute_normal.h>
+#include <CGAL/Polygon_mesh_processing/corefinement.h>
+#include <CGAL/Side_of_triangle_mesh.h>
+#include <CGAL/Polyhedron_incremental_builder_3.h>
+#include <CGAL/Nef_polyhedron_3.h>
+#include <CGAL/Surface_mesh.h>
+#include <CGAL/AABB_tree.h>
+
+#define CGAL_EIGEN3_ENABLED
 #define BUFFER_OFFSET(offset) ((GLvoid*)(offset))
+
+typedef CGAL::Exact_predicates_exact_constructions_kernel			Exact_Kernel;
+typedef CGAL::Exact_predicates_inexact_constructions_kernel			Inexact_Kernel;
+typedef CGAL::Polyhedron_3<Inexact_Kernel>							Inexact_Polyhedron;
+typedef CGAL::Polyhedron_3<Exact_Kernel>							Exact_Polyhedron;
+typedef Exact_Kernel::Point_3										ExactPoint;
+typedef Inexact_Kernel::Point_3										InexactPoint;
+typedef Exact_Kernel::Vector_3										ExactVector;
+typedef CGAL::Surface_mesh<InexactPoint>							Mesh;
+typedef CGAL::AABB_face_graph_triangle_primitive<Exact_Polyhedron>	Primitive;
+
+typedef CGAL::AABB_traits<Exact_Kernel, Primitive>					Traits;
+typedef CGAL::AABB_tree<Traits>										Tree;
+typedef CGAL::Side_of_triangle_mesh<Exact_Polyhedron, Exact_Kernel>	Point_inside;
+typedef std::vector<bool> VOXEL_GRID;
+typedef std::vector<VOXEL_GRID>	MIPMAP_TYPE;
+
+namespace PMP = CGAL::Polygon_mesh_processing;
+
+struct Utils {
+
+	std::array<ExactPoint, 8> calc_voxel_points(unsigned int idx, std::array<unsigned int, 3> numVoxels, ExactPoint min_point,
+		const std::array<ExactVector, 3>& voxel_strides, bool* new_scanline = nullptr)
+	{
+		unsigned int x_idx, y_idx, z_idx;
+
+		convert_voxel_idx_to_coords(idx, numVoxels[0], x_idx, y_idx, z_idx);
+
+		if (new_scanline)
+		{
+			*new_scanline = z_idx == 0;
+		}
+
+		return {
+			min_point + x_idx * voxel_strides[0] + y_idx * voxel_strides[1] + z_idx * voxel_strides[2],
+			min_point + (x_idx + 1u) * voxel_strides[0] + y_idx * voxel_strides[1] + z_idx * voxel_strides[2],
+			min_point + x_idx * voxel_strides[0] + (y_idx + 1u) * voxel_strides[1] + z_idx * voxel_strides[2],
+			min_point + (x_idx + 1u) * voxel_strides[0] + (y_idx + 1u) * voxel_strides[1] + z_idx * voxel_strides[2],
+			min_point + x_idx * voxel_strides[0] + y_idx * voxel_strides[1] + (z_idx + 1u) * voxel_strides[2],
+			min_point + (x_idx + 1u) * voxel_strides[0] + y_idx * voxel_strides[1] + (z_idx + 1u) * voxel_strides[2],
+			min_point + x_idx * voxel_strides[0] + (y_idx + 1u) * voxel_strides[1] + (z_idx + 1u) * voxel_strides[2],
+			min_point + (x_idx + 1u) * voxel_strides[0] + (y_idx + 1u) * voxel_strides[1] + (z_idx + 1u) * voxel_strides[2]
+		};
+	}
+
+
+	void convert_voxel_idx_to_coords(unsigned int idx, unsigned int numVoxels, unsigned int& x_idx, unsigned int& y_idx, unsigned int& z_idx)
+	{
+		x_idx = idx / (numVoxels * numVoxels);
+		auto const w = idx % (numVoxels * numVoxels);
+		y_idx = w / numVoxels;
+		z_idx = w % numVoxels;
+	}
+
+	void calc_voxel_from_idx_tets(unsigned int idx, std::array<unsigned int, 3> numVoxels, ExactPoint min_point,
+		const std::array<ExactVector, 3>& voxel_strides, Exact_Polyhedron& voxel, bool* new_scanline)
+	{
+		auto const p = calc_voxel_points(idx, numVoxels, min_point, voxel_strides, new_scanline);
+
+		voxel.make_tetrahedron(p[0], p[3], p[5], p[1]);
+		voxel.make_tetrahedron(p[0], p[3], p[2], p[6]);
+		voxel.make_tetrahedron(p[0], p[4], p[5], p[6]);
+		voxel.make_tetrahedron(p[5], p[6], p[7], p[3]);
+		assert(voxel.is_valid());
+	}
+
+};
 
 struct GenerateCageFromMeshOperationParams {
 
@@ -17,9 +108,8 @@ struct GenerateCageFromMeshOperationParams {
 		const int scale,
 		const int smoothIterations,
 		const int targetNumFaces,
-		std::vector<bool>& closingResult
+		VOXEL_GRID& closingResult
 	) :
-
 		_meshfilepath(std::move(meshFilepath)),
 		_cagefilepath(std::move(cageFilepath)),
 		_scale(scale),
@@ -33,8 +123,7 @@ struct GenerateCageFromMeshOperationParams {
 	int _scale;
 	int _smoothIterations;
 	int _targetNumFaces;
-	std::vector<bool>& _closingResult;
-
+	VOXEL_GRID& _closingResult;
 
 };
 
@@ -52,13 +141,16 @@ public:
 
 };
 
-class Voxelizer {
+class Voxelizer: public Utils {
 
 public:
-	Voxelizer(int resolution) : _resolution(resolution) {}
+	Voxelizer(int resolution, float se_size) : _resolution(resolution), _seSize(se_size) {
+		_window = initOpenGL();
+	}
 	~Voxelizer() {};
 
 private:
+	GLFWwindow* _window;
 	GLuint _programVolume;
 	GLuint _programSurface;
 
@@ -72,13 +164,14 @@ private:
 	GLuint _voxTex;
 
 	int _resolution = 32;
+	float _seSize = _resolution / 16;
 	float _cellSize = 0.f;
 
 
 	std::vector<float> _vertices;
 	std::vector<float> _normals;
 	std::vector<unsigned int> _indices;
-	std::vector<bool> _voxelGrid;
+	VOXEL_GRID _voxelGrid;
 
 	std::array<float, 3> _bboxMin = { FLT_MAX, FLT_MAX, FLT_MAX };
 	std::array<float, 3> _bboxMax = { FLT_MIN, FLT_MIN, FLT_MIN };
@@ -379,7 +472,7 @@ private:
 
 	void ConvertBucketToUnpackedGrid(const std::vector<unsigned int>& buck_vox_grid,
 		int res, int num_bit_vox,
-		std::vector<bool>& unpack_vox_grid) {
+		VOXEL_GRID& unpack_vox_grid) {
 		// Unpacked grid의 크기는 2x2x2 범위로 하나의 voxel이 정의된 크기만큼 나눔
 		int unpack_res_x = res / 2, unpack_res_y = res / 2, unpack_res_z = res / 2;
 		unpack_vox_grid.resize(unpack_res_x * unpack_res_y * unpack_res_z, false);
@@ -411,7 +504,6 @@ private:
 		}
 	}
 
-
 	void ReadVoxelGrid() {
 
 		int bucket_size = 32;
@@ -430,10 +522,6 @@ private:
 		ConvertBucketToUnpackedGrid(buck_vox_grid, _resolution * 2, num_bit_vox, _voxelGrid);
 	}
 
-
-public:
-	float GetCellSize() { return _cellSize; }
-	std::array<float, 3> GetBboxMin() { return _bboxMin; }
 	void SetUpVAO() {
 		// 1) init vbo
 		_vao = 0;
@@ -464,10 +552,21 @@ public:
 		glBindVertexArray(0);
 	}
 
-	std::vector<bool> GenerateVoxelGrid(Eigen::MatrixXd& V_model, Eigen::MatrixXd& N_model, Eigen::MatrixXi& T_model) {
-		GLFWwindow* window = initOpenGL();
-		
-		if (!window) return _voxelGrid; // return empty vector
+	VOXEL_GRID VoxelizeShader(std::string filename) {
+
+		if (!_window) return _voxelGrid; // return empty vector
+
+		Eigen::MatrixXd V_model, N_model;
+		Eigen::MatrixXi T_model;
+
+		if (!load_mesh(filename, V_model, T_model, 1.0))
+		{
+			VOXEL_GRID dm;
+			std::cerr << "Failed to load mesh file\n";
+			return dm;
+		}
+
+		calcNormals(V_model, T_model, N_model);
 
 		// Convert Eigen::MatrixXd (vertices) to std::vector<float>
 		for (int i = 0; i < V_model.rows(); ++i) {
@@ -492,10 +591,11 @@ public:
 		}
 
 		// 0) Set the cell size
-		float se_size = 0.1f;
-		float margin = se_size + 2.0f / (2 * _resolution);
+
 		float longest_axis = std::max(_bboxMax[0] - _bboxMin[0],
 			std::max(_bboxMax[1] - _bboxMin[1], _bboxMax[2] - _bboxMin[2]));
+
+		float margin = 0.1f + 2.0f / (2 * _resolution);
 		float thickness = longest_axis / _resolution;
 		float offset = 2 * thickness + margin;
 		float axis_len = longest_axis + 2 * offset;
@@ -512,7 +612,9 @@ public:
 		SetUpVAO();
 
 		int base_res_ = _resolution;
-		int res = 2 * base_res_; // the base_res_ is the resolution of the packed layout
+
+		// shader creates (base_resolution * 2)^3 grid then we extract max out of 2x2x2 block
+		int res = 2 * base_res_;
 		int num_bit_vox = 1; // number of bits in one bucket
 		float rescale = 2.0 / axis_len;
 
@@ -536,13 +638,144 @@ public:
 		RunShader(_programSurface, true, rescale, res, 50.f * 50.f);
 
 		ClearBuffer();
-
 		ReadVoxelGrid();
 
-		glfwDestroyWindow(window);
+		glfwDestroyWindow(_window);
 		glfwTerminate();
 
 		return _voxelGrid;
-
 	}
+
+	VOXEL_GRID VoxelizeCGAL(std::string filename)
+	{
+
+		Exact_Polyhedron poly;
+		if (!PMP::IO::read_polygon_mesh(filename, poly) || !CGAL::is_triangle_mesh(poly))
+		{
+			std::cerr << "Invalid input.\n";
+			exit(-1);
+		}
+
+		Tree tree(faces(poly).first, faces(poly).second, poly);
+
+		CGAL::Bbox_3 bbox_origin = tree.bbox();
+		float longest_axis = std::max(bbox_origin.xmax() - bbox_origin.xmin(),
+			std::max(bbox_origin.ymax() - bbox_origin.ymin(), bbox_origin.zmax() - bbox_origin.zmin()));
+		
+		float margin = 0.1f + 2.0f / (2 * _resolution);
+		float thickness = longest_axis / _resolution;
+		float offset = 2 * thickness + margin;
+		float axis_len = longest_axis + 2 * offset;
+		float cell_size = axis_len / _resolution;
+
+		float new_xmin = bbox_origin.xmin() - offset;
+		float new_ymin = bbox_origin.ymin() - offset;
+		float new_zmin = bbox_origin.zmin() - offset;
+
+		CGAL::Bbox_3 grid_aabb(
+			new_xmin,
+			new_ymin,
+			new_zmin,
+			new_xmin + axis_len,
+			new_ymin + axis_len,
+			new_zmin + axis_len
+		);
+
+		_bboxMin[0] = new_xmin, _bboxMin[1] = new_ymin, _bboxMin[2] = new_zmin;
+		_cellSize = cell_size;
+		ExactPoint grid_min(grid_aabb.xmin(), grid_aabb.ymin(), grid_aabb.zmin());
+
+		// index where the actual data is finished at each axis
+		int data_res[3] = {
+			static_cast<int>(ceil((bbox_origin.xmax() - grid_aabb.xmin()) / cell_size)),
+			static_cast<int>(ceil((bbox_origin.ymax() - grid_aabb.ymin()) / cell_size)),
+			static_cast<int>(ceil((bbox_origin.zmax() - grid_aabb.zmin()) / cell_size))
+		};
+		
+		std::array<unsigned int, 3> numVoxels = { _resolution, _resolution, _resolution };
+		std::array<ExactVector, 3> voxel_strides = { ExactVector(cell_size, 0, 0),
+			ExactVector(0, cell_size, 0), ExactVector(0, 0, cell_size) };
+
+		std::vector<unsigned int> intersecting_voxels;
+		auto numVoxel = pow(_resolution, 3);// numVoxels[0] * numVoxels[1] * numVoxels[2];
+
+		VOXEL_GRID voxels_marking(numVoxel, false); // either outside 0, surface 1 or interior 2
+		tree.accelerate_distance_queries();
+		Point_inside inside_tester(tree);
+
+#pragma omp parallel for schedule(dynamic)
+		for (int i = 0; i < (int)numVoxel; i++) {
+
+			unsigned int x_idx, y_idx, z_idx;
+			convert_voxel_idx_to_coords(i, numVoxels[0], x_idx, y_idx, z_idx);
+			if (x_idx >= data_res[0] || y_idx >= data_res[1] || z_idx >= data_res[2]) continue;
+			Exact_Polyhedron voxel = Exact_Polyhedron();
+			bool new_scanline;
+
+			calc_voxel_from_idx_tets(i, numVoxels, grid_min, voxel_strides, voxel, &new_scanline);
+
+			//check if inside
+			bool inside = true;
+
+			for (auto vert : voxel.vertex_handles())
+			{
+				if (inside_tester(vert->point()) != CGAL::ON_BOUNDED_SIDE)
+				{
+					inside = false;
+					break;
+				}
+			}
+			CGAL::Iso_cuboid_3<Exact_Kernel> voxel_bbox = CGAL::bounding_box(voxel.points().begin(), voxel.points().end());
+			bool intersects = tree.any_intersected_primitive(voxel_bbox).has_value();
+
+			if (intersects || inside) {
+#pragma omp critical
+				{
+					voxels_marking[i] = true;
+				}
+			}
+		}
+
+		return voxels_marking;
+	}
+
+public:
+
+	float GetCellSize() { return _cellSize; }
+	std::array<float, 3> GetBboxMin() { return _bboxMin; }
+	
+	VOXEL_GRID GenerateVoxelGrid(std::string filename)
+	{
+		if (!_window)
+			_voxelGrid = VoxelizeCGAL(filename);
+		else
+			_voxelGrid = VoxelizeShader(filename);
+
+		return _voxelGrid;
+	}
+};
+
+class ClosingOperator {
+public:
+	ClosingOperator(float se_size, float erode_scale, float cell_size, std::array<float, 3> bbox_min, VOXEL_GRID& voxel_grid) :
+		_seSize(se_size),
+		_erodeScale(erode_scale),
+		_cellSize(cell_size),
+		_bboxMin(bbox_min),
+		_voxelGrid(voxel_grid)
+	{}
+
+private:
+	float _seSize;
+	float _erodeScale;
+	float _cellSize;
+	std::array<float, 3> _bboxMin;
+	VOXEL_GRID _voxelGrid;
+	VOXEL_GRID _dGrid; // Dilated Voxel Grid
+	VOXEL_GRID _cGrid; // Extracted Contour Grid
+	VOXEL_GRID _eGrid; // Erosed Voxel Grid
+	MIPMAP_TYPE _mipMap;
+
+	void ExecuteDilation();
+	
 };
