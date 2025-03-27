@@ -65,6 +65,10 @@ add_executable(${PROJECT_NAME}
     Mesh/Operations/MeshComputeDeformationOperation.cpp
     Mesh/Operations/MeshExportInfluenceMapOperation.cpp
     Mesh/Operations/MeshGenerateCageOperation.cpp
+    Mesh/Operations/CageGenerationSteps/Voxelizer.h
+    Mesh/Operations/CageGenerationSteps/ClosingOperator.h
+    Mesh/Operations/CageGenerationSteps/RemeshOperator.h
+    Mesh/Operations/CageGenerationSteps/Utils.h
     Mesh/Operations/MeshLoadOperation.cpp
     Mesh/Operations/MeshExportOperation.cpp
     Rendering/Commands/BufferCommand.h
@@ -175,9 +179,9 @@ target_link_libraries(
         SDL3::SDL3
         OpenMeshCore
         OpenMP::OpenMP_CXX
-		GLEW::GLEW
-		OpenGL::GL
-		glfw
+	GLEW::GLEW
+	OpenGL::GL
+	glfw
 )
 
 # On Windows will enable SDL2 to recognize high DPI monitors.
