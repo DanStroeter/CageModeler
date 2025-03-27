@@ -152,31 +152,55 @@ void ProjectSettingsPanel::Layout()
 					horizontalOffset,
 					{ nfdfilteritem_t { "Mesh (.obj,.fbx)", "obj,fbx" } });
 			}
-
-          ImGui::TableNextRow();
+			ImGui::TableNextRow();
 			{
-				// Add the scale input at the bottom because it's valid for all meshes.
 				ImGui::TableSetColumnIndex(0);
-				ImGui::TextEx("Cage Smooth Iterations");
+
+				ImGui::TextEx("Resolution = 2^N (select N)");
 				ImGui::SameLine();
-				UIHelpers::HelpMarker("Set Smoothness of the cage. default is 3");
+				UIHelpers::HelpMarker("Voxel Resolution");
 
 				ImGui::TableSetColumnIndex(1);
 				UIHelpers::SetRightAligned(100.0f);
-				ImGui::InputInt("##Smooth", &_modifiedProjectModel._smoothIterations, 1,10 , ImGuiInputTextFlags_NoHorizontalScroll);
+				ImGui::InputInt("##Cage_voxel_resolution", &_modifiedProjectModel._voxelResolution, 1, 1, ImGuiInputTextFlags_NoHorizontalScroll);
+				if (_modifiedProjectModel._voxelResolution < 5)
+					_modifiedProjectModel._voxelResolution = 5;
+				else if (_modifiedProjectModel._voxelResolution > 7)
+					_modifiedProjectModel._voxelResolution = 7;
 			}
-
-           	ImGui::TableNextRow();
+			ImGui::TableNextRow();
 			{
-				// Add the scale input at the bottom because it's valid for all meshes.
 				ImGui::TableSetColumnIndex(0);
+
 				ImGui::TextEx("Target Number of Faces");
 				ImGui::SameLine();
-				UIHelpers::HelpMarker("Set face number of the cage. default is 400");
+				UIHelpers::HelpMarker("The number of faces for cage");
 
 				ImGui::TableSetColumnIndex(1);
 				UIHelpers::SetRightAligned(100.0f);
-				ImGui::InputInt("##CageFaces", &_modifiedProjectModel._targetNumFaces, 1,10 , ImGuiInputTextFlags_NoHorizontalScroll);
+				ImGui::InputInt("##Cage_target_faces", &_modifiedProjectModel._targetNumFaces, 50, 100, ImGuiInputTextFlags_NoHorizontalScroll);
+				if (_modifiedProjectModel._targetNumFaces < 100)
+					_modifiedProjectModel._targetNumFaces = 100;
+				else if (_modifiedProjectModel._targetNumFaces > 700)
+					_modifiedProjectModel._targetNumFaces = 700;
+			}
+
+			ImGui::TableNextRow();
+			{
+				ImGui::TableSetColumnIndex(0);
+
+				ImGui::TextEx("Cage Smooth Iterations");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("The number of iterations for cage smoothing");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(100.0f);
+				ImGui::InputInt("##Cage_Smooth_Iterations", &_modifiedProjectModel._smoothIterations, 2, 10, ImGuiInputTextFlags_NoHorizontalScroll);
+				if (_modifiedProjectModel._smoothIterations < 0)
+					_modifiedProjectModel._smoothIterations = 0;
+				else if (_modifiedProjectModel._smoothIterations > 20)
+					_modifiedProjectModel._smoothIterations = 20;
+			
 			}
 
           const auto hasNoMesh1 = !_modifiedProjectModel._meshFilepath.has_value();
@@ -511,7 +535,8 @@ const auto meshOperationSystem = _meshOperationSystem.lock();
 		_modifiedProjectModel._scalingFactor,
 		_modifiedProjectModel._smoothIterations,
 		_modifiedProjectModel._targetNumFaces,
-		_modifiedProjectModel._closingResult
+		_modifiedProjectModel._closingResult,
+		_modifiedProjectModel._voxelResolution
 	);
 
     std::ifstream input(outputCageFile);

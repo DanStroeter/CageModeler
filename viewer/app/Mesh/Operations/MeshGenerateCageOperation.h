@@ -1,6 +1,8 @@
 #pragma once
 
+#include <filesystem>
 #include <Mesh/Operations/MeshOperation.h>
+typedef std::vector<bool> VOXEL_GRID;
 
 struct GenerateCageFromMeshOperationParams {
 
@@ -9,14 +11,16 @@ struct GenerateCageFromMeshOperationParams {
 		const int scale,
 		const int smoothIterations,
 		const int targetNumFaces,
-		VOXEL_GRID& closingResult
+		VOXEL_GRID& closingResult,
+		const int voxelResolution
 	) :
 		_meshfilepath(std::move(meshFilepath)),
 		_cagefilepath(std::move(cageFilepath)),
 		_scale(scale),
 		_smoothIterations(smoothIterations),
 		_targetNumFaces(targetNumFaces),
-		_closingResult(closingResult)
+		_closingResult(closingResult),
+		_voxelResolution(voxelResolution)
 	{}
 
 	std::filesystem::path _meshfilepath;
@@ -25,6 +29,7 @@ struct GenerateCageFromMeshOperationParams {
 	int _smoothIterations;
 	int _targetNumFaces;
 	VOXEL_GRID& _closingResult;
+	int _voxelResolution;
 
 };
 

@@ -41,10 +41,6 @@ std::array<float, 3> bbox_min;
 
 void GenerateCageFromMeshOperation::Execute() {
 	
-	int BASE_RESOLUTION;
-	std::cout << "Enter resolution: ";
-	std::cin >> BASE_RESOLUTION;
-
 	int cage_start = clock();
 
 	std::string filename = _params._meshfilepath.string();
@@ -56,25 +52,25 @@ void GenerateCageFromMeshOperation::Execute() {
 	std::string intermediate_path = filepath + obj + "_interm.obj";
 	
 	VOXEL_GRID& e_grid = _params._closingResult;
+	int resolution = pow(2, _params._voxelResolution);
+	std::cout << "Generating Cage for " << obj << ", resol: " << resolution << std::endl;
 
-	std::cout << "Generating Cage for " << obj << std::endl;
-
-	if (e_grid.size() != std::pow(BASE_RESOLUTION, 3))
+	if (e_grid.size() != std::pow(resolution, 3))
 	{
-		float SE_SIZE = BASE_RESOLUTION / 16.f;
-		Voxelizer voxelizer(BASE_RESOLUTION, SE_SIZE);
+		float se_scale = resolution / 16.f;
+		Voxelizer voxelizer(resolution, se_scale);
 		std::vector<bool> voxel_result = voxelizer.GenerateVoxelGrid(filename);
 		
 		cell_size = voxelizer.GetCellSize();
 		bbox_min = voxelizer.GetBboxMin();
 
-		ClosingOperator closer(BASE_RESOLUTION, SE_SIZE, cell_size, bbox_min, voxel_result);
+		ClosingOperator closer(resolution, se_scale, cell_size, bbox_min, voxel_result);
 		closer.ExecuteDilation();
 		closer.ExtractContour();
 		e_grid = closer.ExecuteErosion();
 	}
 
-	RemeshOperator remesher(BASE_RESOLUTION, cell_size);
+	RemeshOperator remesher(resolution, cell_size);
 	ExactMesh extracted_surface = remesher.ExtractSurface(e_grid, bbox_min);
 	CGAL::write_off(intermediate_path.c_str(), extracted_surface);
 

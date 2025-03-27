@@ -17,16 +17,16 @@
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Polyhedron_3.h>
 #include <CGAL/Polygon_mesh_processing/IO/polygon_mesh_io.h>
-//#include <CGAL/boost/graph/convert_nef_polyhedron_to_polygon_mesh.h>
+#include <CGAL/boost/graph/convert_nef_polyhedron_to_polygon_mesh.h>
 
 #include <CGAL/Polygon_mesh_processing/intersection.h>
-//#include <CGAL/Polygon_mesh_processing/stitch_borders.h>
-//#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
-//#include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
-//#include <CGAL/Polygon_mesh_processing/polygon_mesh_to_polygon_soup.h>
-//#include <CGAL/Polygon_mesh_processing/repair_degeneracies.h>
-//#include <CGAL/Polygon_mesh_processing/compute_normal.h>
-//#include <CGAL/Polygon_mesh_processing/corefinement.h>
+#include <CGAL/Polygon_mesh_processing/stitch_borders.h>
+#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
+#include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
+#include <CGAL/Polygon_mesh_processing/polygon_mesh_to_polygon_soup.h>
+#include <CGAL/Polygon_mesh_processing/repair_degeneracies.h>
+#include <CGAL/Polygon_mesh_processing/compute_normal.h>
+#include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Side_of_triangle_mesh.h>
 #include <CGAL/Polyhedron_incremental_builder_3.h>
 #include <CGAL/Surface_mesh.h>

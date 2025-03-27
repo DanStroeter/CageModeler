@@ -60,7 +60,7 @@ void ProjectOptionsPanel::Layout()
 				ImGui::TableSetColumnIndex(1);
 
 				UIHelpers::SetRightAligned(125.0f);
-
+				
 				if (ImGui::BeginCombo("##Deformation", ProjecSettingsHelpers::DeformationMethodNames[_selectedDeformationTypeIndex], ImGuiComboFlags_HeightRegular))
 				{
 					for (auto i = 0; i < ProjecSettingsHelpers::DeformationMethodNames.size(); i++)
@@ -335,7 +335,22 @@ void ProjectOptionsPanel::Layout()
 			ImGui::SetWindowFontScale(1.0f);
 			ImGui::PopFont();
 		}
+		ImGui::TableNextRow();
+		{
+			ImGui::TableSetColumnIndex(0);
 
+			ImGui::TextEx("Resolution = 2^N (select N)");
+			ImGui::SameLine();
+			UIHelpers::HelpMarker("Voxel Resolution");
+
+			ImGui::TableSetColumnIndex(1);
+			UIHelpers::SetRightAligned(100.0f);
+			ImGui::InputInt("##Cage_voxel_resolution", &_modifiedProjectModel._voxelResolution, 1, 1, ImGuiInputTextFlags_NoHorizontalScroll);
+			if (_modifiedProjectModel._voxelResolution < 5)
+				_modifiedProjectModel._voxelResolution = 5;
+			else if (_modifiedProjectModel._voxelResolution > 7)
+				_modifiedProjectModel._voxelResolution = 7;
+		}
 		ImGui::TableNextRow();
 		{
 			ImGui::TableSetColumnIndex(0);
@@ -349,9 +364,8 @@ void ProjectOptionsPanel::Layout()
 			ImGui::InputInt("##Cage_target_faces", &_modifiedProjectModel._targetNumFaces, 50, 100, ImGuiInputTextFlags_NoHorizontalScroll);
 			if (_modifiedProjectModel._targetNumFaces < 100)
 				_modifiedProjectModel._targetNumFaces = 100;
-			else if (_modifiedProjectModel._targetNumFaces > 500)
-				_modifiedProjectModel._targetNumFaces = 500;
-		
+			else if (_modifiedProjectModel._targetNumFaces > 700)
+				_modifiedProjectModel._targetNumFaces = 700;
 		}
 
 		ImGui::TableNextRow();
@@ -364,7 +378,7 @@ void ProjectOptionsPanel::Layout()
 
 			ImGui::TableSetColumnIndex(1);
 			UIHelpers::SetRightAligned(100.0f);
-			ImGui::InputInt("##Cage_Smooth_Iterations", &_modifiedProjectModel._smoothIterations, 1, 10, ImGuiInputTextFlags_NoHorizontalScroll);
+			ImGui::InputInt("##Cage_Smooth_Iterations", &_modifiedProjectModel._smoothIterations, 2, 10, ImGuiInputTextFlags_NoHorizontalScroll);
 		}
 
 		ImGui::EndTable();
