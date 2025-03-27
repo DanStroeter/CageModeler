@@ -430,6 +430,7 @@ void ProjectOptionsPanel::Layout()
 				*_model._projectData = _modifiedProjectModel;
 
 				_projectSettingsApplied();
+				_modifiedProjectModel._closingResult = _model._projectData->_closingResult;
 			}
 		}
 		ImGui::EndDisabled();

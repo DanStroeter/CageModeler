@@ -57,10 +57,9 @@ void GenerateCageFromMeshOperation::Execute() {
 
 	if (e_grid.size() != std::pow(resolution, 3))
 	{	
-		e_grid.resize(pow(resolution, 3));
 		float se_scale = resolution / 16.f;
 		Voxelizer voxelizer(resolution, se_scale);
-		std::vector<bool> voxel_result = voxelizer.GenerateVoxelGrid(filename);
+		VOXEL_GRID voxel_result = voxelizer.GenerateVoxelGrid(filename);
 		
 		cell_size = voxelizer.GetCellSize();
 		bbox_min = voxelizer.GetBboxMin();
@@ -68,7 +67,9 @@ void GenerateCageFromMeshOperation::Execute() {
 		ClosingOperator closer(resolution, se_scale, cell_size, bbox_min, voxel_result);
 		closer.ExecuteDilation();
 		closer.ExtractContour();
-		e_grid = closer.ExecuteErosion();
+		VOXEL_GRID erosion_result = closer.ExecuteErosion();
+		e_grid.resize(erosion_result.size());
+		e_grid.assign(erosion_result.begin(), erosion_result.end());
 	}
 
 	RemeshOperator remesher(resolution, cell_size);

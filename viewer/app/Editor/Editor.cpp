@@ -649,19 +649,6 @@ void Editor::OnProjectOptionUpdated()
 	OnNewProjectCreated();
 }
 
-void Editor::OnCageGeneration()
-{
-	if (_projectModel->CheckMissingFilesForCageGeneration())
-	{
-		_statusBar->SetError("Unable to load mesh file, check if it is missing.");
-
-		return;
-	}
-
- // auto cageGenerationResult=newCage();
-	
-}
-
 void Editor::OnProjectSettingsCancelled()
 {
 	_projectSettingsPanel = nullptr;
