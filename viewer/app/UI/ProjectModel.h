@@ -179,7 +179,7 @@ struct ProjectModelData
 
 	int32_t _smoothIterations = 3;
 	int32_t _targetNumFaces = 400;
-	int32_t _voxelResolution = 32;
+	int32_t _voxelResolution = 5; // 2^N, i.e., actual resol = 2^5 = 32
 
 	std::vector<bool> _closingResult;
 

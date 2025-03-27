@@ -56,7 +56,8 @@ void GenerateCageFromMeshOperation::Execute() {
 	std::cout << "Generating Cage for " << obj << ", resol: " << resolution << std::endl;
 
 	if (e_grid.size() != std::pow(resolution, 3))
-	{
+	{	
+		e_grid.resize(pow(resolution, 3));
 		float se_scale = resolution / 16.f;
 		Voxelizer voxelizer(resolution, se_scale);
 		std::vector<bool> voxel_result = voxelizer.GenerateVoxelGrid(filename);
