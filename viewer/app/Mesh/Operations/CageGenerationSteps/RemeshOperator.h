@@ -38,10 +38,17 @@ typedef Inexact_Kernel::Point_3										InexactPoint;
 typedef Exact_Kernel::Vector_3										ExactVector;
 typedef CGAL::Surface_mesh<InexactPoint>							Mesh;
 typedef CGAL::Surface_mesh<ExactPoint>								ExactMesh;
-//typedef CGAL::AABB_face_graph_triangle_primitive<Exact_Polyhedron>	Primitive;
-//typedef CGAL::AABB_traits<Exact_Kernel, Primitive>					Traits;
-//typedef CGAL::AABB_tree<Traits>										Tree;
-//typedef CGAL::Side_of_triangle_mesh<Exact_Polyhedron, Exact_Kernel>	Point_inside;
+
+typedef CGAL::Simple_cartesian<double>                                  Kernel;
+typedef Kernel::Point_3                                                 Surface_Point;
+typedef Kernel::Vector_3                                                 Surface_Vector;
+
+typedef CGAL::Surface_mesh<Surface_Point>                                SurMesh;
+typedef boost::graph_traits<SurMesh>::face_descriptor                    FaceIndex;
+typedef boost::graph_traits<SurMesh>::halfedge_descriptor                HalfedgeIndex;
+typedef boost::graph_traits<SurMesh>::vertex_descriptor                  VertexIndex;
+
+
 typedef std::vector<bool> VOXEL_GRID;
 //typedef std::vector<VOXEL_GRID>	MIPMAP_TYPE;
 
@@ -166,6 +173,42 @@ private:
 			}
 		}
 	}
+	double compute_angle_between_faces(const SurMesh& mesh, FaceIndex f1, FaceIndex f2) {
+		Surface_Vector n1 = PMP::compute_face_normal(f1, mesh);
+		Surface_Vector n2 = PMP::compute_face_normal(f2, mesh);
+
+		double dot_product = n1 * n2;
+		double angle_rad = std::acos(std::clamp(dot_product, -1.0, 1.0));
+		return CGAL::to_double(angle_rad) * (180.0 / CGAL_PI);
+	}
+
+
+	bool find_best_merge(SurMesh& mesh, FaceIndex f, double angle_threshold, std::unordered_set<FaceIndex>& merged_faces) {
+		double min_angle = angle_threshold;
+		HalfedgeIndex best_halfedge;
+		FaceIndex best_neighbor = SurMesh::null_face();
+
+		for (HalfedgeIndex h : CGAL::halfedges_around_face(halfedge(f, mesh), mesh)) {
+			FaceIndex neighbor = CGAL::face(opposite(h, mesh), mesh);
+			if (neighbor == SurMesh::null_face() || merged_faces.count(neighbor)) continue;
+
+			double angle = compute_angle_between_faces(mesh, f, neighbor);
+			if (angle < min_angle) {
+				min_angle = angle;
+				best_halfedge = h;
+				best_neighbor = neighbor;
+			}
+		}
+
+		if (best_neighbor != SurMesh::null_face()) {
+			CGAL::Euler::join_face(best_halfedge, mesh);
+			merged_faces.insert(f);
+			merged_faces.insert(best_neighbor);
+			return true;
+		}
+		return false;
+	}
+
 
 public:
 	ExactMesh ExtractSurface(
@@ -265,6 +308,15 @@ public:
 			int unref = tri::Clean<MyMesh>::RemoveUnreferencedVertex(vcg_mesh);
 			int deg_face = tri::Clean<MyMesh>::RemoveDegenerateFace(vcg_mesh);
 			int dup_face = tri::Clean<MyMesh>::RemoveDuplicateFace(vcg_mesh);
+		}
+	}
+	void ConvertToTriQuadMesh(SurMesh& mesh, double angle_threshold = 10.0) {
+		std::unordered_set<FaceIndex> merged_faces;
+		std::vector<FaceIndex> faces_list(faces(mesh).begin(), faces(mesh).end());
+
+		for (FaceIndex f : faces_list) {
+			if (merged_faces.count(f)) continue;
+			find_best_merge(mesh, f, angle_threshold, merged_faces);
 		}
 	}
 };

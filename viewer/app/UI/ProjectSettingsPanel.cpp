@@ -202,6 +202,18 @@ void ProjectSettingsPanel::Layout()
 					_modifiedProjectModel._smoothIterations = 20;
 			
 			}
+			ImGui::TableNextRow();
+			{
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextEx("Tri_Quad Cage");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("Generated cage is tri_quad.");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(25.0f);
+				ImGui::Checkbox("##IsTriQuad", &_modifiedProjectModel._isTriQuad);
+				ImGui::SameLine();
+			}
 
           const auto hasNoMesh1 = !_modifiedProjectModel._meshFilepath.has_value();
 			ImGui::TableNextRow();
@@ -527,7 +539,12 @@ const auto meshOperationSystem = _meshOperationSystem.lock();
 			
 	std::filesystem::path currentpath=__FILE__;
 	std::filesystem::path upperpath=currentpath.parent_path().parent_path().parent_path().parent_path();
-	std::string outputCageFile=upperpath.string() + "/models/cage.obj";
+	std::string outputCageFile = upperpath.string();
+#ifdef _WIN32
+	outputCageFile += "\\models\\autoCage.obj";
+#else
+	outputCageFile += "/models/autoCage.obj";
+#endif
 	 
 	meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(
 		_modifiedProjectModel._meshFilepath.value().string(),
@@ -536,7 +553,8 @@ const auto meshOperationSystem = _meshOperationSystem.lock();
 		_modifiedProjectModel._smoothIterations,
 		_modifiedProjectModel._targetNumFaces,
 		_modifiedProjectModel._closingResult,
-		_modifiedProjectModel._voxelResolution
+		_modifiedProjectModel._voxelResolution,
+		_modifiedProjectModel._isTriQuad
 	);
 
     std::ifstream input(outputCageFile);

@@ -634,7 +634,12 @@ void Editor::OnProjectOptionUpdated()
 
 		std::filesystem::path currentpath=__FILE__;
 		std::filesystem::path upperpath=currentpath.parent_path().parent_path().parent_path().parent_path();
-		std::string outputCageFile=upperpath.string() + "/models/cage.obj";
+		std::string outputCageFile = upperpath.string();
+#ifdef _WIN32
+		outputCageFile += "\\models\\autoCage.obj";
+#else
+		outputCageFile += "/models/autoCage.obj";
+#endif
 
 		_meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(
 			_projectModel->_meshFilepath.value().string(),
@@ -643,7 +648,8 @@ void Editor::OnProjectOptionUpdated()
 			_projectModel->_smoothIterations,
 			_projectModel->_targetNumFaces,
 			_projectModel->_closingResult,
-			_projectModel->_voxelResolution
+			_projectModel->_voxelResolution,
+			_projectModel->_isTriQuad
 		);
 	}
 	OnNewProjectCreated();
