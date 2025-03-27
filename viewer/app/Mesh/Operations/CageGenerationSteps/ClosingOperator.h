@@ -383,35 +383,37 @@ public:
 		int mipmap_depth = _mipmapPyramid.size();
 
 		std::array<unsigned int, 3> num_voxels = { _resolution, _resolution, _resolution };
-#pragma omp parallel for collapse(3) schedule(dynamic)
-		for (int x = 0; x < _resolution; x++) {
-			for (int y = 0; y < _resolution; y++) {
-				for (int z = 0; z < _resolution; z++) {
-					std::stack<Node> node_stack;
-					unsigned int flat_idx = coords_to_voxel_idx(x, y, z, _resolution);
-					if (dGrid[flat_idx] == true) continue;
-					SE se;
-					Node current_point = { 0, flat_idx };
-					define_se(current_point, _seSize * _cellSize, se, false);
+//#pragma omp parallel for collapse(3) schedule(dynamic)
+		int numVoxels = _resolution * _resolution * _resolution;
+#pragma omp parallel for schedule(dynamic)
+		for (int flat_idx = 0; flat_idx < numVoxels; flat_idx++) {
+			std::stack<Node> node_stack;
+			//unsigned int flat_idx = coords_to_voxel_idx(x, y, z, _resolution);
+			unsigned int x, y, z;
+			convert_voxel_idx_to_coords(flat_idx, _resolution, x, y, z);
 
-					node_stack.push({ mipmap_depth - 1, 0 }); // push coarsest 1x1x1 mipmap
-					while (!node_stack.empty() && dGrid[flat_idx] == false) {
-						auto top_node = node_stack.top();
-						node_stack.pop();
+			if (dGrid[flat_idx]) continue;
+			SE se;
+			Node current_point = { 0, flat_idx };
+			define_se(current_point, _seSize * _cellSize, se, false);
 
-						if (top_node.level == 0) {
-							dGrid[flat_idx] = true;
-							break;
-						}
-						else {
-							std::vector<Node> subcells = find_subcells(top_node, _mipmapPyramid);
-							for (auto& subcell : subcells) {
-								bool subcell_val = _mipmapPyramid[subcell.level][subcell.pos];
-								bool overlap = does_overlap(subcell, se);
-								if (subcell_val && overlap) {
-									node_stack.push(subcell);
-								}
-							}
+			node_stack.push({ mipmap_depth - 1, 0 }); // push coarsest 1x1x1 mipmap
+			while (!node_stack.empty() && dGrid[flat_idx] == false) {
+				auto top_node = node_stack.top();
+				node_stack.pop();
+
+				if (top_node.level == 0) {
+#pragma omp critical
+					dGrid[flat_idx] = true;
+					break;
+				}
+				else {
+					std::vector<Node> subcells = find_subcells(top_node, _mipmapPyramid);
+					for (auto& subcell : subcells) {
+						bool subcell_val = _mipmapPyramid[subcell.level][subcell.pos];
+						bool overlap = does_overlap(subcell, se);
+						if (subcell_val && overlap) {
+							node_stack.push(subcell);
 						}
 					}
 				}

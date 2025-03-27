@@ -41,7 +41,7 @@ std::array<float, 3> bbox_min;
 
 void GenerateCageFromMeshOperation::Execute() {
 	
-	int cage_start = clock();
+
 
 	std::string filename = _params._meshfilepath.string();
 	std::string outputfilename = _params._cagefilepath.string();
@@ -54,7 +54,7 @@ void GenerateCageFromMeshOperation::Execute() {
 	VOXEL_GRID& e_grid = _params._closingResult;
 	int resolution = pow(2, _params._voxelResolution);
 	std::cout << "Generating Cage for " << obj << ", resol: " << resolution << std::endl;
-
+	int cage_start = clock();
 	if (e_grid.size() != std::pow(resolution, 3))
 	{	
 		float se_scale = resolution / 16.f;
