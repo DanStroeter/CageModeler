@@ -632,15 +632,6 @@ void Editor::OnProjectOptionUpdated()
 
 	if(!_projectModel->_closingResult.empty()){
 
-//		std::filesystem::path currentpath=__FILE__;
-//		std::filesystem::path upperpath=currentpath.parent_path().parent_path().parent_path().parent_path();
-//		std::string outputCageFile = upperpath.string();
-//#ifdef _WIN32
-//		outputCageFile += "\\models\\autoCage.obj";
-//#else
-//		outputCageFile += "/models/autoCage.obj";
-//#endif
-
 		_meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(
 			_projectModel->_meshFilepath.value().string(),
 			_projectModel->_cageFilepath.value().string(),
