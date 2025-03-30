@@ -48,7 +48,7 @@ PolygonMesh::PolygonMesh(const Eigen::MatrixXd& vertices,
 
 	for (auto i = 0; i < indices.rows(); ++i)
 	{
-		if (indices.cols() == 3)
+		if (indices.cols() == 3 || (indices.cols() == 4 && indices(i, 3) == -1))
 		{
 			const auto vertexHandleA = static_cast<VertexHandle>(vertexHandlesMap[indices(i, 0)]);
 			const auto vertexHandleB = static_cast<VertexHandle>(vertexHandlesMap[indices(i, 1)]);

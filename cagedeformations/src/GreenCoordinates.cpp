@@ -864,12 +864,15 @@ void calculateGreenCoordinatesTriQuad(const Eigen::MatrixXd& C, const Eigen::Mat
 			Eigen::Vector3d face_points[4];
 
 			bool isTriangle = face.size() == 3 || (contains_quads && face(3) == -1);
-			bool isQuad = face.size() == 4;
+			bool isQuad = contains_quads && face(3) != -1;
 
 			for (int k = 0; k < face.size(); ++k)
 			{
 				auto const v_idx = face(k);
-				face_points[k] = C.row(v_idx);
+				if (v_idx != -1)
+				{
+					face_points[k] = C.row(v_idx);
+				}
 			}
 
 			if (isTriangle)
