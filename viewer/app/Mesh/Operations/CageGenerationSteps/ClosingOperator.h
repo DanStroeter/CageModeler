@@ -378,7 +378,7 @@ public:
 				check_neighbor(_dGrid, 'z', x, y, z) ||
 				check_neighbor(_dGrid, 'y', x, y, z) ||
 				check_neighbor(_dGrid, 'x', x, y, z);
-
+#pragma omp critical
 			contour[center_idx] = !center_val && result;
 		}
 
@@ -408,6 +408,7 @@ public:
 				node_stack.pop();
 
 				if (top_node.level == 0) {
+#pragma omp critical
 					_eGrid[flat_idx] = false;
 					break;
 				}
