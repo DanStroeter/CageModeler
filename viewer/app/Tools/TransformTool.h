@@ -64,7 +64,7 @@ public:
 	void ActivateImpl()
 	{
 
-	}  
+	}
 
 	[[nodiscard]] ToolDescription GetToolDescriptionImpl() const
 	{

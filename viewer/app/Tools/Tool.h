@@ -54,7 +54,6 @@ namespace Tools::Transform
 	const auto inline Translate = ToolType();
 	const auto inline Rotate = ToolType();
 	const auto inline Scale = ToolType();
-
 }
 
 struct ToolDescription

@@ -39,8 +39,8 @@ void ToolBar::Layout()
 		for (const auto& [toolType, toolDescription] : _toolsDescriptions)
 		{
 			ShowToolUI(toolType, toolDescription);
-		}        
-
+		}
+		
 		ImGui::End();
 	}
 }

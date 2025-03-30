@@ -1,29 +1,12 @@
 #pragma once
 
 #include <iostream>
-//#include <Eigen/Core>
 
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Polyhedron_3.h>
-//#include <CGAL/Polygon_mesh_processing/IO/polygon_mesh_io.h>
-//#include <CGAL/boost/graph/convert_nef_polyhedron_to_polygon_mesh.h>
-
-//#include <CGAL/Polygon_mesh_processing/intersection.h>
-//#include <CGAL/Polygon_mesh_processing/stitch_borders.h>
-//#include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
-//#include <CGAL/Polygon_mesh_processing/triangulate_faces.h>
-//#include <CGAL/Polygon_mesh_processing/polygon_mesh_to_polygon_soup.h>
-//#include <CGAL/Polygon_mesh_processing/repair_degeneracies.h>
-//#include <CGAL/Polygon_mesh_processing/compute_normal.h>
-//#include <CGAL/Polygon_mesh_processing/corefinement.h>
-//#include <CGAL/Side_of_triangle_mesh.h>
-//#include <CGAL/Polyhedron_incremental_builder_3.h>
-//#include <CGAL/Nef_polyhedron_3.h>
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/AABB_tree.h>
-
-#define BUFFER_OFFSET(offset) ((GLvoid*)(offset))
 
 typedef CGAL::Exact_predicates_exact_constructions_kernel			Exact_Kernel;
 typedef CGAL::Exact_predicates_inexact_constructions_kernel			Inexact_Kernel;
@@ -32,16 +15,6 @@ typedef CGAL::Polyhedron_3<Exact_Kernel>							Exact_Polyhedron;
 typedef Exact_Kernel::Point_3										ExactPoint;
 typedef Inexact_Kernel::Point_3										InexactPoint;
 typedef Exact_Kernel::Vector_3										ExactVector;
-//typedef CGAL::Surface_mesh<InexactPoint>							Mesh;
-//typedef CGAL::AABB_face_graph_triangle_primitive<Exact_Polyhedron>	Primitive;
-//
-//typedef CGAL::AABB_traits<Exact_Kernel, Primitive>					Traits;
-//typedef CGAL::AABB_tree<Traits>										Tree;
-//typedef CGAL::Side_of_triangle_mesh<Exact_Polyhedron, Exact_Kernel>	Point_inside;
-//typedef std::vector<bool> VOXEL_GRID;
-//typedef std::vector<VOXEL_GRID>	MIPMAP_TYPE;
-
-//namespace PMP = CGAL::Polygon_mesh_processing;
 
 struct Utils {
 

@@ -68,6 +68,7 @@ void NewProjectPanel::Layout()
 				ImGui::TableSetColumnIndex(1);
 
 				UIHelpers::SetRightAligned(125.0f);
+				
 				if (ImGui::BeginCombo("##Deformation", ProjecSettingsHelpers::DeformationMethodNames[_selectedDeformationTypeIndex], ImGuiComboFlags_HeightRegular))
 				{
 					for (auto i = 0; i < ProjecSettingsHelpers::DeformationMethodNames.size(); i++)

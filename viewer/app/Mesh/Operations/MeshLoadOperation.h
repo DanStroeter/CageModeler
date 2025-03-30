@@ -68,7 +68,6 @@ struct MeshLoadOperationParams
 	std::filesystem::path _meshFilepath { };
 	std::filesystem::path _cageFilepath { };
    
-    //std::optional<std::filesystem::path> _cageFilepath { };
     std::optional<std::filesystem::path> _deformedCageFilepath { };
 	std::optional<std::filesystem::path> _weightsFilepath { };
 	std::optional<std::filesystem::path> _embeddingFilepath { };

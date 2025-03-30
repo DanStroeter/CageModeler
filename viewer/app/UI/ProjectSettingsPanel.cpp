@@ -27,7 +27,7 @@ void ProjectSettingsPanel::Layout()
 
 	const auto displaySize = ImGui::GetIO().DisplaySize;
 
-	ImGui::SetNextWindowPos(ImVec2(displaySize.x / 2.0f, displaySize.y / 2.2f),
+	ImGui::SetNextWindowPos(ImVec2(displaySize.x / 2.0f, displaySize.y / 2.0f),
 		ImGuiCond_Appearing,
 		ImVec2(0.5f, 0.5f));
 
