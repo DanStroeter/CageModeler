@@ -550,13 +550,16 @@ const auto meshOperationSystem = _meshOperationSystem.lock();
             return " ";
         }
             
-    std::filesystem::path currentpath=__FILE__;
-    std::filesystem::path upperpath=currentpath.parent_path().parent_path().parent_path().parent_path();
-    std::string outputCageFile = upperpath.string();
+        std::string objName = _modifiedProjectModel._meshFilepath.value().stem().string();
+
+        std::filesystem::path currentpath = __FILE__;
+        std::filesystem::path upperpath = currentpath.parent_path().parent_path().parent_path().parent_path();
+        std::string outputCageFile = upperpath.string();
+
 #ifdef _WIN32
-    outputCageFile += "\\models\\autoCage.obj";
+        outputCageFile += "\\models\\" + objName + "_autoCage.obj";
 #else
-    outputCageFile += "/models/autoCage.obj";
+        outputCageFile += "/models/" + objName + "_autoCage.obj";
 #endif
      
     meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(

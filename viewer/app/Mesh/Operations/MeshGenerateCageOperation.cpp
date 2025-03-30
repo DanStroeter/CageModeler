@@ -66,8 +66,8 @@ void GenerateCageFromMeshOperation::Execute() {
 	if (e_grid.size() != std::pow(resolution, 3))
 	{	
 		float se_scale = resolution / 16.f;
-		if (resolution == 64) se_scale - 1;
-		else if (resolution == 128) se_scale - 3;
+		if (resolution == 64) se_scale -= 1;
+		else if (resolution == 128) se_scale -= 3;
 		Voxelizer voxelizer(resolution, se_scale);
 		VOXEL_GRID voxel_result = voxelizer.GenerateVoxelGrid(filename);
 		
