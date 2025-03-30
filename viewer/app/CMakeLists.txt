@@ -14,7 +14,7 @@ find_package(OpenGL REQUIRED)
 find_package(glew REQUIRED)
 find_package(glfw3 REQUIRED)
 
-#set(CMAKE_PREFIX_PATH "/opt/homebrew/opt/cgal")
+
 find_package(CGAL REQUIRED)
 
 
@@ -24,12 +24,15 @@ include_directories("${CMAKE_SOURCE_DIR}/viewer/external/ImGUI/Bindings/include"
 
 # On Apple we have MoltenVK, but we want to also be able to include the auto-generated header file
 # vk_enum_string_helper.h to access result-to-string conversion for Vulkan result types.
-IF (APPLE)
-    include_directories("/Users/liujiaqi/VulkanSDK/1.3.296.0/macOS/include") 
+IF (APPLE) 
+     if (DEFINED ENV{VULKAN_SDK})
+        include_directories("$ENV{VULKAN_SDK}/include")
+    else()
+        message(FATAL_ERROR "VULKAN_SDK environment variable not set. Please source the Vulkan SDK setup script.")
+    endif()
 endif ()
 
-#OpenMP
-#include_directories(/opt/homebrew/opt/libomp/include)
+
 
 # Set the startup project for the "play" button in MSVC.
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT ${PROJECT_NAME})
