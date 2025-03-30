@@ -172,17 +172,6 @@ void ProjectSettingsPanel::Layout()
 	    //generate the cage
 	  if(autoGenerate){
         
-            //    ImGui::TableNextRow();
-            // {
-            //     ImGui::TableSetColumnIndex(0);
-
-            //     ImGui::PushFont(UIStyle::BoldFont);
-            //     ImGui::SetWindowFontScale(1.05f);
-            //     ImGui::TextEx("Auto Cage Parameters");
-            //     ImGui::SetWindowFontScale(1.0f);
-            //     ImGui::PopFont();
-            // }
-
               ImGui::TableNextRow();
             {
                 ImGui::TableSetColumnIndex(0);

@@ -55,7 +55,7 @@ namespace PMP = CGAL::Polygon_mesh_processing;
 class Voxelizer: public Utils {
 
 public:
-	Voxelizer(int resolution, float se_size) : _resolution(resolution), _seSize(se_size) {
+	Voxelizer(int resolution, float seScale) : _resolution(resolution), _seScale(seScale) {
 		_window = initOpenGL();
 	}
 	~Voxelizer() {};
@@ -74,10 +74,10 @@ private:
 	GLuint _voxFboTex;
 	GLuint _voxTex;
 
-	int _resolution = 32;
-	float _seSize = _resolution / 16;
-	float _cellSize = 0.f;
-
+	int _resolution;
+	float _seScale;
+	float _cellSize;
+	std::array<int, 3> _dataResolution;
 
 	std::vector<float> _vertices;
 	std::vector<float> _normals;
@@ -187,8 +187,8 @@ private:
 			return nullptr;
 		}
 
-		std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-		std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
+		//std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
+		//std::cout << "GLSL Version: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << std::endl;
 
 		return window;
 	}
@@ -302,7 +302,6 @@ private:
 		glUniform1i(glGetUniformLocation(program, "vox_grid"), 0);
 
 		// 3) Single Pass  Voxelization
-
 		if (glewIsSupported("GL_NV_conservative_raster")) {
 			if (is_surface) {
 				glEnable(GL_CONSERVATIVE_RASTERIZATION_NV);
@@ -380,7 +379,9 @@ private:
 	void ConvertBucketToUnpackedGrid(const std::vector<unsigned int>& buck_vox_grid,
 		int res, int num_bit_vox,
 		VOXEL_GRID& unpack_vox_grid) {
-		// Unpacked grid의 크기는 2x2x2 범위로 하나의 voxel이 정의된 크기만큼 나눔
+		
+		// Shader voxelizer generates voxel grid of size (resolution * 2)^3.
+		// Therefore, here we are pooling the maximum of 2x2x2 blocks.
 		int unpack_res_x = res / 2, unpack_res_y = res / 2, unpack_res_z = res / 2;
 		unpack_vox_grid.resize(unpack_res_x * unpack_res_y * unpack_res_z, false);
 
@@ -394,6 +395,7 @@ private:
 
 					if (value != 0) {
 
+						// iterate through 32 voxels compressed along x-axis
 						for (int s = 0; s < 32; s++) {
 							if ((value & (0x00000001)) == 0x00000001) {
 
@@ -653,10 +655,15 @@ public:
 	
 	VOXEL_GRID GenerateVoxelGrid(std::string filename)
 	{
-		if (!_window)
+		if (!_window) {
 			_voxelGrid = VoxelizeCGAL(filename);
-		else
+			std::cout << "OpenGL 4.5 Not Supported. Executing CGAL Voxelization.\n";
+		}
+		else {
 			_voxelGrid = VoxelizeShader(filename);
+			std::cout << "OpenGL 4.5 Supported. Executing OpenGL Shader Voxelization.\n";
+		}
+			
 
 		return _voxelGrid;
 	}

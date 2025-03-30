@@ -44,80 +44,22 @@ typedef std::vector<VOXEL_GRID>	MIPMAP_TYPE;
 
 namespace PMP = CGAL::Polygon_mesh_processing;
 
-//struct Utils {
-//
-//	std::array<ExactPoint, 8> calc_voxel_points(unsigned int idx, std::array<unsigned int, 3> numVoxels, ExactPoint min_point,
-//		const std::array<ExactVector, 3>& voxel_strides, bool* new_scanline = nullptr)
-//	{
-//		unsigned int x_idx, y_idx, z_idx;
-//
-//		convert_voxel_idx_to_coords(idx, numVoxels[0], x_idx, y_idx, z_idx);
-//
-//		if (new_scanline)
-//		{
-//			*new_scanline = z_idx == 0;
-//		}
-//
-//		return {
-//			min_point + x_idx * voxel_strides[0] + y_idx * voxel_strides[1] + z_idx * voxel_strides[2],
-//			min_point + (x_idx + 1u) * voxel_strides[0] + y_idx * voxel_strides[1] + z_idx * voxel_strides[2],
-//			min_point + x_idx * voxel_strides[0] + (y_idx + 1u) * voxel_strides[1] + z_idx * voxel_strides[2],
-//			min_point + (x_idx + 1u) * voxel_strides[0] + (y_idx + 1u) * voxel_strides[1] + z_idx * voxel_strides[2],
-//			min_point + x_idx * voxel_strides[0] + y_idx * voxel_strides[1] + (z_idx + 1u) * voxel_strides[2],
-//			min_point + (x_idx + 1u) * voxel_strides[0] + y_idx * voxel_strides[1] + (z_idx + 1u) * voxel_strides[2],
-//			min_point + x_idx * voxel_strides[0] + (y_idx + 1u) * voxel_strides[1] + (z_idx + 1u) * voxel_strides[2],
-//			min_point + (x_idx + 1u) * voxel_strides[0] + (y_idx + 1u) * voxel_strides[1] + (z_idx + 1u) * voxel_strides[2]
-//		};
-//	}
-//
-//
-//	void convert_voxel_idx_to_coords(unsigned int idx, unsigned int numVoxels, unsigned int& x_idx, unsigned int& y_idx, unsigned int& z_idx)
-//	{
-//		x_idx = idx / (numVoxels * numVoxels);
-//		auto const w = idx % (numVoxels * numVoxels);
-//		y_idx = w / numVoxels;
-//		z_idx = w % numVoxels;
-//	}
-//
-//	void calc_voxel_from_idx_tets(unsigned int idx, std::array<unsigned int, 3> numVoxels, ExactPoint min_point,
-//		const std::array<ExactVector, 3>& voxel_strides, Exact_Polyhedron& voxel, bool* new_scanline)
-//	{
-//		auto const p = calc_voxel_points(idx, numVoxels, min_point, voxel_strides, new_scanline);
-//
-//		voxel.make_tetrahedron(p[0], p[3], p[5], p[1]);
-//		voxel.make_tetrahedron(p[0], p[3], p[2], p[6]);
-//		voxel.make_tetrahedron(p[0], p[4], p[5], p[6]);
-//		voxel.make_tetrahedron(p[5], p[6], p[7], p[3]);
-//		assert(voxel.is_valid());
-//	}
-//
-//	unsigned int coords_to_voxel_idx(unsigned int x_idx, unsigned int y_idx, unsigned int z_idx, std::array<unsigned int, 3> numVoxels)
-//	{
-//		return z_idx + y_idx * numVoxels[2] + x_idx * numVoxels[2] * numVoxels[1];
-//	}
-//
-//	unsigned int coords_to_voxel_idx(unsigned int x_idx, unsigned int y_idx, unsigned int z_idx, int numVoxels)
-//	{
-//		return z_idx + y_idx * numVoxels + x_idx * numVoxels * numVoxels;
-//	}
-//
-//};
 
 class ClosingOperator: public Utils {
 
 public:
-	ClosingOperator(int resolution, float se_size, float cell_size, std::array<float, 3> bbox_min, VOXEL_GRID& voxel_grid) :
+	ClosingOperator(int resolution, float seScale, float cellSize, std::array<float, 3> bboxMin, VOXEL_GRID& voxelGrid) :
 		_resolution(resolution),
-		_seSize(se_size),
-		_cellSize(cell_size),
-		_bboxMin(bbox_min),
-		_voxelGrid(voxel_grid)
+		_seScale(seScale),
+		_cellSize(cellSize),
+		_bboxMin(bboxMin),
+		_voxelGrid(voxelGrid)
 	{
 		GenerateMipmap(_voxelGrid, _mipmapPyramid);
 	}
 
 private:
-	float _seSize;
+	float _seScale;
 	float _cellSize;
 	int _resolution;
 	std::array<float, 3> _bboxMin;
@@ -290,7 +232,7 @@ private:
 
 		float erode_scale = 0.4;
 		float base_radius = _cellSize;
-		float radius = base_radius * _seSize * erode_scale;
+		float radius = base_radius * _seScale * erode_scale;
 
 		CGAL::Bbox_3 cell_bbox = calc_voxel_bbox(cell.pos, resol, cell_size);
 		CGAL::Bbox_3 cell_bbox_pad(
@@ -395,7 +337,7 @@ public:
 			if (dGrid[flat_idx]) continue;
 			SE se;
 			Node current_point = { 0, flat_idx };
-			define_se(current_point, _seSize * _cellSize, se, false);
+			define_se(current_point, _seScale * _cellSize, se, false);
 
 			node_stack.push({ mipmap_depth - 1, 0 }); // push coarsest 1x1x1 mipmap
 			while (!node_stack.empty() && dGrid[flat_idx] == false) {

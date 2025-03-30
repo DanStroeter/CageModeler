@@ -90,11 +90,6 @@ struct Utils {
 		assert(voxel.is_valid());
 	}
 
-	unsigned int coords_to_voxel_idx(unsigned int x_idx, unsigned int y_idx, unsigned int z_idx, std::array<unsigned int, 3> numVoxels)
-	{
-		return z_idx + y_idx * numVoxels[2] + x_idx * numVoxels[2] * numVoxels[1];
-	}
-
 	unsigned int coords_to_voxel_idx(unsigned int x_idx, unsigned int y_idx, unsigned int z_idx, int numVoxels)
 	{
 		return z_idx + y_idx * numVoxels + x_idx * numVoxels * numVoxels;
