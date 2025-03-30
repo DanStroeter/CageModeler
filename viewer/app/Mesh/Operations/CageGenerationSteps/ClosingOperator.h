@@ -323,14 +323,12 @@ public:
 		VOXEL_GRID dGrid = _mipmapPyramid[0];
 
 		int mipmap_depth = _mipmapPyramid.size();
-
-		std::array<unsigned int, 3> num_voxels = { _resolution, _resolution, _resolution };
-		//#pragma omp parallel for collapse(3) schedule(dynamic)
 		int numVoxels = _resolution * _resolution * _resolution;
+
 #pragma omp parallel for schedule(dynamic)
 		for (int flat_idx = 0; flat_idx < numVoxels; flat_idx++) {
 			std::stack<Node> node_stack;
-			//unsigned int flat_idx = coords_to_voxel_idx(x, y, z, _resolution);
+
 			unsigned int x, y, z;
 			convert_voxel_idx_to_coords(flat_idx, _resolution, x, y, z);
 
@@ -368,21 +366,23 @@ public:
 	MIPMAP_TYPE ExtractContour() {
 
 		VOXEL_GRID contour(_dGrid.size(), false);
+		int numVoxels = _resolution * _resolution * _resolution;
 
-		for (int x = 0; x < _resolution; x++) {
-			for (int y = 0; y < _resolution; y++) {
-				for (int z = 0; z < _resolution; z++) {
-					unsigned int center_idx = coords_to_voxel_idx(x, y, z, _resolution);
-					bool center_val = _dGrid[center_idx];
-					bool result =
-						check_neighbor(_dGrid, 'z', x, y, z) ||
-						check_neighbor(_dGrid, 'y', x, y, z) ||
-						check_neighbor(_dGrid, 'x', x, y, z);
+#pragma omp parallel for schedule(dynamic)
+		for (int center_idx = 0; center_idx < numVoxels; center_idx++) {
 
-					contour[center_idx] = !center_val && result;
-				}
-			}
+			unsigned int x, y, z;
+			convert_voxel_idx_to_coords(center_idx, _resolution, x, y, z);
+			bool center_val = _dGrid[center_idx];
+			bool result =
+				check_neighbor(_dGrid, 'z', x, y, z) ||
+				check_neighbor(_dGrid, 'y', x, y, z) ||
+				check_neighbor(_dGrid, 'x', x, y, z);
+
+			contour[center_idx] = !center_val && result;
 		}
+
+
 		_cGrid = contour;
 		GenerateMipmap(_cGrid, _contourPyramid);
 		return _contourPyramid;
@@ -393,33 +393,31 @@ public:
 		_eGrid.resize(_dGrid.size());
 		_eGrid.assign(_dGrid.begin(), _dGrid.end());
 		int mipmap_depth = _contourPyramid.size();
+		int numVoxels = _resolution * _resolution * _resolution;
 
-#pragma omp parallel for collapse(3) schedule(dynamic)
-		for (int x = 0; x < _resolution; x++) {
-			for (int y = 0; y < _resolution; y++) {
-				for (int z = 0; z < _resolution; z++) {
-					int flat_idx = coords_to_voxel_idx(x, y, z, _resolution);
-					if (_eGrid[flat_idx] == false || _voxelGrid[flat_idx] == true) continue;
-					CGAL::Bbox_3 p_bbox = calc_voxel_bbox(flat_idx, _resolution, _cellSize);
-					std::stack<Node> node_stack;
-					node_stack.push({ mipmap_depth - 1, 0 });
-					while (!node_stack.empty() && _eGrid[flat_idx] == true) {
-						auto top_node = node_stack.top();
-						node_stack.pop();
+#pragma omp parallel for schedule(dynamic)
+		for (int flat_idx = 0; flat_idx < numVoxels; flat_idx++) {
+			unsigned int x, y, z;
+			convert_voxel_idx_to_coords(flat_idx, _resolution, x, y, z);
+			if (_eGrid[flat_idx] == false || _voxelGrid[flat_idx] == true) continue;
+			CGAL::Bbox_3 p_bbox = calc_voxel_bbox(flat_idx, _resolution, _cellSize);
+			std::stack<Node> node_stack;
+			node_stack.push({ mipmap_depth - 1, 0 });
+			while (!node_stack.empty() && _eGrid[flat_idx] == true) {
+				auto top_node = node_stack.top();
+				node_stack.pop();
 
-						if (top_node.level == 0) {
-							_eGrid[flat_idx] = false;
-							break;
-						}
-						else {
-							std::vector<Node> subcells = find_subcells(top_node, _contourPyramid);
-							for (auto& subcell : subcells) {
-								bool subcell_val = _contourPyramid[subcell.level][subcell.pos];
-								bool overlap = does_overlap_erode(subcell, p_bbox);
-								if (subcell_val && overlap) {
-									node_stack.push(subcell);
-								}
-							}
+				if (top_node.level == 0) {
+					_eGrid[flat_idx] = false;
+					break;
+				}
+				else {
+					std::vector<Node> subcells = find_subcells(top_node, _contourPyramid);
+					for (auto& subcell : subcells) {
+						bool subcell_val = _contourPyramid[subcell.level][subcell.pos];
+						bool overlap = does_overlap_erode(subcell, p_bbox);
+						if (subcell_val && overlap) {
+							node_stack.push(subcell);
 						}
 					}
 				}

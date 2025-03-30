@@ -62,3 +62,14 @@ mkdir build
 cd build
 cmake .. --preset=<Your Preset Name>
 ```
+
+## License and Modifications
+
+This project includes code that is licensed under the **GNU General Public License v3.0 (GPLv3)**.
+
+- **Original code**: "Bounding Proxies for Shape Approximation" by Stephane Calderon and Tamy Boubekeur, ACM SIGGRAPH 2017.
+- **Modifications**:
+  - Changed type of 'val_vox' from 'unsigned int' to 'uint' in `vol_vox_bit.frag` and `surf_vox_conserv_bit.frag`  (made by Jinjoo Ha on 31.03.2025).
+
+For more information, please see the full text of the [GPLv3 License](https://www.gnu.org/licenses/gpl-3.0.txt).
+
