@@ -132,14 +132,6 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer)
 		[this] { OnNewProjectCancelled(); },
 		[this] { OnNewProjectCreated(); });
 
-	/*
-		_projectModel->_deformationType = DeformationType::Green;
-		_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
-		_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
-		_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated_embedding.msh";
-		_projectModel->_deformedCageFilepath = "assets/meshes/bishop_cages_triangulated_deformed.obj";
-
-	*/
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 
@@ -455,7 +447,6 @@ void Editor::SetUpUIElements()
 	_projectOptionsPanel = std::make_shared<ProjectOptionsPanel>(_projectModel,
 		_meshOperationSystem,
 		[this](const bool shouldCompute) { OnComputeInfluenceColorMap(shouldCompute); },
-		//[this] { OnNewProjectCreated(); });
 		[this] { OnProjectOptionUpdated(); });
 	_toolBar = std::make_shared<ToolBar>(_inputSubsystem, _meshOperationSystem, _toolSystem);
 }
