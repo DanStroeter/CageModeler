@@ -26,21 +26,21 @@ typedef CGAL::Surface_mesh<ExactPoint>								ExactMesh;
 typedef std::vector<bool> VOXEL_GRID;
 typedef std::vector<VOXEL_GRID>	MIPMAP_TYPE;
 
-//// save diagnostic state
-//#pragma GCC diagnostic push 
-//
-//// turn off the specific warning. Can also use "-Wall"
-//#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
-//#pragma GCC diagnostic ignored "-Wreturn-type"
-//#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-//#pragma GCC diagnostic ignored "-Wmissing-template-arg-list-after-template-kw"
+// save diagnostic state
+#pragma GCC diagnostic push 
+
+// turn off the specific warning. Can also use "-Wall"
+#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
+#pragma GCC diagnostic ignored "-Wreturn-type"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#pragma GCC diagnostic ignored "-Wmissing-template-arg-list-after-template-kw"
 
 
 float cell_size;
 std::array<float, 3> bbox_min;
 
 void GenerateCageFromMeshOperation::Execute() {
-	
+
 
 	std::string filename = _params._meshfilepath.string();
 	std::string outputfilename = _params._cagefilepath.string();
@@ -64,13 +64,11 @@ void GenerateCageFromMeshOperation::Execute() {
 	std::cout << "Generating Cage for " << obj << ", resol: " << resolution << std::endl;
 	int cage_start = clock();
 	if (e_grid.size() != std::pow(resolution, 3))
-	{	
+	{
 		float se_scale = resolution / 16.f;
-		if (resolution == 64) se_scale -= 1;
-		else if (resolution == 128) se_scale -= 3;
 		Voxelizer voxelizer(resolution, se_scale);
 		VOXEL_GRID voxel_result = voxelizer.GenerateVoxelGrid(filename);
-		
+
 		cell_size = voxelizer.GetCellSize();
 		bbox_min = voxelizer.GetBboxMin();
 
@@ -90,7 +88,7 @@ void GenerateCageFromMeshOperation::Execute() {
 	MyMesh final_mesh;
 	tri::io::ImporterOFF<MyMesh>::Open(final_mesh, intermediate_path.c_str());
 	remesher.Decimate(final_mesh, _params._smoothIterations, _params._targetNumFaces);
-	
+
 	if (!isTriQuad) {
 		std::cout << "\nSaving to " << outputfilename << std::endl;
 		tri::io::ExporterOBJ<MyMesh>::Save(final_mesh, outputfilename.c_str(), tri::io::Mask::IOM_BITPOLYGONAL);
@@ -105,7 +103,7 @@ void GenerateCageFromMeshOperation::Execute() {
 		{
 			std::cerr << "Invalid input file.\n";
 			return;
-		} 
+		}
 
 		remesher.ConvertToTriQuadMesh(input_mesh);
 		std::ofstream out(outputfilename);

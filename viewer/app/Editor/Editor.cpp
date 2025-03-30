@@ -41,14 +41,14 @@ namespace
 	{
 		switch (axis)
 		{
-			case GizmoAxis::X:
-				return TransformationAxis::X;
-			case GizmoAxis::Y:
-				return TransformationAxis::Y;
-			case GizmoAxis::Z:
-				return TransformationAxis::Z;
-			default:
-				break;
+		case GizmoAxis::X:
+			return TransformationAxis::X;
+		case GizmoAxis::Y:
+			return TransformationAxis::Y;
+		case GizmoAxis::Z:
+			return TransformationAxis::Z;
+		default:
+			break;
 		}
 
 		CheckNoEntry("Invalid axis.");
@@ -60,14 +60,14 @@ namespace
 	{
 		switch (type)
 		{
-			case GizmoType::Translate:
-				return TransformationType::Translate;
-			case GizmoType::Rotate:
-				return TransformationType::Rotate;
-			case GizmoType::Scale:
-				return TransformationType::Scale;
-			default:
-				break;
+		case GizmoType::Translate:
+			return TransformationType::Translate;
+		case GizmoType::Rotate:
+			return TransformationType::Rotate;
+		case GizmoType::Scale:
+			return TransformationType::Scale;
+		default:
+			break;
 		}
 
 		CheckNoEntry("Invalid type.");
@@ -91,12 +91,12 @@ Editor::Editor(const SubsystemPtr<InputSubsystem>& inputSubsystem,
 	, _isSelectingRect(false)
 	, _hasDragged(false)
 {
-	inputSubsystem->RegisterInputActionMapping(InputActionMapping { "EditorClick", SDL_KMOD_NONE, SDL_BUTTON_LEFT, { }});
-	inputSubsystem->RegisterInputActionEntry(InputActionEntry { "EditorClick",
-		[this]<typename ParamsType>(ParamsType&& actionParams)
+	inputSubsystem->RegisterInputActionMapping(InputActionMapping{ "EditorClick", SDL_KMOD_NONE, SDL_BUTTON_LEFT, { } });
+	inputSubsystem->RegisterInputActionEntry(InputActionEntry{ "EditorClick",
+		[this]<typename ParamsType>(ParamsType && actionParams)
 		{
 			OnClicked(std::forward<ParamsType>(actionParams));
-		}});
+		} });
 }
 
 void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer)
@@ -114,7 +114,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer)
 	_mainThreadQueue = std::make_unique<ThreadSafeQueue<FunctionWrapper>>();
 
 	_toolSystem = std::make_shared<ToolSystem>();
-	_toolSystem->SetSelectionChangedDelegate([this]<typename T>(T&& toolType) {
+	_toolSystem->SetSelectionChangedDelegate([this]<typename T>(T && toolType) {
 		OnToolSelectionChanged(std::forward<T>(toolType));
 	});
 
@@ -132,14 +132,14 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer)
 		[this] { OnNewProjectCancelled(); },
 		[this] { OnNewProjectCreated(); });
 
-/*
-	_projectModel->_deformationType = DeformationType::Green;
-	_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
-	_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
-	_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated_embedding.msh";
-	_projectModel->_deformedCageFilepath = "assets/meshes/bishop_cages_triangulated_deformed.obj";
-	
-*/
+	/*
+		_projectModel->_deformationType = DeformationType::Green;
+		_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
+		_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
+		_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated_embedding.msh";
+		_projectModel->_deformedCageFilepath = "assets/meshes/bishop_cages_triangulated_deformed.obj";
+
+	*/
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 
@@ -524,7 +524,7 @@ void Editor::OnNewProjectCreated()
 				std::move(weightsResult.GetValue()._psiTri),
 				std::move(weightsResult.GetValue()._psiQuad));
 
-			
+
 
 			_isComputingDeformationData.store(true, std::memory_order_seq_cst);
 
@@ -630,7 +630,7 @@ void Editor::OnNewProjectCreated()
 void Editor::OnProjectOptionUpdated()
 {
 
-	if(!_projectModel->_closingResult.empty()){
+	if (!_projectModel->_closingResult.empty()) {
 
 		_meshOperationSystem->ExecuteOperation<GenerateCageFromMeshOperation>(
 			_projectModel->_meshFilepath.value().string(),
@@ -764,8 +764,8 @@ void Editor::OnMouseClickPressed(const InputActionParams& actionParams)
 
 void Editor::OnMouseMoved(const InputActionParams& actionParams)
 {
-	const auto &camera = _cameraSubsystem->GetCamera();
-	const auto &viewInfo = camera.GetViewInfo();
+	const auto& camera = _cameraSubsystem->GetCamera();
+	const auto& viewInfo = camera.GetViewInfo();
 	const auto prevMousePosition = _inputSubsystem->GetPreviousMousePosition();
 	const auto mousePosition = _inputSubsystem->GetMousePosition();
 
@@ -854,43 +854,43 @@ void Editor::OnMouseClickReleased(const InputActionParams& actionParams)
 			modelVerticesOffset = _projectData->_modelVerticesOffset,
 			numSamples = _projectData->_numSamples,
 			interpolateWeights = _projectData->CanInterpolateWeights()]() mutable
-		{
-			_isComputingDeformationData.store(true, std::memory_order_seq_cst);
-
-			auto deformedMeshResult = ComputeDeformedMesh(std::move(mesh),
-				std::move(cage),
-				std::move(deformedMesh),
-				deformationType,
-				weightingScheme,
-				somiglianaDeformer,
-				modelVerticesOffset,
-				numSamples,
-				interpolateWeights);
-
-			_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
-
-			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
-
-			// Copy the matrix to transpose in-place, so we can iterate over it in the correct memory data layout.
-			_mainThreadQueue->Push([this]() mutable
 			{
-				// Update the positions of the mesh.
-				UpdateDeformedMeshPositionsFromDeformationData();
+				_isComputingDeformationData.store(true, std::memory_order_seq_cst);
 
-				// We only recompute the vertex colors if they were previously on.
-				if (_projectModel->_renderInfluenceMap)
-				{
-					UpdateMeshVertexColors(_projectModel->_renderInfluenceMap);
-				}
+				auto deformedMeshResult = ComputeDeformedMesh(std::move(mesh),
+					std::move(cage),
+					std::move(deformedMesh),
+					deformationType,
+					weightingScheme,
+					somiglianaDeformer,
+					modelVerticesOffset,
+					numSamples,
+					interpolateWeights);
 
-				// Rebuild the entire BVH.
-				{
-					auto bvhBuilder = _scene->BeginGeometryBVH();
-					bvhBuilder.AddGeometry(_deformedMeshHandle);
-					bvhBuilder.AddGeometry(_deformedCageHandle);
-				}
+				_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
+
+				_isComputingDeformationData.store(false, std::memory_order_seq_cst);
+
+				// Copy the matrix to transpose in-place, so we can iterate over it in the correct memory data layout.
+				_mainThreadQueue->Push([this]() mutable
+					{
+						// Update the positions of the mesh.
+						UpdateDeformedMeshPositionsFromDeformationData();
+
+						// We only recompute the vertex colors if they were previously on.
+						if (_projectModel->_renderInfluenceMap)
+						{
+							UpdateMeshVertexColors(_projectModel->_renderInfluenceMap);
+						}
+
+						// Rebuild the entire BVH.
+						{
+							auto bvhBuilder = _scene->BeginGeometryBVH();
+							bvhBuilder.AddGeometry(_deformedMeshHandle);
+							bvhBuilder.AddGeometry(_deformedCageHandle);
+						}
+					});
 			});
-		});
 	}
 
 	OnClickedSelection(actionParams);
@@ -1087,36 +1087,36 @@ void Editor::OnSequencerNumFramesChanged(const uint32_t currentFrameIndex, const
 		numSamples = _projectData->_numSamples,
 		interpolateWeights = _projectData->CanInterpolateWeights(),
 		currentFrameIndex]() mutable
-	{
-		_isComputingDeformationData.store(true, std::memory_order_seq_cst);
-
-		auto deformedMeshResult = ComputeDeformedMesh(std::move(mesh),
-			std::move(cage),
-			std::move(deformedMesh),
-			deformationType,
-			weightingScheme,
-			somiglianaDeformer,
-			modelVerticesOffset,
-			numSamples,
-			interpolateWeights);
-
-		_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
-
-		_isComputingDeformationData.store(false, std::memory_order_seq_cst);
-
-		// Copy the matrix to transpose in-place, so we can iterate over it in the correct memory data layout.
-		_mainThreadQueue->Push([this, currentFrameIndex]() mutable
 		{
-			// Update the positions of the mesh.
-			UpdateDeformedMeshPositionsFromDeformationData(currentFrameIndex);
+			_isComputingDeformationData.store(true, std::memory_order_seq_cst);
 
-			// We only recompute the vertex colors if they were previously on.
-			if (_projectModel->_renderInfluenceMap)
-			{
-				UpdateMeshVertexColors(_projectModel->_renderInfluenceMap);
-			}
+			auto deformedMeshResult = ComputeDeformedMesh(std::move(mesh),
+				std::move(cage),
+				std::move(deformedMesh),
+				deformationType,
+				weightingScheme,
+				somiglianaDeformer,
+				modelVerticesOffset,
+				numSamples,
+				interpolateWeights);
+
+			_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
+
+			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
+
+			// Copy the matrix to transpose in-place, so we can iterate over it in the correct memory data layout.
+			_mainThreadQueue->Push([this, currentFrameIndex]() mutable
+				{
+					// Update the positions of the mesh.
+					UpdateDeformedMeshPositionsFromDeformationData(currentFrameIndex);
+
+					// We only recompute the vertex colors if they were previously on.
+					if (_projectModel->_renderInfluenceMap)
+					{
+						UpdateMeshVertexColors(_projectModel->_renderInfluenceMap);
+					}
+				});
 		});
-	});
 }
 
 void Editor::OnSequencerStartedDragging()
@@ -1249,7 +1249,7 @@ MeshOperationResult<std::shared_ptr<ProjectData>> Editor::CreateProject() const
 		_projectModel->_noOffset,
 		_projectModel->_somigNu,
 		_projectModel->_somiglianaDeformer
-		);
+	);
 }
 
 MeshOperationResult<MeshComputeWeightsOperationResult> Editor::ComputeCageWeights(const ProjectData& projectData) const
@@ -1302,25 +1302,25 @@ void Editor::ResetGizmoPositionFromSelection(const ViewInfo& viewInfo) const
 	const auto cageMesh = _scene->GetMesh(_deformedCageHandle);
 
 	const auto updateGizmoVisibility = [this](const auto& selection)
-	{
-		if (selection.HasSelection())
 		{
-			const auto activeGizmoType = _toolBar->GetActiveGizmoType();
-
-			for (std::size_t i = 0; i < static_cast<std::size_t>(GizmoType::MaxNum); ++i)
+			if (selection.HasSelection())
 			{
-				const auto gizmoType = static_cast<GizmoType>(i);
-				const auto isVisible = (gizmoType == activeGizmoType);
+				const auto activeGizmoType = _toolBar->GetActiveGizmoType();
 
-				_gizmo->SetVisible(gizmoType, isVisible);
+				for (std::size_t i = 0; i < static_cast<std::size_t>(GizmoType::MaxNum); ++i)
+				{
+					const auto gizmoType = static_cast<GizmoType>(i);
+					const auto isVisible = (gizmoType == activeGizmoType);
+
+					_gizmo->SetVisible(gizmoType, isVisible);
+				}
 			}
-		}
-		else
-		{
-			// Hide the gizmo if we have no selection.
-			_gizmo->SetVisible(false);
-		}
-	};
+			else
+			{
+				// Hide the gizmo if we have no selection.
+				_gizmo->SetVisible(false);
+			}
+		};
 
 	glm::vec3 averageSelPosition(0.0f);
 

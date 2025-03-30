@@ -9,8 +9,8 @@ namespace
 
 ProjectOptionsPanel::ProjectOptionsPanel(const std::shared_ptr<ProjectModelData>& model,
 	const std::shared_ptr<MeshOperationSystem>& meshOperationSystem,
-	std::function<void (const bool)> influenceMapToggled,
-	std::function<void ()> projectSettingsApplied)
+	std::function<void(const bool)> influenceMapToggled,
+	std::function<void()> projectSettingsApplied)
 	: _meshOperationSystem(meshOperationSystem)
 	, _influenceMapToggled(std::move(influenceMapToggled))
 	, _projectSettingsApplied(std::move(projectSettingsApplied))
@@ -60,7 +60,7 @@ void ProjectOptionsPanel::Layout()
 				ImGui::TableSetColumnIndex(1);
 
 				UIHelpers::SetRightAligned(125.0f);
-				
+
 				if (ImGui::BeginCombo("##Deformation", ProjecSettingsHelpers::DeformationMethodNames[_selectedDeformationTypeIndex], ImGuiComboFlags_HeightRegular))
 				{
 					for (auto i = 0; i < ProjecSettingsHelpers::DeformationMethodNames.size(); i++)
@@ -99,8 +99,8 @@ void ProjectOptionsPanel::Layout()
 					UIHelpers::SetRightAligned(125.0f);
 
 					if (ImGui::BeginCombo("##Project_WeightingScheme",
-							ProjecSettingsHelpers::LBCWeightingSchemeNames[_selectedWeightingSchemeIndex],
-							ImGuiComboFlags_HeightRegular))
+						ProjecSettingsHelpers::LBCWeightingSchemeNames[_selectedWeightingSchemeIndex],
+						ImGuiComboFlags_HeightRegular))
 					{
 						for (auto i = 0; i < ProjecSettingsHelpers::LBCWeightingSchemeNames.size(); i++)
 						{
@@ -385,7 +385,7 @@ void ProjectOptionsPanel::Layout()
 
 		ImGui::Dummy(ImVec2(0.0f, 15.0f));
 
-		MeshElementsText meshElements { };
+		MeshElementsText meshElements{ };
 
 		if (_model._deformableMesh != nullptr)
 		{
@@ -399,7 +399,7 @@ void ProjectOptionsPanel::Layout()
 			meshElements = GetMeshElementsText("Mesh: ", 0, 0, 0);
 		}
 
-		MeshElementsText cageElements { };
+		MeshElementsText cageElements{ };
 
 		if (_model._cageMesh != nullptr)
 		{
@@ -446,7 +446,7 @@ ProjectOptionsPanel::MeshElementsText ProjectOptionsPanel::GetMeshElementsText(c
 	const std::size_t numEdges,
 	const std::size_t numFaces)
 {
-	return MeshElementsText { label,
+	return MeshElementsText{ label,
 		fmt::format("{} vertices", numVertices),
 		fmt::format("{} edges", numEdges),
 		fmt::format("{} faces", numFaces) };

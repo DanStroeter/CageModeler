@@ -45,7 +45,7 @@ typedef std::vector<VOXEL_GRID>	MIPMAP_TYPE;
 namespace PMP = CGAL::Polygon_mesh_processing;
 
 
-class ClosingOperator: public Utils {
+class ClosingOperator : public Utils {
 
 public:
 	ClosingOperator(int resolution, float seScale, float cellSize, std::array<float, 3> bboxMin, VOXEL_GRID& voxelGrid) :
@@ -293,7 +293,7 @@ private:
 		return result;
 	}
 	void GenerateMipmap(VOXEL_GRID& source, MIPMAP_TYPE& target) {
-		
+
 		target.clear();
 
 		target.push_back(source);
@@ -325,7 +325,7 @@ public:
 		int mipmap_depth = _mipmapPyramid.size();
 
 		std::array<unsigned int, 3> num_voxels = { _resolution, _resolution, _resolution };
-//#pragma omp parallel for collapse(3) schedule(dynamic)
+		//#pragma omp parallel for collapse(3) schedule(dynamic)
 		int numVoxels = _resolution * _resolution * _resolution;
 #pragma omp parallel for schedule(dynamic)
 		for (int flat_idx = 0; flat_idx < numVoxels; flat_idx++) {
