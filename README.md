@@ -15,6 +15,7 @@ Whenever the user deforms the cage, the model is adjusted to the cage:
 CageModeler utilizes CMake for project file generation, vcpkg for managing external dependencies, and CMake presets 
 to streamline configurations across major platforms - Windows, Linux, and macOS.
 Compiling the source requires [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) installed. 
+We developed the code with Vulkan SDK of version 1.3.290.
 For Linux, ensure the presence of the following packages:
 - `zip` (for vcpkg functionality)
 - `libomp-dev`
@@ -61,4 +62,19 @@ Generating project files is straightforward:
 mkdir build
 cd build
 cmake .. --preset=<Your Preset Name>
+```
+## Acknowledgement
+
+If you use CageModeler in your academic work, please cite our project paper using the following bibtex entry:
+
+```bibtex
+@article{CageModeler2025,
+  author    ={Ströter, Daniel and Bogdanov, Zhivko},
+  journal   ={IEEE Computer Graphics and Applications}, 
+  title     ={CageModeler: An Open-Source Project for Cage-Based Deformation}, 
+  year      ={2025},
+  volume    ={45},
+  number    ={4},
+  pages     ={126-133},
+  doi       ={10.1109/MCG.2025.3557926}}
 ```
