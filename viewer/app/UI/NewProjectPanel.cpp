@@ -439,3 +439,9 @@ void NewProjectPanel::Dismiss()
 		_isModalVisible = false;
 	}
 }
+
+std::shared_ptr<ProjectModelData> NewProjectPanel::GetModel() const 
+{ 
+	return _model; 
+}
+
