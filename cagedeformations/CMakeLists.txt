@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.31 FATAL_ERROR)
 
 set(LIBRARY_NAME cagedeformations)
 set(ALIAS_NAME CageDeformations)
