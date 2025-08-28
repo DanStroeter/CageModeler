@@ -481,24 +481,10 @@ void Editor::OnNewProjectCreated()
 	{
 		_isComputingWeightsData.store(true, std::memory_order_seq_cst);
 
+		// Update _projectModel if user creates a new project
 		if(_newProjectPanel != nullptr) {
 			auto _panelModel = _newProjectPanel->GetModel();
-			_projectModel->_deformationType = _panelModel->_deformationType;
-			_projectModel->_LBCWeightingScheme = _panelModel->_LBCWeightingScheme;
-			_projectModel->_meshFilepath = _panelModel->_meshFilepath;
-			_projectModel->_cageFilepath = _panelModel->_cageFilepath;
-			_projectModel->_deformedCageFilepath = _panelModel->_deformedCageFilepath;
-			_projectModel->_weightsFilepath = _panelModel->_weightsFilepath;
-			_projectModel->_embeddingFilepath = _panelModel->_embeddingFilepath;
-			_projectModel->_parametersFilepath = _panelModel->_parametersFilepath;
-			_projectModel->_numBBWSteps = _panelModel->_numBBWSteps;
-			_projectModel->_numSamples = _panelModel->_numSamples;
-			_projectModel->_scalingFactor = _panelModel->_scalingFactor;
-			_projectModel->_interpolateWeights = _panelModel->_interpolateWeights;
-			_projectModel->_findOffset = _panelModel->_findOffset;
-			_projectModel->_noOffset = _panelModel->_noOffset;
-			_projectModel->_somigNu = _panelModel->_somigNu;
-			_projectModel->_somiglianaDeformer = _panelModel->_somiglianaDeformer;
+			_projectModel = std::make_shared<ProjectModelData>(*_panelModel);
 		}
 			
 		auto projectResult = CreateProject();
@@ -1220,8 +1206,6 @@ void Editor::ExportWeights(std::filesystem::path filepath) const
 
 MeshOperationResult<std::shared_ptr<ProjectData>> Editor::CreateProject() const
 {
-	std::cout << _projectModel->_meshFilepath.value() << std::endl;
-
 	return _meshOperationSystem->ExecuteOperation<MeshLoadOperation>(
 		_projectModel->_deformationType,
 		_projectModel->_LBCWeightingScheme,
