@@ -481,6 +481,12 @@ void Editor::OnNewProjectCreated()
 	{
 		_isComputingWeightsData.store(true, std::memory_order_seq_cst);
 
+		// Update _projectModel if user creates a new project
+		if(_newProjectPanel != nullptr) {
+			auto _panelModel = _newProjectPanel->GetModel();
+			_projectModel = std::make_shared<ProjectModelData>(*_panelModel);
+		}
+			
 		auto projectResult = CreateProject();
 
 		if (projectResult.HasError())
@@ -500,7 +506,7 @@ void Editor::OnNewProjectCreated()
 		if (weightsResult.HasError())
 		{
 			// Update the status with an error.
-			_mainThreadQueue->Push([this, error = std::move(projectResult.GetError())]() mutable
+			_mainThreadQueue->Push([this, error = std::move(weightsResult.GetError())]() mutable
 			{
 				_statusBar->SetError(std::move(error));
 			});

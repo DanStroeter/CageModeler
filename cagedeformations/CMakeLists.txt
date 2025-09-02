@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.28 FATAL_ERROR)
 
 set(LIBRARY_NAME cagedeformations)
 set(ALIAS_NAME CageDeformations)
@@ -13,7 +13,7 @@ if (MSVC)
     set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
 
-set(${LIBRARY_NAME}_HEADERS
+set(${LIBRARY_NAME}_HEADERSdisc
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/globals.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/GreenCoordinates.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/MaximumLikelihoodCoordinates.h

@@ -23,6 +23,8 @@ public:
 
 	void Dismiss();
 
+	std::shared_ptr<ProjectModelData> GetModel() const;
+
 	[[nodiscard]] bool IsModalPanelVisible() const
 	{
 		return _isModalVisible;
