@@ -4,6 +4,9 @@ project(
     VERSION 1.0
     LANGUAGES CXX C)
 
+# Define the output path for ImGUI bindings (default: <build>/bin).
+set(MCD_BINARY_PATH "${CMAKE_BINARY_DIR}/bin" CACHE PATH "Binary output path for ImGUI bindings")
+
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 
 # ImGUI bindings to Vulkan and SDL2.
@@ -82,7 +85,7 @@ target_compile_definitions(
 
 # Move the ImGUI files to the binaries folder.
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/viewer/external/ImGUI/Bindings/include" "$ENV{MCD_BINARY_PATH}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/viewer/external/ImGUI/Bindings/include" "${MCD_BINARY_PATH}"
     COMMENT "Copying ImGUI files to build directory.")
 
 # There are issues on Apple platforms with exceptions and -fno-rtti, so keep it
