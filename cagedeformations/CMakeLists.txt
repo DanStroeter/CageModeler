@@ -40,7 +40,7 @@ set(${LIBRARY_NAME}_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/somig.cpp)
 
 # Add the source files to the library.
-add_library(${LIBRARY_NAME} ${${LIBRARY_NAME}_SOURCES} ${${LIBRARY_NAME}_HEADERS})
+add_library(${LIBRARY_NAME} ${${LIBRARY_NAME}_SOURCES} ${${LIBRARY_NAME}_HEADERS} "include/cagedeformations/PositiveMeanValueCoordinatesLipman.h" "src/PositiveMeanValueCoordinatesLipman.cpp")
 target_sources(${LIBRARY_NAME} PRIVATE ${${LIBRARY_NAME}_SOURCES})
 
 # Put the headers in a folder in the IDE.

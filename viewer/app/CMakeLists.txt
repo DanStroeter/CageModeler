@@ -72,7 +72,7 @@ add_executable(${PROJECT_NAME}
     Rendering/RenderSubsystem.cpp
     App.cpp
     main.cpp
-    ${IMGUI_BINDINGS})
+    ${IMGUI_BINDINGS} "Rendering/CubeMaps/CubeMapRenderer.h" "Rendering/CubeMaps/CubeMapRenderer.cpp")
 
 target_compile_definitions(
     ${PROJECT_NAME}
