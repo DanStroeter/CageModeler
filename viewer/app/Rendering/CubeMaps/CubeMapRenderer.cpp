@@ -49,7 +49,7 @@ CubeMapRenderer::CubeMapRenderer(const RenderResourceRef<Device>& device,
 	_objectsBufferData.Resize(TotalNumSceneObjects);
 }
 
-void CubeMapRenderer::Initialize()
+void CubeMapRenderer::Initialize() 
 {
 	// Creates all descriptor set layouts.
 	CreateDescriptorSetLayouts();

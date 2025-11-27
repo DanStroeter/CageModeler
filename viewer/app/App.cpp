@@ -3,6 +3,7 @@
 #include <Navigation/CameraSubsystem.h>
 #include <Rendering/RenderSubsystem.h>
 #include <UI/WindowSubsystem.h>
+#include <Rendering/CubeMaps/CubeMapRenderer.h>
 
 void App::Initialize()
 {
@@ -10,6 +11,7 @@ void App::Initialize()
 	REGISTER_SUBSYSTEM(_collection, WindowSubsystem)
 	REGISTER_SUBSYSTEM(_collection, CameraSubsystem)
 	REGISTER_SUBSYSTEM(_collection, RenderSubsystem)
+	REGISTER_SUBSYSTEM(_collection, CubeMapRenderer);
 
 	_collection.PostInitializeSubsystems();
 }
