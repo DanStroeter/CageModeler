@@ -25,70 +25,41 @@ class CubeMapRenderer: public Subsystem
 	DECLARE_SUBSYSTEM(CubeMapRenderer)
 public:
 	CubeMapRenderer() = delete;
-	CubeMapRenderer(const RenderResourceRef<Device>& device,
-		const RenderResourceRef<DescriptorPool>& descriptorPool,
-		const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
-		const std::shared_ptr<RenderProxyCollector>& renderProxyCollector,
-		const std::shared_ptr<RenderCommandScheduler>& renderCommandScheduler,
-		const std::shared_ptr<RenderResourceManager>& resourceManager,
-		const VkRenderPass& renderPass);
+	CubeMapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
+		const std::shared_ptr<RenderResourceManager>& resourceManager);
 
-	void Initialize(const SubsystemsCollection& collection) override
-	{
-		// Get the editor's RenderSubsystem
-		_renderSubsystem = GetDependencySubsystem<RenderSubsystem>(collection);
-
-		// Reuse Vulkan instance and device
-		//VkDevice device = _renderSubsystem->_device->GetDevice();
-		//VkInstance instance = _renderSubsystem->_instance->GetInstance();
-		//VkDescriptorPool descriptorPool = _renderSubsystem->_descriptorPool->GetPool();
-
-		// Now create your cubemap-specific resources
-		// e.g., pipeline layout
-		VkPipelineLayoutCreateInfo layoutInfo{};
-		layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		layoutInfo.setLayoutCount = 0; // if you use descriptors, set them here
-		layoutInfo.pushConstantRangeCount = 0;
-
-		if (vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_cubemapPipelineLayout) != VK_SUCCESS)
-		{
-			throw std::runtime_error("Failed to create cubemap pipeline layout!");
-		}
-
-		// Create compute or graphics pipeline using device, pipeline layout, etc.
-		// _cubemapPipeline = createCubemapPipeline(device, _cubemapPipelineLayout, ...);
-	}
-
+	void Initialize(const SubsystemsCollection& collection) override;
 	void Update(const double deltaTime) override {}
 	void Deinitialize() override;
-
-	// Compute coordinates for a given mesh/cage
-	//void ComputeCoordinates(const MeshData& mesh, const CageData& cage);
-
+	
 	[[nodiscard]] std::shared_ptr<PolygonMesh> AddCage(const Eigen::MatrixXd& vertices,
 		const Eigen::MatrixXi& indices);
-
 	[[nodiscard]] std::shared_ptr<PolygonMesh> AddMesh(const Eigen::MatrixXd& vertices,
 		const Eigen::MatrixXi& indices);
+	void RemoveMesh(const std::shared_ptr<PolygonMesh>& mesh);
 
-	void RenderCubeMap();
-
+	void ComputeCoordinates();//pass cage and mesh, return coordinates
 private:
 	SubsystemPtr<RenderSubsystem> _renderSubsystem;
-	// Vulkan pipeline, descriptor sets, buffers, etc.
 
 	void CreateScreenPasses();
 	void CreateDescriptorSetLayouts();
-	void CreateCubeMapRenderPipelines();
+	void CreateCubeMapRenderPipeline();
 	void CreateComputePipeline();
-	//void CreateBackgroundPipeline();
-	//void CreateStaticMeshPipeline();
-	//void CreateCagePipeline();
-	//void CreateWireframePipelines();
-	//void CreateGizmoPipeline();
-	//void CreateViewportGridPipeline();
 	void AllocateDescriptorSets();
 	void CreateUniformBuffers();
+	void CreateImageViews(uint32_t size, VkFormat format);
+	void CreateRenderPass(VkFormat format);
+	void CreateDescriptorSetLayout();
+	void CreateFramebuffer(uint32_t size);
+	void CreateCommandPool(uint32_t queueFamilyIndex);
+	void CreateCommandBuffer();
+	void CreateSyncObjects();
+	void CreateDescriptorPoolSets();
+	void CreateDescriptorPool();
+	void CreateUniformBuffer(VkDeviceSize bufferSize);
+	void CreateIndexBuffer(const std::vector<uint32_t>& indices);
+	void CreateVertexBuffer(const std::vector<Vertex>& vertices);
 
 	VkPipeline _cubemapPipeline = VK_NULL_HANDLE;
 	VkPipelineLayout _cubemapPipelineLayout = VK_NULL_HANDLE;
@@ -97,26 +68,20 @@ private:
 	VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
 
 	VkDescriptorSet _descriptorSet = VK_NULL_HANDLE;
-	SubsystemPtr<RenderSubsystem> _renderSubsystem;
 
 	RenderResourceRef<Device> _device;
 
-	/// The render command scheduler.
-	//std::shared_ptr<RenderOffScreenCommandScheduler> _renderOffScreenCommandScheduler = nullptr;
-	//just schedule the commands here in this class and keep it all together
-
-	/// The proxy collector where we register render proxies.
-	//std::shared_ptr<RenderProxyCollector> _renderProxyCollector = nullptr;
-	//maybe can get the vertex data from here
+	RenderResourceRef<VkImage> _cubemapImage;
+	RenderResourceRef<VkImageView> _faceImageViews[6];
 
 	/// The render pipeline manager to add the scene graphics pipelines.
-	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr;
+	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr; //reuse from scene
 
 	/// Pointer to the resource manager.
-	std::shared_ptr<RenderResourceManager> _resourceManager = nullptr;
+	std::shared_ptr<RenderResourceManager> _resourceManager = nullptr; //reuse from scene
 
 	/// The Vulkan descriptor pool resource.
-	RenderResourceRef<DescriptorPool> _descriptorPool;
+	RenderResourceRef<DescriptorPool> _descriptorPool; //make new one 
 
 	/// The render pass we use for rendering the entire scene. It is created by the render subsystem and passed to the editor.
 	VkRenderPass _renderPass = VK_NULL_HANDLE; //make new one
@@ -124,9 +89,5 @@ private:
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
 	std::vector<VkDescriptorSet> _matricesDescriptorSets;
 	std::vector<MemoryMappedBuffer> _matricesUniformBuffers;
-	//more buffers that i need sbbo usw?
-
-	RenderResourceRef<DescriptorSetLayout> _objectDataLayout;
-	std::vector<VkDescriptorSet> _objectDataDescriptorSets;
-	std::vector<MemoryMappedBuffer> _objectsDynamicUniformBuffers;
+	//more buffers that i need
 };

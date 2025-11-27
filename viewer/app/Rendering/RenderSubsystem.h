@@ -33,6 +33,9 @@ public:
 
 	void Render(const double deltaTime);
 
+	RenderResourceRef<Instance> getInstance() const { return _instance; }
+	RenderResourceRef<Device> getDevice() const { return _device; }
+
 private:
 	void ReleaseResource();
 	void CreateFrameSynchronization();

@@ -7,49 +7,19 @@
 #include <Mesh/ScreenPass.h>
 #include <Editor/Light.h>
 
-namespace
-{
-	/// 9 gizmos and 3 meshes.
-	constexpr std::size_t TotalNumSceneObjects = 16;
 
-	[[nodiscard]] WireframeRenderMode GetWireframeRenderModeFromSelectedTool(const std::size_t toolIndex)
-	{
-		switch (toolIndex)
-		{
-		case 0:
-			return WireframeRenderMode::Points;
-		case 1:
-			return WireframeRenderMode::Edges;
-		case 2:
-			return WireframeRenderMode::Points | WireframeRenderMode::Edges;
-		default:
-			return WireframeRenderMode::None;
-		}
-	}
-}
 
-CubeMapRenderer::CubeMapRenderer(const RenderResourceRef<Device>& device,
-	const RenderResourceRef<DescriptorPool>& descriptorPool,
-	const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
-	const std::shared_ptr<RenderProxyCollector>& renderProxyCollector,
-	const std::shared_ptr<RenderCommandScheduler>& renderCommandScheduler,
-	const std::shared_ptr<RenderResourceManager>& resourceManager,
-	const VkRenderPass& renderPass)
-	: _device(device)
-	, _renderCommandScheduler(renderCommandScheduler)
-	, _renderProxyCollector(renderProxyCollector)
-	, _renderPipelineManager(renderPipelineManager)
+CubeMapRenderer::CubeMapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
+	const std::shared_ptr<RenderResourceManager>& resourceManager)
+	: _renderPipelineManager(renderPipelineManager)
 	, _resourceManager(resourceManager)
-	, _descriptorPool(descriptorPool)
-	, _renderPass(renderPass)
-	, _objectsBufferData(device)
 {
 	// Calculate required alignment based on minimum device offset alignment
-	_objectsBufferDynamicAlignment = _device->GetMinimumMemoryAlignment<ModelInfo>();
-	_objectsBufferData.Resize(TotalNumSceneObjects);
+	//_objectsBufferDynamicAlignment = _device->GetMinimumMemoryAlignment<ModelInfo>();
+	//_objectsBufferData.Resize(TotalNumSceneObjects);
 }
 
-void CubeMapRenderer::Initialize() 
+void CubeMapRenderer::Initialize(const SubsystemsCollection& collection)
 {
 	// Creates all descriptor set layouts.
 	CreateDescriptorSetLayouts();
@@ -61,15 +31,31 @@ void CubeMapRenderer::Initialize()
 	AllocateDescriptorSets();
 
 	// Creates all graphics pipelines.
-	CreateRenderPipelines();
+	CreateCubeMapRenderPipeline();
+	CreateComputePipeline();
 
 	// Creates the grid and the gradient background.
 	CreateScreenPasses();
+
+	// Get the editor's RenderSubsystem
+	_renderSubsystem = GetDependencySubsystem<RenderSubsystem>(collection);
+	// Reuse Vulkan instance and device
+	_device = _renderSubsystem->getDevice();
+	VkInstance instance = _renderSubsystem->getInstance();
+
+	VkPipelineLayoutCreateInfo layoutInfo{};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	layoutInfo.setLayoutCount = 0; // if you use descriptors, set them here
+	layoutInfo.pushConstantRangeCount = 0;
+	if (vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_cubemapPipelineLayout) != VK_SUCCESS)
+	{
+		throw std::runtime_error("Failed to create cubemap pipeline layout!");
+	}
 }
 
 void CubeMapRenderer::CreateScreenPasses()
 {
-	RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets{ };
+	/*RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets{};
 	for (std::size_t i = 0; i < descriptorSets.size(); ++i)
 	{
 		descriptorSets[i] = std::vector{ _matricesDescriptorSets[i] };
@@ -87,12 +73,13 @@ void CubeMapRenderer::CreateScreenPasses()
 		_staticMeshInfluenceMapPipelineHandle,
 		descriptorSets });
 	_screenPasses.push_back(gridScreenPass);
-	gridScreenPass->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);
+	gridScreenPass->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);*/
+	;
 }
 
 std::shared_ptr<PolygonMesh> CubeMapRenderer::AddCage(const Eigen::MatrixXd& vertices, const Eigen::MatrixXi& indices)
 {
-	RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets{ };
+	RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets{};
 	for (std::size_t i = 0; i < descriptorSets.size(); ++i)
 	{
 		descriptorSets[i] = std::vector{ _matricesDescriptorSets[i], _objectDataDescriptorSets[i] };
@@ -141,387 +128,12 @@ std::shared_ptr<PolygonMesh> CubeMapRenderer::AddMesh(const Eigen::MatrixXd& ver
 	return mesh;
 }
 
-std::shared_ptr<PolygonMesh> CubeMapRenderer::AddGizmo(const MeshGeometry& geom)
-{
-	RenderArrayType<std::vector<VkDescriptorSet>> solidDescriptorSets{ };
-	for (std::size_t i = 0; i < solidDescriptorSets.size(); ++i)
-	{
-		solidDescriptorSets[i] = std::vector{ _matricesDescriptorSets[i], _objectDataDescriptorSets[i] };
-	}
-
-	const auto mesh = std::make_shared<PolygonMesh>(geom,
-		MeshProxySolidPipeline{
-			_gizmoPipelineHandle,
-			_staticMeshInfluenceMapPipelineHandle,
-			solidDescriptorSets },
-			MeshProxyWireframePipeline{ _pointsPipelineHandle, _edgesPipelineHandle, _polysPipelineHandle, solidDescriptorSets },
-			false,
-			WireframeRenderMode::None);
-	mesh->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);
-
-	return mesh;
-}
-
 void CubeMapRenderer::RemoveMesh(const std::shared_ptr<PolygonMesh>& mesh)
 {
 	mesh->DestroyRenderProxy(_renderProxyCollector);
 }
 
-void CubeMapRenderer::AddLightSource(const PointLightGPU& light)
-{
-	_lightSources.push_back(light);
-}
-
-void CubeMapRenderer::CreateResources()
-{
-	CreateRenderPipelines();
-}
-
-void CubeMapRenderer::Render(const double deltaTime, const uint32_t currentFrameIndex, const ViewInfo& viewInfo)
-{
-	// Destroy all render proxies that were previously marked.
-	_renderProxyCollector->DestroyPendingRenderProxies();
-
-	// First we recreate all render proxies that were scheduled previously.
-	_renderProxyCollector->RecreateDirtyRenderProxies();
-
-	FrameInfo frameInfo{ };
-	frameInfo._view = viewInfo._view;
-	frameInfo._projection = viewInfo._projection;
-	frameInfo._viewportSize = glm::vec2(viewInfo._renderSize.x, viewInfo._renderSize.y);
-
-	// Copy the global matrices to the GPU buffer.
-	memcpy(_matricesUniformBuffers[currentFrameIndex]._mappedData, &frameInfo, sizeof(FrameInfo));
-
-	// Copy the lights data to the GPU buffer.
-	memcpy(_lightsUniformBuffers[currentFrameIndex]._mappedData, _lightSources.data(), sizeof(PointLightGPU) * _lightSources.size());
-
-	// Update the buffer data for each object.
-	_renderProxyCollector->UpdateObjectsData(_objectsBufferData, viewInfo, _objectsDynamicUniformBuffers[currentFrameIndex]);
-
-	// Render all proxies.
-	_renderProxyCollector->Render(currentFrameIndex, deltaTime, viewInfo);
-}
-
-void CubeMapRenderer::CreateRenderPipelines()
-{
-	// Create all pipelines.
-	CreateBackgroundPipeline();
-	CreateViewportGridPipeline();
-	CreateStaticMeshPipeline();
-	CreateCagePipeline();
-	CreateWireframePipelines();
-	CreateGizmoPipeline();
-}
-
-void CubeMapRenderer::CreateDescriptorSetLayouts()
-{
-	// Create the descriptor sets.
-	{
-		VkDescriptorSetLayoutBinding layoutBinding{ };
-		layoutBinding.binding = 0;
-		layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		layoutBinding.descriptorCount = 1;
-		layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-		std::array layoutBindings{ layoutBinding };
-
-		_matricesLayout = _descriptorPool->CreateDescriptorSetLayout(layoutBindings);
-	}
-
-	{
-		VkDescriptorSetLayoutBinding layoutBinding{ };
-		layoutBinding.binding = 1;
-		layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		layoutBinding.descriptorCount = 1;
-		layoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-		std::array layoutBindings{ layoutBinding };
-
-		_lightsLayout = _descriptorPool->CreateDescriptorSetLayout(layoutBindings);
-	}
-
-	{
-		VkDescriptorSetLayoutBinding layoutBinding{ };
-		layoutBinding.binding = 2;
-		layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-		layoutBinding.descriptorCount = 1;
-		layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-		std::array layoutBindings{ layoutBinding };
-
-		_objectDataLayout = _descriptorPool->CreateDescriptorSetLayout(layoutBindings);
-	}
-}
-
-void CubeMapRenderer::CreateBackgroundPipeline()
-{
-	// Our attachments will write to all color channels, but no blending is enabled.
-	std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachments{ };
-	colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachments[0].blendEnable = VK_TRUE;
-	colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
-	colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
-
-	// Create the depth and stencil descriptions.
-	VkPipelineDepthStencilStateCreateInfo depthStencil{ };
-	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_FALSE;
-	depthStencil.depthWriteEnable = VK_FALSE;
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {};
-	depthStencil.back = {};
-
-	std::array descriptorSetLayouts{ _matricesLayout->GetReference() };
-
-	_backgroundPipelineHandle = _renderPipelineManager->BeginPipeline()
-		.SetRenderPass(_renderPass)
-		.SetColorBlendAttachments(std::span(colorBlendAttachments))
-		.SetDepthStencilState(depthStencil)
-		.SetDescriptorSetLayouts(std::span(descriptorSetLayouts))
-		.SetSubpassIndex(0)
-		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Gradient.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Gradient.frag.spv")
-		.Build();
-}
-
-void CubeMapRenderer::CreateStaticMeshPipeline()
-{
-	auto vertexInputAttributeDescriptions = PolygonMeshRenderProxy::GetAttributeDescriptions();
-	auto vertexInputBindingDescriptions = PolygonMeshRenderProxy::GetBindingDescription();
-
-	// Our attachments will write to all color channels, but no blending is enabled.
-	std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachments{ };
-	colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachments[0].blendEnable = VK_TRUE;
-	colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
-	colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
-
-	// Create the depth and stencil descriptions.
-	VkPipelineDepthStencilStateCreateInfo depthStencil{ };
-	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.minDepthBounds = 0.0f;
-	depthStencil.maxDepthBounds = 1.0f;
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {};
-	depthStencil.back = {};
-
-	std::array setLayouts{ _matricesLayout->GetReference(),
-		_lightsLayout->GetReference(),
-		_objectDataLayout->GetReference() };
-
-	uint32_t renderMode{ 0 };
-	std::array<VkSpecializationMapEntry, 1> specializationMapEntries{ };
-
-	// Map entry for the render mode to be used by the fragment shader
-	specializationMapEntries[0].constantID = 0;
-	specializationMapEntries[0].size = sizeof(renderMode);
-	specializationMapEntries[0].offset = 0;
-
-	// Prepare specialization info block for the shader stage
-	VkSpecializationInfo specializationInfo{ };
-	specializationInfo.dataSize = sizeof(renderMode);
-	specializationInfo.mapEntryCount = static_cast<uint32_t>(specializationMapEntries.size());
-	specializationInfo.pMapEntries = specializationMapEntries.data();
-	specializationInfo.pData = &renderMode;
-
-	_staticMeshPipelineHandle = _renderPipelineManager->BeginPipeline()
-		.SetRenderPass(_renderPass)
-		.SetVertexInputAttributeDescriptions(std::span(vertexInputAttributeDescriptions))
-		.SetVertexInputBindingDescriptions(std::span(vertexInputBindingDescriptions))
-		.SetDescriptorSetLayouts(std::span(setLayouts))
-		.SetColorBlendAttachments(std::span(colorBlendAttachments))
-		.SetDepthStencilState(depthStencil)
-		.SetSubpassIndex(0)
-		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/StaticMesh.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/StaticMesh.frag.spv")
-		.SetShaderModuleSpecialization(ShaderModuleType::Fragment, specializationInfo)
-		.Build();
-
-	// Switch to influence map vertex color rendering, which will take a value of 1, before we create the next pipeline.
-	renderMode = 1;
-
-	_staticMeshInfluenceMapPipelineHandle = _renderPipelineManager->BeginPipeline()
-		.SetRenderPass(_renderPass)
-		.SetVertexInputAttributeDescriptions(std::span(vertexInputAttributeDescriptions))
-		.SetVertexInputBindingDescriptions(std::span(vertexInputBindingDescriptions))
-		.SetDescriptorSetLayouts(std::span(setLayouts))
-		.SetColorBlendAttachments(std::span(colorBlendAttachments))
-		.SetDepthStencilState(depthStencil)
-		.SetSubpassIndex(0)
-		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/StaticMesh.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/StaticMesh.frag.spv")
-		.SetShaderModuleSpecialization(ShaderModuleType::Fragment, specializationInfo)
-		.Build();
-}
-
-void CubeMapRenderer::CreateCagePipeline()
-{
-	auto vertexInputAttributeDescriptions = PolygonMeshRenderProxy::GetAttributeDescriptions();
-	auto vertexInputBindingDescriptions = PolygonMeshRenderProxy::GetBindingDescription();
-
-	// Our attachments will write to all color channels, but no blending is enabled.
-	std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachments{ };
-	colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachments[0].blendEnable = VK_TRUE;
-	colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
-	colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
-
-	// Create the depth and stencil descriptions.
-	VkPipelineDepthStencilStateCreateInfo depthStencil{ };
-	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.minDepthBounds = 0.0f;
-	depthStencil.maxDepthBounds = 1.0f;
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {};
-	depthStencil.back = {};
-
-	std::array setLayouts{ _matricesLayout->GetReference(),
-		_objectDataLayout->GetReference() };
-
-	_cagePipelineHandle = _renderPipelineManager->BeginPipeline()
-		.SetRenderPass(_renderPass)
-		.SetVertexInputAttributeDescriptions(std::span(vertexInputAttributeDescriptions))
-		.SetVertexInputBindingDescriptions(std::span(vertexInputBindingDescriptions))
-		.SetDescriptorSetLayouts(std::span(setLayouts))
-		.SetColorBlendAttachments(std::span(colorBlendAttachments))
-		.SetDepthStencilState(depthStencil)
-		.SetSubpassIndex(0)
-		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/CageMesh.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/CageMesh.frag.spv")
-		.Build();
-}
-
-void CubeMapRenderer::CreateWireframePipelines()
-{
-	auto vertexInputAttributeDescriptions = PolygonMeshRenderProxy::GetAttributeDescriptions();
-	auto vertexInputBindingDescriptions = PolygonMeshRenderProxy::GetBindingDescription();
-
-	// Our attachments will write to all color channels, but no blending is enabled.
-	std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachments{ };
-	colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachments[0].blendEnable = VK_FALSE;
-
-	// Create the depth and stencil descriptions.
-	VkPipelineDepthStencilStateCreateInfo depthStencil{ };
-	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.minDepthBounds = 0.0f;
-	depthStencil.maxDepthBounds = 1.0f;
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {};
-	depthStencil.back = {};
-
-	std::array setLayouts{ _matricesLayout->GetReference(), _objectDataLayout->GetReference() };
-
-	_pointsPipelineHandle = _renderPipelineManager->BeginPipeline()
-		.SetRenderPass(_renderPass)
-		.SetVertexInputAttributeDescriptions(std::span(vertexInputAttributeDescriptions))
-		.SetVertexInputBindingDescriptions(std::span(vertexInputBindingDescriptions))
-		.SetDescriptorSetLayouts(std::span(setLayouts))
-		.SetColorBlendAttachments(std::span(colorBlendAttachments))
-		.SetDepthStencilState(depthStencil)
-		.SetAssemblyState(VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
-		.SetSubpassIndex(0)
-		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Wireframe.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Wireframe.frag.spv")
-		.Build();
-
-	_edgesPipelineHandle = _renderPipelineManager->BeginPipeline()
-		.SetRenderPass(_renderPass)
-		.SetVertexInputAttributeDescriptions(std::span(vertexInputAttributeDescriptions))
-		.SetVertexInputBindingDescriptions(std::span(vertexInputBindingDescriptions))
-		.SetDescriptorSetLayouts(std::span(setLayouts))
-		.SetColorBlendAttachments(std::span(colorBlendAttachments))
-		.SetDepthStencilState(depthStencil)
-		.SetAssemblyState(VK_PRIMITIVE_TOPOLOGY_LINE_LIST)
-		.SetSubpassIndex(0)
-		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Wireframe.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Wireframe.frag.spv")
-		.Build();
-
-	_polysPipelineHandle = _renderPipelineManager->BeginPipeline()
-		.SetRenderPass(_renderPass)
-		.SetVertexInputAttributeDescriptions(std::span(vertexInputAttributeDescriptions))
-		.SetVertexInputBindingDescriptions(std::span(vertexInputBindingDescriptions))
-		.SetDescriptorSetLayouts(std::span(setLayouts))
-		.SetColorBlendAttachments(std::span(colorBlendAttachments))
-		.SetDepthStencilState(depthStencil)
-		.SetAssemblyState(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST)
-		.SetSubpassIndex(0)
-		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Wireframe.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Wireframe.frag.spv")
-		.Build();
-}
-
-void CubeMapRenderer::CreateGizmoPipeline()
-{
-	auto vertexInputAttributeDescriptions = PolygonMeshRenderProxy::GetAttributeDescriptions();
-	auto vertexInputBindingDescriptions = PolygonMeshRenderProxy::GetBindingDescription();
-
-	// Our attachments will write to all color channels, but no blending is enabled.
-	std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachments{ };
-	colorBlendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachments[0].blendEnable = VK_TRUE;
-	colorBlendAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
-	colorBlendAttachments[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-	colorBlendAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	colorBlendAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
-
-	// Create the depth and stencil descriptions.
-	VkPipelineDepthStencilStateCreateInfo depthStencil{ };
-	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-	depthStencil.depthTestEnable = VK_TRUE;
-	depthStencil.depthWriteEnable = VK_TRUE;
-	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-	depthStencil.depthBoundsTestEnable = VK_FALSE;
-	depthStencil.minDepthBounds = 0.0f;
-	depthStencil.maxDepthBounds = 1.0f;
-	depthStencil.stencilTestEnable = VK_FALSE;
-	depthStencil.front = {};
-	depthStencil.back = {};
-
-	std::array setLayouts{ _matricesLayout->GetReference(), _objectDataLayout->GetReference() };
-
-	_gizmoPipelineHandle = _renderPipelineManager->BeginPipeline()
-		.SetRenderPass(_renderPass)
-		.SetVertexInputAttributeDescriptions(std::span(vertexInputAttributeDescriptions))
-		.SetVertexInputBindingDescriptions(std::span(vertexInputBindingDescriptions))
-		.SetDescriptorSetLayouts(std::span(setLayouts))
-		.SetColorBlendAttachments(std::span(colorBlendAttachments))
-		.SetDepthStencilState(depthStencil)
-		.SetSubpassIndex(0)
-		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Gizmo.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Gizmo.frag.spv")
-		.Build();
-}
-
-void CubeMapRenderer::CreateViewportGridPipeline()
+/*void CubeMapRenderer::CreateViewportGridPipeline()
 {
 	// Blend the fragments.
 	VkPipelineColorBlendAttachmentState colorBlendAttachment{ };
@@ -558,11 +170,11 @@ void CubeMapRenderer::CreateViewportGridPipeline()
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Grid.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Grid.frag.spv")
 		.Build();
-}
+}*/
 
 void CubeMapRenderer::CreateUniformBuffers()
 {
-	CHECK_VK_HANDLE(_device);
+	/*CHECK_VK_HANDLE(_device);
 
 	_matricesUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
 	_lightsUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
@@ -583,11 +195,14 @@ void CubeMapRenderer::CreateUniformBuffers()
 		_objectsDynamicUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemoryAligned(std::span(_objectsBufferData.Data(), TotalNumSceneObjects),
 			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-	}
+	}*/
+	;
 }
 
 void CubeMapRenderer::AllocateDescriptorSets()
 {
+	;
+	/*
 	CHECK_VK_HANDLE(_device);
 
 	RenderArrayType<VkDescriptorSetLayout> matricesDescriptorSetLayouts{ };
@@ -646,5 +261,275 @@ void CubeMapRenderer::AllocateDescriptorSets()
 		descriptorWrites[2].pBufferInfo = &objectBufferInfo;
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+		*/
+	}
+
+void CubeMapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
+	// 1. Create cubemap image (VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT, 6 layers)
+	VkImageCreateInfo imageInfo{ };
+	imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+	imageInfo.arrayLayers = 6;
+	imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	// ... set other fields
+
+	vkCreateImage(_device, &imageInfo, nullptr, &_cubemapImage);
+
+	// 2. Allocate and bind memory (omitted for brevity)
+
+	// 3. Create 6 image views (one for each face)
+	for (uint32_t face = 0; face < 6; ++face) {
+		VkImageViewCreateInfo viewInfo{ };
+		viewInfo.image = _cubemapImage;
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		viewInfo.subresourceRange.baseArrayLayer = face;
+		viewInfo.subresourceRange.layerCount = 1;
+		// ... set other fields
+		vkCreateImageView(_device, &viewInfo, nullptr, &_faceImageViews[face]);
 	}
 }
+
+VkFormat Device::FindDepthFormat() const {
+	const std::vector<VkFormat> candidates = {
+		VK_FORMAT_D32_SFLOAT,
+		VK_FORMAT_D32_SFLOAT_S8_UINT,
+		VK_FORMAT_D24_UNORM_S8_UINT
+	};
+
+	for (VkFormat format : candidates) {
+		VkFormatProperties props;
+		vkGetPhysicalDeviceFormatProperties(_physicalDevice, format, &props);
+
+		if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+			return format;
+		}
+	}
+	throw std::runtime_error("Failed to find a supported depth format!");
+}
+
+void CubeMapRenderer::CreateRenderPass(VkFormat format) {
+	VkAttachmentDescription colorAttachment{};
+	colorAttachment.format = format; // Use your cubemap VkFormat
+	//colorAttachment.samples = cubemapMsaaSamples; // Use your cubemap's sample count (usually VK_SAMPLE_COUNT_1_BIT)
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentDescription depthAttachment{};
+	depthAttachment.format = _device->FindDepthFormat(); // Use your depth format 
+	//depthAttachment.samples = cubemapMsaaSamples;
+	depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference colorAttachmentRef{};
+	colorAttachmentRef.attachment = 0;
+	colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference depthAttachmentRef{};
+	depthAttachmentRef.attachment = 1;
+	depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription subpass{};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachmentRef;
+	subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+	VkSubpassDependency dependency{};
+	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependency.dstSubpass = 0;
+	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+	std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+	VkRenderPassCreateInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+	renderPassInfo.pAttachments = attachments.data();
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+	renderPassInfo.dependencyCount = 1;
+	renderPassInfo.pDependencies = &dependency;
+
+	if (vkCreateRenderPass(_device, &renderPassInfo, nullptr, &_renderPass) != VK_SUCCESS) {
+		throw std::runtime_error("failed to create cubemap render pass!");
+	}
+}
+
+void CubeMapRenderer::CreateDescriptorSetLayout() {
+	VkDescriptorSetLayoutBinding uboLayoutBinding{ };
+	uboLayoutBinding.binding = 0;
+	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uboLayoutBinding.descriptorCount = 1;
+	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo{ };
+	layoutInfo.bindingCount = 1;
+	layoutInfo.pBindings = &uboLayoutBinding;
+
+	vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout);
+}
+
+void CubeMapRenderer::CreateCubeMapRenderPipeline()
+{
+	// Blend the fragments.
+	VkPipelineColorBlendAttachmentState colorBlendAttachment{ };
+	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	colorBlendAttachment.blendEnable = VK_FALSE;
+	// Create the depth and stencil descriptions.
+	VkPipelineDepthStencilStateCreateInfo depthStencil{ };
+	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depthStencil.depthTestEnable = VK_TRUE;
+	depthStencil.depthWriteEnable = VK_TRUE;
+	depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+	depthStencil.depthBoundsTestEnable = VK_FALSE;
+	depthStencil.minDepthBounds = 0.0f;
+	depthStencil.maxDepthBounds = 1.0f;
+	depthStencil.stencilTestEnable = VK_FALSE;
+	depthStencil.front = { };
+	depthStencil.back = { };
+	std::array descriptorSetLayouts{ _matricesLayout->GetReference(),
+		_objectDataLayout->GetReference() };
+	_cubemapPipelineHandle = _renderPipelineManager->BeginPipeline()
+		.SetRenderPass(_renderPass)
+		.SetColorBlendAttachments(std::span(&colorBlendAttachment, 1))
+		.SetDepthStencilState(depthStencil)
+		.SetDescriptorSetLayouts(std::span(descriptorSetLayouts))
+		.SetSubpassIndex(0)
+		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/CubeMap.vert.spv")
+		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/CubeMap.frag.spv")
+		.Build();
+}
+
+void CubeMapRenderer::CreateComputePipeline()
+{
+	// Create the compute pipeline.
+	std::array descriptorSetLayouts{ _matricesLayout->GetReference(),
+		_objectDataLayout->GetReference() };
+	_computePipelineHandle = _renderPipelineManager->BeginPipeline()
+		.SetDescriptorSetLayouts(std::span(descriptorSetLayouts))
+		.SetShaderModule(ShaderModuleType::Compute, "assets/shaders/CubeMapCompute.comp.spv")
+		.Build();
+}
+
+void CubeMapRenderer::CreateFramebuffer(uint32_t size) {
+	for (uint32_t face = 0; face < 6; ++face) {
+		VkImageView attachments[] = { _faceImageViews[face] };
+		VkFramebufferCreateInfo framebufferInfo{ };
+		framebufferInfo.renderPass = _renderPass;
+		framebufferInfo.attachmentCount = 1;
+		framebufferInfo.pAttachments = attachments;
+		framebufferInfo.width = size;
+		framebufferInfo.height = size;
+		framebufferInfo.layers = 1;
+
+		vkCreateFramebuffer(_device, &framebufferInfo, nullptr, &_faceFramebuffers[face]);
+	}
+}
+
+void CubeMapRenderer::CreateCommandPool(uint32_t queueFamilyIndex) {
+	VkCommandPoolCreateInfo poolInfo{ };
+	poolInfo.queueFamilyIndex = queueFamilyIndex;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+	vkCreateCommandPool(_device, &poolInfo, nullptr, &_commandPool);
+}
+
+void CubeMapRenderer::CreateVertexBuffer(const std::vector<Vertex>& vertices) {
+	// Create VkBuffer, allocate memory, copy data
+	// Use VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+}
+
+void CubeMapRenderer::CreateIndexBuffer(const std::vector<uint32_t>& indices) {
+	// Create VkBuffer, allocate memory, copy data
+	// Use VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+}
+
+void CubeMapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize) {
+	_uniformBuffer = _resourceManager->AllocateDeviceBuffer(
+		bufferSize,
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+	// Optionally map and store pointer for updates
+}
+
+void CubeMapRenderer::CreateDescriptorPool() {
+	VkDescriptorPoolSize poolSize{};
+	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSize.descriptorCount = 6; // one per cubemap face
+
+	VkDescriptorPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = 1;
+	poolInfo.pPoolSizes = &poolSize;
+	poolInfo.maxSets = 6;
+
+	vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPoolHandle);
+}
+
+void CubeMapRenderer::CreateDescriptorPoolSets() {
+	std::vector<VkDescriptorSetLayout> layouts(6, _descriptorSetLayout);
+	VkDescriptorSetAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = _descriptorPoolHandle;
+	allocInfo.descriptorSetCount = 6;
+	allocInfo.pSetLayouts = layouts.data();
+
+	_descriptorSets.resize(6);
+	vkAllocateDescriptorSets(_device, &allocInfo, _descriptorSets.data());
+
+	for (size_t i = 0; i < 6; ++i) {
+		VkDescriptorBufferInfo bufferInfo{};
+		bufferInfo.buffer = _uniformBuffer._handle;
+		bufferInfo.offset = 0;
+		bufferInfo.range = sizeof(YourUniformStruct);
+
+		VkWriteDescriptorSet descriptorWrite{};
+		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite.dstSet = _descriptorSets[i];
+		descriptorWrite.dstBinding = 0;
+		descriptorWrite.dstArrayElement = 0;
+		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrite.descriptorCount = 1;
+		descriptorWrite.pBufferInfo = &bufferInfo;
+
+		vkUpdateDescriptorSets(_device, 1, &descriptorWrite, 0, nullptr);
+	}
+}
+
+void CubeMapRenderer::CreateCommandBuffer() {
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = _commandPool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = 6; // one per face
+
+	_commandBuffers.resize(6);
+	vkAllocateCommandBuffers(_device, &allocInfo, _commandBuffers.data());
+}
+
+void CubeMapRenderer::CreateSyncObjects() {
+	VkSemaphoreCreateInfo semaphoreInfo{};
+	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	VkFenceCreateInfo fenceInfo{};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	for (int i = 0; i < 6; ++i) {
+		vkCreateSemaphore(_device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]);
+		vkCreateFence(_device, &fenceInfo, nullptr, &_inFlightFences[i]);
+	}
+}
+
+}
+
