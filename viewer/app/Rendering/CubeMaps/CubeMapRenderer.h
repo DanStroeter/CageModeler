@@ -27,6 +27,7 @@ public:
 	CubemapRenderer();
 
 	void Initialize(const SubsystemsCollection& collection) override;
+	void PostInitialize();
 	void Update(const double deltaTime) override {}
 	void Deinitialize() override {}; //todo
 	

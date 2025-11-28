@@ -48,9 +48,13 @@ void CubemapRenderer::Initialize(const SubsystemsCollection& collection)
 	{
 		throw std::runtime_error("Failed to create Cubemap pipeline layout!");
 	}*/
-	CreateImageViews(512, VK_FORMAT_R8G8B8A8_UNORM);
+}
+
+void CubemapRenderer::PostInitialize()
+{
 	_renderPipelineManager = _renderSubsystem->getPipelineManager();
 	_resourceManager = _renderSubsystem->getResourceManager();
+	CreateImageViews(512, VK_FORMAT_R8G8B8A8_UNORM);
 }
 
 void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
