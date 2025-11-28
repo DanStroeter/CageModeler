@@ -60,6 +60,15 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	if (vertexModuleIt != objectProxy._shaderModules.end())
 	{
 		const auto shaderCode = VulkanUtils::ReadBinaryFile(vertexModuleIt->second.string());
+
+		if (shaderCode.empty()) {
+			std::cout << "Current working directory: " << std::filesystem::current_path() << "\n";
+			std::cerr << "Error: Shader file empty or missing: "
+				<< vertexModuleIt->second << "\n";
+			std::terminate(); // stop here before Vulkan crash
+
+		}
+
 		const auto shaderModule = CreateShaderModule(shaderCode);
 		loadedShaderModules.push_back(shaderModule);
 

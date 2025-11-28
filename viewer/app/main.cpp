@@ -3,6 +3,7 @@
 
 int main()
 {
+	std::cout << "Current working directory: " << std::filesystem::current_path() << "\n";
 	// Initialize the storage for all subsystems.
 	SubsystemsCollection subsystemsCollection;
 
