@@ -13,53 +13,53 @@
 #include <Rendering/RenderSubsystem.h>
 #include <Eigen/Core>
 
-struct ViewInfo;
-class ScreenPass;
-class PolygonMesh;
-class RenderProxyCollector;
-class RenderResourceManager;
-class RenderCommandScheduler;
+//struct ViewInfo;
+//class ScreenPass;
+//class PolygonMesh;
+//class RenderProxyCollector;
+//class RenderResourceManager;
+//class RenderCommandScheduler;
 
-class CubeMapRenderer: public Subsystem
+class CubemapRenderer: public Subsystem
 {
-	DECLARE_SUBSYSTEM(CubeMapRenderer)
+	DECLARE_SUBSYSTEM(CubemapRenderer)
 public:
-	CubeMapRenderer() = delete;
-	CubeMapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
+	CubemapRenderer() = delete;
+	CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
 		const std::shared_ptr<RenderResourceManager>& resourceManager);
-
 	void Initialize(const SubsystemsCollection& collection) override;
 	void Update(const double deltaTime) override {}
 	void Deinitialize() override;
 	
-	[[nodiscard]] std::shared_ptr<PolygonMesh> AddCage(const Eigen::MatrixXd& vertices,
-		const Eigen::MatrixXi& indices);
-	[[nodiscard]] std::shared_ptr<PolygonMesh> AddMesh(const Eigen::MatrixXd& vertices,
-		const Eigen::MatrixXi& indices);
-	void RemoveMesh(const std::shared_ptr<PolygonMesh>& mesh);
+	//[[nodiscard]] std::shared_ptr<PolygonMesh> AddCage(const Eigen::MatrixXd& vertices,
+		//const Eigen::MatrixXi& indices);
+	//[[nodiscard]] std::shared_ptr<PolygonMesh> AddMesh(const Eigen::MatrixXd& vertices,
+		//const Eigen::MatrixXi& indices);
+	//void RemoveMesh(const std::shared_ptr<PolygonMesh>& mesh);
 
-	void ComputeCoordinates();//pass cage and mesh, return coordinates
+	//void ComputeCoordinates();//pass cage and mesh, return coordinates
 private:
 	SubsystemPtr<RenderSubsystem> _renderSubsystem;
 
-	void CreateScreenPasses();
-	void CreateDescriptorSetLayouts();
-	void CreateCubeMapRenderPipeline();
-	void CreateComputePipeline();
-	void AllocateDescriptorSets();
-	void CreateUniformBuffers();
 	void CreateImageViews(uint32_t size, VkFormat format);
-	void CreateRenderPass(VkFormat format);
-	void CreateDescriptorSetLayout();
-	void CreateFramebuffer(uint32_t size);
-	void CreateCommandPool(uint32_t queueFamilyIndex);
-	void CreateCommandBuffer();
-	void CreateSyncObjects();
-	void CreateDescriptorPoolSets();
-	void CreateDescriptorPool();
-	void CreateUniformBuffer(VkDeviceSize bufferSize);
-	void CreateIndexBuffer(const std::vector<uint32_t>& indices);
-	void CreateVertexBuffer(const std::vector<Vertex>& vertices);
+	
+	//void CreateScreenPasses();
+	//void CreateDescriptorSetLayouts();
+	//void CreateCubeMapRenderPipeline();
+	//void CreateComputePipeline();
+	//void AllocateDescriptorSets();
+	//void CreateUniformBuffers();
+	//void CreateRenderPass(VkFormat format);
+	//void CreateDescriptorSetLayout();
+	//void CreateFramebuffer(uint32_t size);
+	//void CreateCommandPool(uint32_t queueFamilyIndex);
+	//void CreateCommandBuffer();
+	//void CreateSyncObjects();
+	//void CreateDescriptorPoolSets();
+	//void CreateDescriptorPool();
+	//void CreateUniformBuffer(VkDeviceSize bufferSize);
+	//void CreateIndexBuffer(const std::vector<uint32_t>& indices);
+	//void CreateVertexBuffer(const std::vector<Vertex>& vertices);
 
 	VkPipeline _cubemapPipeline = VK_NULL_HANDLE;
 	VkPipelineLayout _cubemapPipelineLayout = VK_NULL_HANDLE;
@@ -67,12 +67,14 @@ private:
 	VkPipeline _copmutePipeline = VK_NULL_HANDLE;
 	VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
 
-	VkDescriptorSet _descriptorSet = VK_NULL_HANDLE;
+	//VkDescriptorSet _descriptorSet = VK_NULL_HANDLE;
 
 	RenderResourceRef<Device> _device;
 
-	RenderResourceRef<VkImage> _cubemapImage;
-	RenderResourceRef<VkImageView> _faceImageViews[6];
+	std::vector<RenderResourceRef<VkImage>> _cubemapImages = {};
+	std::vector<RenderResourceRef<VkImageView>[6]> _faceImageViews = {};
+	std::vector<RenderResourceRef<VkDeviceMemory>> _cubemapImageMemory = {};
+	std::vector<RenderResourceRef<VkImageView>> _cubemapViews = {};
 
 	/// The render pipeline manager to add the scene graphics pipelines.
 	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr; //reuse from scene
@@ -81,13 +83,13 @@ private:
 	std::shared_ptr<RenderResourceManager> _resourceManager = nullptr; //reuse from scene
 
 	/// The Vulkan descriptor pool resource.
-	RenderResourceRef<DescriptorPool> _descriptorPool; //make new one 
+	//RenderResourceRef<DescriptorPool> _descriptorPool; //make new one 
 
 	/// The render pass we use for rendering the entire scene. It is created by the render subsystem and passed to the editor.
-	VkRenderPass _renderPass = VK_NULL_HANDLE; //make new one
+	//VkRenderPass _renderPass = VK_NULL_HANDLE; //make new one
 
-	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
-	std::vector<VkDescriptorSet> _matricesDescriptorSets;
-	std::vector<MemoryMappedBuffer> _matricesUniformBuffers;
+	//RenderResourceRef<DescriptorSetLayout> _matricesLayout;
+	//std::vector<VkDescriptorSet> _matricesDescriptorSets;
+	//std::vector<MemoryMappedBuffer> _matricesUniformBuffers;
 	//more buffers that i need
 };

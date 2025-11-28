@@ -1,4 +1,4 @@
-#include <Rendering/CubeMaps/CubeMapRenderer.h>
+#include <Rendering/Cubemaps/CubemapRenderer.h>
 #include <Rendering/Commands/RenderCommandScheduler.h>
 #include <Rendering/Core/RenderProxyCollector.h>
 #include <Rendering/Core/RenderResourceManager.h>
@@ -9,7 +9,7 @@
 
 
 
-CubeMapRenderer::CubeMapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
+CubemapRenderer::CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
 	const std::shared_ptr<RenderResourceManager>& resourceManager)
 	: _renderPipelineManager(renderPipelineManager)
 	, _resourceManager(resourceManager)
@@ -19,23 +19,23 @@ CubeMapRenderer::CubeMapRenderer(const std::shared_ptr<RenderPipelineManager>& r
 	//_objectsBufferData.Resize(TotalNumSceneObjects);
 }
 
-void CubeMapRenderer::Initialize(const SubsystemsCollection& collection)
+void CubemapRenderer::Initialize(const SubsystemsCollection& collection)
 {
 	// Creates all descriptor set layouts.
-	CreateDescriptorSetLayouts();
+	//CreateDescriptorSetLayouts();
 
 	// Creates, maps and updates the uniform buffers.
-	CreateUniformBuffers();
+	//CreateUniformBuffers();
 
 	// Allocates and updates the descriptor sets.
-	AllocateDescriptorSets();
+	//AllocateDescriptorSets();
 
 	// Creates all graphics pipelines.
-	CreateCubeMapRenderPipeline();
-	CreateComputePipeline();
+	//CreateCubemapRenderPipeline();
+	//CreateComputePipeline();
 
 	// Creates the grid and the gradient background.
-	CreateScreenPasses();
+	//CreateScreenPasses();
 
 	// Get the editor's RenderSubsystem
 	_renderSubsystem = GetDependencySubsystem<RenderSubsystem>(collection);
@@ -43,19 +43,127 @@ void CubeMapRenderer::Initialize(const SubsystemsCollection& collection)
 	_device = _renderSubsystem->getDevice();
 	VkInstance instance = _renderSubsystem->getInstance();
 
-	VkPipelineLayoutCreateInfo layoutInfo{};
+	/*VkPipelineLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	layoutInfo.setLayoutCount = 0; // if you use descriptors, set them here
 	layoutInfo.pushConstantRangeCount = 0;
-	if (vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_cubemapPipelineLayout) != VK_SUCCESS)
+	if (vkCreatePipelineLayout(_device, &layoutInfo, nullptr, _CubemapPipelineLayout) != VK_SUCCESS)
 	{
-		throw std::runtime_error("Failed to create cubemap pipeline layout!");
-	}
+		throw std::runtime_error("Failed to create Cubemap pipeline layout!");
+	}*/
+	CreateImageViews(512, VK_FORMAT_R8G8B8A8_UNORM);
 }
 
-void CubeMapRenderer::CreateScreenPasses()
+void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
+	// Create Cubemap image
+	VkImageCreateInfo imageInfo{};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.format = format;
+	imageInfo.extent = { size, size, 1 };
+	imageInfo.mipLevels = 0;
+	imageInfo.arrayLayers = 6;
+	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	RenderResourceRef<VkImage> cubemapImage;
+
+	if (vkCreateImage(_device, &imageInfo, nullptr, cubemapImage) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create Cubemap image!");
+	}
+	_cubemapImages.push_back(cubemapImage);
+
+	// Allocate and bind memory
+	VkMemoryRequirements memRequirements;
+	vkGetImageMemoryRequirements(_device, cubemapImage, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+
+	// Find a suitable memory type
+	VkPhysicalDeviceMemoryProperties memProperties;
+	VkPhysicalDevice physicalDevice = _device->GetPhysicalDeviceHandle();
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+	uint32_t memoryTypeIndex = UINT32_MAX;
+	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+		if ((memRequirements.memoryTypeBits & (1 << i)) &&
+			(memProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+			memoryTypeIndex = i;
+			break;
+		}
+	}
+	if (memoryTypeIndex == UINT32_MAX) {
+		throw std::runtime_error("Failed to find suitable memory type for Cubemap image!");
+	}
+	allocInfo.memoryTypeIndex = memoryTypeIndex;
+
+	RenderResourceRef<VkDeviceMemory> cubemapMemory;
+	if (vkAllocateMemory(_device, &allocInfo, nullptr, cubemapMemory) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to allocate memory for Cubemap image!");
+	}
+
+	if (vkBindImageMemory(_device, cubemapImage, cubemapMemory, 0) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to bind memory to Cubemap image!");
+	}
+	_cubemapImageMemory.push_back(cubemapMemory);
+
+	// Create 6 image views
+	for (uint32_t face = 0; face < 6; ++face) {
+		VkImageViewCreateInfo viewInfo{};
+		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewInfo.image = cubemapImage;
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		viewInfo.format = format;
+		viewInfo.components = {
+			VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+			VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY
+		};
+		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		viewInfo.subresourceRange.baseMipLevel = 0;
+		viewInfo.subresourceRange.levelCount = 1;
+		viewInfo.subresourceRange.baseArrayLayer = 0;
+		viewInfo.subresourceRange.layerCount = 6;
+
+		RenderResourceRef<VkImageView> faceImageView;
+
+		if (vkCreateImageView(_device, &viewInfo, nullptr, faceImageView) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create Cubemap face image view!");
+		}
+		_faceImageViews.push_back(faceImageView);
+	}
+
+	// Create a single VkImageView for the whole Cubemap
+	VkImageViewCreateInfo cubeViewInfo{};
+	cubeViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	cubeViewInfo.image = cubemapImage;
+	cubeViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+	cubeViewInfo.format = format;
+	cubeViewInfo.components = {
+		VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
+		VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY
+	};
+	cubeViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	cubeViewInfo.subresourceRange.baseMipLevel = 0;
+	cubeViewInfo.subresourceRange.levelCount = 1;
+	cubeViewInfo.subresourceRange.baseArrayLayer = 0;
+	cubeViewInfo.subresourceRange.layerCount = 6;
+
+	RenderResourceRef<VkImageView> cubemapView;
+	if (vkCreateImageView(_device, &cubeViewInfo, nullptr, cubemapView) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create Cubemap image view!");
+	}
+	_cubemapViews.push_back(cubemapView);
+}
+
+/*void CubemapRenderer::CreateScreenPasses()
 {
-	/*RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets{};
+	RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets{};
 	for (std::size_t i = 0; i < descriptorSets.size(); ++i)
 	{
 		descriptorSets[i] = std::vector{ _matricesDescriptorSets[i] };
@@ -73,11 +181,11 @@ void CubeMapRenderer::CreateScreenPasses()
 		_staticMeshInfluenceMapPipelineHandle,
 		descriptorSets });
 	_screenPasses.push_back(gridScreenPass);
-	gridScreenPass->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);*/
+	gridScreenPass->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);
 	;
-}
+}*/
 
-std::shared_ptr<PolygonMesh> CubeMapRenderer::AddCage(const Eigen::MatrixXd& vertices, const Eigen::MatrixXi& indices)
+/*std::shared_ptr<PolygonMesh> CubemapRenderer::AddCage(const Eigen::MatrixXd& vertices, const Eigen::MatrixXi& indices)
 {
 	RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets{};
 	for (std::size_t i = 0; i < descriptorSets.size(); ++i)
@@ -99,7 +207,7 @@ std::shared_ptr<PolygonMesh> CubeMapRenderer::AddCage(const Eigen::MatrixXd& ver
 	return mesh;
 }
 
-std::shared_ptr<PolygonMesh> CubeMapRenderer::AddMesh(const Eigen::MatrixXd& vertices,
+std::shared_ptr<PolygonMesh> CubemapRenderer::AddMesh(const Eigen::MatrixXd& vertices,
 	const Eigen::MatrixXi& indices)
 {
 	RenderArrayType<std::vector<VkDescriptorSet>> solidDescriptorSets{ };
@@ -128,12 +236,12 @@ std::shared_ptr<PolygonMesh> CubeMapRenderer::AddMesh(const Eigen::MatrixXd& ver
 	return mesh;
 }
 
-void CubeMapRenderer::RemoveMesh(const std::shared_ptr<PolygonMesh>& mesh)
+void CubemapRenderer::RemoveMesh(const std::shared_ptr<PolygonMesh>& mesh)
 {
 	mesh->DestroyRenderProxy(_renderProxyCollector);
 }
 
-/*void CubeMapRenderer::CreateViewportGridPipeline()
+/*void CubemapRenderer::CreateViewportGridPipeline()
 {
 	// Blend the fragments.
 	VkPipelineColorBlendAttachmentState colorBlendAttachment{ };
@@ -172,9 +280,9 @@ void CubeMapRenderer::RemoveMesh(const std::shared_ptr<PolygonMesh>& mesh)
 		.Build();
 }*/
 
-void CubeMapRenderer::CreateUniformBuffers()
+/*void CubemapRenderer::CreateUniformBuffers()
 {
-	/*CHECK_VK_HANDLE(_device);
+	CHECK_VK_HANDLE(_device);
 
 	_matricesUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
 	_lightsUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
@@ -195,14 +303,12 @@ void CubeMapRenderer::CreateUniformBuffers()
 		_objectsDynamicUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemoryAligned(std::span(_objectsBufferData.Data(), TotalNumSceneObjects),
 			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-	}*/
+	}
 	;
-}
+}*/
 
-void CubeMapRenderer::AllocateDescriptorSets()
+/*void CubemapRenderer::AllocateDescriptorSets()
 {
-	;
-	/*
 	CHECK_VK_HANDLE(_device);
 
 	RenderArrayType<VkDescriptorSetLayout> matricesDescriptorSetLayouts{ };
@@ -261,55 +367,13 @@ void CubeMapRenderer::AllocateDescriptorSets()
 		descriptorWrites[2].pBufferInfo = &objectBufferInfo;
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-		*/
-	}
+		
+	}*/
 
-void CubeMapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
-	// 1. Create cubemap image (VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT, 6 layers)
-	VkImageCreateInfo imageInfo{ };
-	imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-	imageInfo.arrayLayers = 6;
-	imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-	// ... set other fields
-
-	vkCreateImage(_device, &imageInfo, nullptr, &_cubemapImage);
-
-	// 2. Allocate and bind memory (omitted for brevity)
-
-	// 3. Create 6 image views (one for each face)
-	for (uint32_t face = 0; face < 6; ++face) {
-		VkImageViewCreateInfo viewInfo{ };
-		viewInfo.image = _cubemapImage;
-		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		viewInfo.subresourceRange.baseArrayLayer = face;
-		viewInfo.subresourceRange.layerCount = 1;
-		// ... set other fields
-		vkCreateImageView(_device, &viewInfo, nullptr, &_faceImageViews[face]);
-	}
-}
-
-VkFormat Device::FindDepthFormat() const {
-	const std::vector<VkFormat> candidates = {
-		VK_FORMAT_D32_SFLOAT,
-		VK_FORMAT_D32_SFLOAT_S8_UINT,
-		VK_FORMAT_D24_UNORM_S8_UINT
-	};
-
-	for (VkFormat format : candidates) {
-		VkFormatProperties props;
-		vkGetPhysicalDeviceFormatProperties(_physicalDevice, format, &props);
-
-		if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-			return format;
-		}
-	}
-	throw std::runtime_error("Failed to find a supported depth format!");
-}
-
-void CubeMapRenderer::CreateRenderPass(VkFormat format) {
+/*void CubemapRenderer::CreateRenderPass(VkFormat format) {
 	VkAttachmentDescription colorAttachment{};
-	colorAttachment.format = format; // Use your cubemap VkFormat
-	//colorAttachment.samples = cubemapMsaaSamples; // Use your cubemap's sample count (usually VK_SAMPLE_COUNT_1_BIT)
+	colorAttachment.format = format; // Use your Cubemap VkFormat
+	//colorAttachment.samples = CubemapMsaaSamples; // Use your Cubemap's sample count (usually VK_SAMPLE_COUNT_1_BIT)
 	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -319,7 +383,7 @@ void CubeMapRenderer::CreateRenderPass(VkFormat format) {
 
 	VkAttachmentDescription depthAttachment{};
 	depthAttachment.format = _device->FindDepthFormat(); // Use your depth format 
-	//depthAttachment.samples = cubemapMsaaSamples;
+	//depthAttachment.samples = CubemapMsaaSamples;
 	depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -360,11 +424,11 @@ void CubeMapRenderer::CreateRenderPass(VkFormat format) {
 	renderPassInfo.pDependencies = &dependency;
 
 	if (vkCreateRenderPass(_device, &renderPassInfo, nullptr, &_renderPass) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create cubemap render pass!");
+		throw std::runtime_error("failed to create Cubemap render pass!");
 	}
-}
+}*/
 
-void CubeMapRenderer::CreateDescriptorSetLayout() {
+/*void CubemapRenderer::CreateDescriptorSetLayout() {
 	VkDescriptorSetLayoutBinding uboLayoutBinding{ };
 	uboLayoutBinding.binding = 0;
 	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -376,9 +440,9 @@ void CubeMapRenderer::CreateDescriptorSetLayout() {
 	layoutInfo.pBindings = &uboLayoutBinding;
 
 	vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_descriptorSetLayout);
-}
+}*/
 
-void CubeMapRenderer::CreateCubeMapRenderPipeline()
+/*void CubemapRenderer::CreateCubemapRenderPipeline()
 {
 	// Blend the fragments.
 	VkPipelineColorBlendAttachmentState colorBlendAttachment{ };
@@ -398,29 +462,29 @@ void CubeMapRenderer::CreateCubeMapRenderPipeline()
 	depthStencil.back = { };
 	std::array descriptorSetLayouts{ _matricesLayout->GetReference(),
 		_objectDataLayout->GetReference() };
-	_cubemapPipelineHandle = _renderPipelineManager->BeginPipeline()
+	_CubemapPipelineHandle = _renderPipelineManager->BeginPipeline()
 		.SetRenderPass(_renderPass)
 		.SetColorBlendAttachments(std::span(&colorBlendAttachment, 1))
 		.SetDepthStencilState(depthStencil)
 		.SetDescriptorSetLayouts(std::span(descriptorSetLayouts))
 		.SetSubpassIndex(0)
-		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/CubeMap.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/CubeMap.frag.spv")
+		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Cubemap.vert.spv")
+		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Cubemap.frag.spv")
 		.Build();
-}
+}*/
 
-void CubeMapRenderer::CreateComputePipeline()
+/*void CubemapRenderer::CreateComputePipeline()
 {
 	// Create the compute pipeline.
 	std::array descriptorSetLayouts{ _matricesLayout->GetReference(),
 		_objectDataLayout->GetReference() };
 	_computePipelineHandle = _renderPipelineManager->BeginPipeline()
 		.SetDescriptorSetLayouts(std::span(descriptorSetLayouts))
-		.SetShaderModule(ShaderModuleType::Compute, "assets/shaders/CubeMapCompute.comp.spv")
+		.SetShaderModule(ShaderModuleType::Compute, "assets/shaders/CubemapCompute.comp.spv")
 		.Build();
-}
+}*/
 
-void CubeMapRenderer::CreateFramebuffer(uint32_t size) {
+/*void CubemapRenderer::CreateFramebuffer(uint32_t size) {
 	for (uint32_t face = 0; face < 6; ++face) {
 		VkImageView attachments[] = { _faceImageViews[face] };
 		VkFramebufferCreateInfo framebufferInfo{ };
@@ -433,39 +497,39 @@ void CubeMapRenderer::CreateFramebuffer(uint32_t size) {
 
 		vkCreateFramebuffer(_device, &framebufferInfo, nullptr, &_faceFramebuffers[face]);
 	}
-}
+}*/
 
-void CubeMapRenderer::CreateCommandPool(uint32_t queueFamilyIndex) {
+/*void CubemapRenderer::CreateCommandPool(uint32_t queueFamilyIndex) {
 	VkCommandPoolCreateInfo poolInfo{ };
 	poolInfo.queueFamilyIndex = queueFamilyIndex;
 	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 	vkCreateCommandPool(_device, &poolInfo, nullptr, &_commandPool);
-}
+}*/
 
-void CubeMapRenderer::CreateVertexBuffer(const std::vector<Vertex>& vertices) {
+/*void CubemapRenderer::CreateVertexBuffer(const std::vector<Vertex>& vertices) {
 	// Create VkBuffer, allocate memory, copy data
 	// Use VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-}
+}*/
 
-void CubeMapRenderer::CreateIndexBuffer(const std::vector<uint32_t>& indices) {
+/*void CubemapRenderer::CreateIndexBuffer(const std::vector<uint32_t>& indices) {
 	// Create VkBuffer, allocate memory, copy data
 	// Use VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-}
+}*/
 
-void CubeMapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize) {
+/*void CubemapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize) {
 	_uniformBuffer = _resourceManager->AllocateDeviceBuffer(
 		bufferSize,
 		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 	);
 	// Optionally map and store pointer for updates
-}
+}*/
 
-void CubeMapRenderer::CreateDescriptorPool() {
+/*void CubemapRenderer::CreateDescriptorPool() {
 	VkDescriptorPoolSize poolSize{};
 	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSize.descriptorCount = 6; // one per cubemap face
+	poolSize.descriptorCount = 6; // one per Cubemap face
 
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -474,9 +538,9 @@ void CubeMapRenderer::CreateDescriptorPool() {
 	poolInfo.maxSets = 6;
 
 	vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPoolHandle);
-}
+}*/
 
-void CubeMapRenderer::CreateDescriptorPoolSets() {
+/*void CubemapRenderer::CreateDescriptorPoolSets() {
 	std::vector<VkDescriptorSetLayout> layouts(6, _descriptorSetLayout);
 	VkDescriptorSetAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -504,9 +568,9 @@ void CubeMapRenderer::CreateDescriptorPoolSets() {
 
 		vkUpdateDescriptorSets(_device, 1, &descriptorWrite, 0, nullptr);
 	}
-}
+}*/
 
-void CubeMapRenderer::CreateCommandBuffer() {
+/*void CubemapRenderer::CreateCommandBuffer() {
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocInfo.commandPool = _commandPool;
@@ -515,9 +579,9 @@ void CubeMapRenderer::CreateCommandBuffer() {
 
 	_commandBuffers.resize(6);
 	vkAllocateCommandBuffers(_device, &allocInfo, _commandBuffers.data());
-}
+}*/
 
-void CubeMapRenderer::CreateSyncObjects() {
+/*void CubemapRenderer::CreateSyncObjects() {
 	VkSemaphoreCreateInfo semaphoreInfo{};
 	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -529,7 +593,5 @@ void CubeMapRenderer::CreateSyncObjects() {
 		vkCreateSemaphore(_device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]);
 		vkCreateFence(_device, &fenceInfo, nullptr, &_inFlightFences[i]);
 	}
-}
-
-}
+}*/
 
