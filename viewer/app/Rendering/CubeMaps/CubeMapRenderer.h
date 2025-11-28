@@ -20,16 +20,14 @@
 //class RenderResourceManager;
 //class RenderCommandScheduler;
 
-class CubemapRenderer: public Subsystem
+class CubemapRenderer
 {
-	DECLARE_SUBSYSTEM(CubemapRenderer)
 public:
-	CubemapRenderer();
-
-	void Initialize(const SubsystemsCollection& collection) override;
-	void PostInitialize();
-	void Update(const double deltaTime) override {}
-	void Deinitialize() override {}; //todo
+	CubemapRenderer() = delete;
+	CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
+		const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance);
+	void Initialize();
+	void Deinitialize() {}; //todo
 	
 	//[[nodiscard]] std::shared_ptr<PolygonMesh> AddCage(const Eigen::MatrixXd& vertices,
 		//const Eigen::MatrixXi& indices);
@@ -70,6 +68,7 @@ private:
 	//VkDescriptorSet _descriptorSet = VK_NULL_HANDLE;
 
 	RenderResourceRef<Device> _device;
+	RenderResourceRef<Instance> _instance;
 
 	std::vector<VkImage> _cubemapImages = {};
 	std::vector<std::array<VkImageView, 6>> _faceImageViews = {};

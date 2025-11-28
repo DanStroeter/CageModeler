@@ -112,6 +112,12 @@ void RenderSubsystem::InitializeEditor(const std::shared_ptr<Editor>& editor)
 	_uiBackend->Init(*_windowSubsystem->_window);
 }
 
+void RenderSubsystem::InitializeCubeMapRenderer()
+{
+	_cubemapRenderer = std::make_shared<CubemapRenderer>(_renderPipelineManager, _renderResourceManager, _device, _instance);
+	_cubemapRenderer->Initialize();
+}
+
 void RenderSubsystem::ReleaseResource()
 {
 	CHECK_VK_HANDLE(_device);

@@ -7,16 +7,16 @@
 #include <Mesh/ScreenPass.h>
 #include <Editor/Light.h>
 
-
-
-CubemapRenderer::CubemapRenderer()
+CubemapRenderer::CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
+	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance) : _renderPipelineManager(renderPipelineManager),
+	_resourceManager(resourceManager), _device(device), _instance(instance)
 {
 	// Calculate required alignment based on minimum device offset alignment
 	//_objectsBufferDynamicAlignment = _device->GetMinimumMemoryAlignment<ModelInfo>();
 	//_objectsBufferData.Resize(TotalNumSceneObjects);
 }
 
-void CubemapRenderer::Initialize(const SubsystemsCollection& collection)
+void CubemapRenderer::Initialize()
 {
 	// Creates all descriptor set layouts.
 	//CreateDescriptorSetLayouts();
@@ -34,12 +34,6 @@ void CubemapRenderer::Initialize(const SubsystemsCollection& collection)
 	// Creates the grid and the gradient background.
 	//CreateScreenPasses();
 
-	// Get the editor's RenderSubsystem
-	_renderSubsystem = GetDependencySubsystem<RenderSubsystem>(collection);
-	// Reuse Vulkan instance and device
-	_device = _renderSubsystem->getDevice();
-	VkInstance instance = _renderSubsystem->getInstance();
-
 	/*VkPipelineLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	layoutInfo.setLayoutCount = 0; // if you use descriptors, set them here
@@ -48,12 +42,6 @@ void CubemapRenderer::Initialize(const SubsystemsCollection& collection)
 	{
 		throw std::runtime_error("Failed to create Cubemap pipeline layout!");
 	}*/
-}
-
-void CubemapRenderer::PostInitialize()
-{
-	_renderPipelineManager = _renderSubsystem->getPipelineManager();
-	_resourceManager = _renderSubsystem->getResourceManager();
 	CreateImageViews(512, VK_FORMAT_R8G8B8A8_UNORM);
 }
 

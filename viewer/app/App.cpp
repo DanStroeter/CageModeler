@@ -11,7 +11,6 @@ void App::Initialize()
 	REGISTER_SUBSYSTEM(_collection, WindowSubsystem)
 	REGISTER_SUBSYSTEM(_collection, CameraSubsystem)
 	REGISTER_SUBSYSTEM(_collection, RenderSubsystem)
-	REGISTER_SUBSYSTEM(_collection, CubemapRenderer);
 
 	_collection.PostInitializeSubsystems();
 }
@@ -27,6 +26,10 @@ void App::Start()
 
 	// TODO: Separate the editor from the editor rendering to avoid post-initialization from the rendering subsystem.
 	renderSubsystem->InitializeEditor(_editor);
+
+	//TODO put this where rendering for cube maps is actually needed(when pmvc get calculated)
+	renderSubsystem->InitializeCubeMapRenderer();
+	// Add input delegates for window events.
 
 	AddInputDelegates();
 

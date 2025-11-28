@@ -9,12 +9,14 @@
 #include <Rendering/Core/Swapchain.h>
 #include <Editor/Editor.h>
 #include <UI/UserInterfaceBackend.h>
+#include <Rendering/CubeMaps/CubeMapRenderer.h>
 
 class CameraSubsystem;
 class RenderCommandScheduler;
 class WindowSubsystem;
 class ResourceManager;
 class RenderPipelineManager;
+class CubemapRenderer;
 
 class RenderSubsystem final : public Subsystem
 {
@@ -28,6 +30,7 @@ public:
 	//~END Subsystem
 
 	void InitializeEditor(const std::shared_ptr<Editor>& editor);
+	void InitializeCubeMapRenderer();
 
 	void OnWindowResized();
 
@@ -35,9 +38,6 @@ public:
 
 	RenderResourceRef<Instance> getInstance() const { return _instance; }
 	RenderResourceRef<Device> getDevice() const { return _device; }
-
-	std::shared_ptr<RenderResourceManager> getResourceManager() const { return _renderResourceManager; }
-	std::shared_ptr<RenderPipelineManager> getPipelineManager() const { return _renderPipelineManager; }
 
 private:
 	void ReleaseResource();
@@ -68,6 +68,7 @@ private:
 	std::unique_ptr<UserInterfaceBackend> _uiBackend = nullptr;
 	std::shared_ptr<Editor> _editor = nullptr;
 	std::shared_ptr<SceneRenderer> _sceneRenderer = nullptr;
+	std::shared_ptr<CubemapRenderer> _cubemapRenderer = nullptr;
 
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
 	std::vector<VkFramebuffer> _framebuffers;
