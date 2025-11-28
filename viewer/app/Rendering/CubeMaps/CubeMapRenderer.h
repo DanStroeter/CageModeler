@@ -24,12 +24,11 @@ class CubemapRenderer: public Subsystem
 {
 	DECLARE_SUBSYSTEM(CubemapRenderer)
 public:
-	CubemapRenderer() = delete;
-	CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
-		const std::shared_ptr<RenderResourceManager>& resourceManager);
+	CubemapRenderer();
+
 	void Initialize(const SubsystemsCollection& collection) override;
 	void Update(const double deltaTime) override {}
-	void Deinitialize() override;
+	void Deinitialize() override {}; //todo
 	
 	//[[nodiscard]] std::shared_ptr<PolygonMesh> AddCage(const Eigen::MatrixXd& vertices,
 		//const Eigen::MatrixXi& indices);
@@ -71,10 +70,10 @@ private:
 
 	RenderResourceRef<Device> _device;
 
-	std::vector<RenderResourceRef<VkImage>> _cubemapImages = {};
-	std::vector<RenderResourceRef<VkImageView>[6]> _faceImageViews = {};
-	std::vector<RenderResourceRef<VkDeviceMemory>> _cubemapImageMemory = {};
-	std::vector<RenderResourceRef<VkImageView>> _cubemapViews = {};
+	std::vector<VkImage> _cubemapImages = {};
+	std::vector<std::array<VkImageView, 6>> _faceImageViews = {};
+	std::vector<VkDeviceMemory> _cubemapImageMemory = {};
+	std::vector<VkImageView> _cubemapViews = {};
 
 	/// The render pipeline manager to add the scene graphics pipelines.
 	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr; //reuse from scene

@@ -9,10 +9,7 @@
 
 
 
-CubemapRenderer::CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
-	const std::shared_ptr<RenderResourceManager>& resourceManager)
-	: _renderPipelineManager(renderPipelineManager)
-	, _resourceManager(resourceManager)
+CubemapRenderer::CubemapRenderer()
 {
 	// Calculate required alignment based on minimum device offset alignment
 	//_objectsBufferDynamicAlignment = _device->GetMinimumMemoryAlignment<ModelInfo>();
@@ -52,6 +49,8 @@ void CubemapRenderer::Initialize(const SubsystemsCollection& collection)
 		throw std::runtime_error("Failed to create Cubemap pipeline layout!");
 	}*/
 	CreateImageViews(512, VK_FORMAT_R8G8B8A8_UNORM);
+	_renderPipelineManager = _renderSubsystem->getPipelineManager();
+	_resourceManager = _renderSubsystem->getResourceManager();
 }
 
 void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
@@ -70,9 +69,9 @@ void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
 	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-	RenderResourceRef<VkImage> cubemapImage;
+	VkImage cubemapImage = VK_NULL_HANDLE;
 
-	if (vkCreateImage(_device, &imageInfo, nullptr, cubemapImage) != VK_SUCCESS) {
+	if (vkCreateImage(_device, &imageInfo, nullptr, &cubemapImage) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to create Cubemap image!");
 	}
 	_cubemapImages.push_back(cubemapImage);
@@ -103,8 +102,8 @@ void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
 	}
 	allocInfo.memoryTypeIndex = memoryTypeIndex;
 
-	RenderResourceRef<VkDeviceMemory> cubemapMemory;
-	if (vkAllocateMemory(_device, &allocInfo, nullptr, cubemapMemory) != VK_SUCCESS) {
+	VkDeviceMemory cubemapMemory = VK_NULL_HANDLE;
+	if (vkAllocateMemory(_device, &allocInfo, nullptr, &cubemapMemory) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to allocate memory for Cubemap image!");
 	}
 
@@ -113,6 +112,7 @@ void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
 	}
 	_cubemapImageMemory.push_back(cubemapMemory);
 
+	std::array<VkImageView, 6> faceImageViews = {};
 	// Create 6 image views
 	for (uint32_t face = 0; face < 6; ++face) {
 		VkImageViewCreateInfo viewInfo{};
@@ -130,13 +130,15 @@ void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
 		viewInfo.subresourceRange.baseArrayLayer = 0;
 		viewInfo.subresourceRange.layerCount = 6;
 
-		RenderResourceRef<VkImageView> faceImageView;
+		VkImageView faceImageView = VK_NULL_HANDLE;
 
-		if (vkCreateImageView(_device, &viewInfo, nullptr, faceImageView) != VK_SUCCESS) {
+		if (vkCreateImageView(_device, &viewInfo, nullptr, &faceImageView) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create Cubemap face image view!");
 		}
-		_faceImageViews.push_back(faceImageView);
+
+		faceImageViews[face] = faceImageView;
 	}
+	_faceImageViews.push_back(faceImageViews);
 
 	// Create a single VkImageView for the whole Cubemap
 	VkImageViewCreateInfo cubeViewInfo{};
@@ -154,8 +156,8 @@ void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
 	cubeViewInfo.subresourceRange.baseArrayLayer = 0;
 	cubeViewInfo.subresourceRange.layerCount = 6;
 
-	RenderResourceRef<VkImageView> cubemapView;
-	if (vkCreateImageView(_device, &cubeViewInfo, nullptr, cubemapView) != VK_SUCCESS) {
+	VkImageView cubemapView = VK_NULL_HANDLE;
+	if (vkCreateImageView(_device, &cubeViewInfo, nullptr, &cubemapView) != VK_SUCCESS) {
 		throw std::runtime_error("Failed to create Cubemap image view!");
 	}
 	_cubemapViews.push_back(cubemapView);

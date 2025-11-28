@@ -11,7 +11,7 @@ void App::Initialize()
 	REGISTER_SUBSYSTEM(_collection, WindowSubsystem)
 	REGISTER_SUBSYSTEM(_collection, CameraSubsystem)
 	REGISTER_SUBSYSTEM(_collection, RenderSubsystem)
-	REGISTER_SUBSYSTEM(_collection, CubeMapRenderer);
+	REGISTER_SUBSYSTEM(_collection, CubemapRenderer);
 
 	_collection.PostInitializeSubsystems();
 }

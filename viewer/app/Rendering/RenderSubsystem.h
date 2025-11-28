@@ -36,6 +36,9 @@ public:
 	RenderResourceRef<Instance> getInstance() const { return _instance; }
 	RenderResourceRef<Device> getDevice() const { return _device; }
 
+	std::shared_ptr<RenderResourceManager> getResourceManager() const { return _renderResourceManager; }
+	std::shared_ptr<RenderPipelineManager> getPipelineManager() const { return _renderPipelineManager; }
+
 private:
 	void ReleaseResource();
 	void CreateFrameSynchronization();
