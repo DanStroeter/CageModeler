@@ -35,7 +35,7 @@ public:
 		//const Eigen::MatrixXi& indices);
 	//void RemoveMesh(const std::shared_ptr<PolygonMesh>& mesh);
 
-	//void ComputeCoordinates();//pass cage and mesh, return coordinates
+	void ComputeCoordinates(); //Placeholder function to compute cubemap coordinates
 private:
 	SubsystemPtr<RenderSubsystem> _renderSubsystem;
 

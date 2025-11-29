@@ -19,7 +19,9 @@ enum class DeformationType : uint8_t
 	MLC,
 	Green,
 	QGC,
-	Somigliana
+	Somigliana,
+	PMVCLipman,
+	PMVCRayracing
 };
 
 struct DeformationTypeHelpers
@@ -66,6 +68,14 @@ struct DeformationTypeHelpers
 		else if (deformationType == DeformationType::Somigliana)
 		{
 			return "Somigliana";
+		}
+		else if (deformationType == DeformationType::PMVCLipman)
+		{
+			return "PMVCLipman";
+		}
+		else if (deformationType == DeformationType::PMVCRayracing)
+		{
+			return "PMVCRayracing";
 		}
 
 		return { };

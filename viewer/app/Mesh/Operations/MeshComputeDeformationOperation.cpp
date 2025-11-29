@@ -78,7 +78,7 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 				vertexData[i]._vertices);
 		}
 		else if (_params._deformationType == DeformationType::MVC ||_params._deformationType == DeformationType::QMVC || _params._deformationType == DeformationType::MLC ||
-			_params._deformationType == DeformationType::MEC)
+			_params._deformationType == DeformationType::MEC || _params._deformationType == DeformationType::PMVCRayracing || _params._deformationType == DeformationType::PMVCLipman)
 		{
 			vertexData[i]._vertices = _params._weightsData._weights.transpose() * _params._deformedCage._vertices;
 		}

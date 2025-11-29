@@ -4,6 +4,7 @@
 #include <cagedeformations/MaximumEntropyCoordinates.h>
 #include <cagedeformations/MaximumLikelihoodCoordinates.h>
 #include <cagedeformations/WeightInterpolation.h>
+//#include <cagedeformations/PoisitveMeanValueCoordinatesLipman.h>
 #include <igl/boundary_conditions.h>
 #include <igl/harmonic.h>
 #include <igl/bbw.h>
@@ -179,6 +180,19 @@ MeshComputeWeightsOperation::ExecutionResult MeshComputeWeightsOperation::Execut
 			return ExecutionResult("Failed to compute bounded biharmonic weights");
 		}
 	}
+	else if (_params._deformationType == DeformationType::PMVCLipman)
+	{
+		//TODO
+		//calculatePMVCLIpmanCoordinates(_params._cage._vertices,_params._cage._faces,_params._mesh._vertices,weights);
+			LOG_ERROR("PMVCLipman not implemented yet!");
+			return ExecutionResult("Failed to compute PMVC weights");
+	}
+	else if (_params._deformationType == DeformationType::PMVCRayracing)
+	{
+		LOG_ERROR("PMVCRaytracing not implemented yet!");
+		return ExecutionResult("Failed to compute PMVC weights");
+	}
+
 
 	if (DeformationTypeHelpers::RequiresEmbedding(_params._deformationType))
 	{

@@ -7,6 +7,11 @@
 #include <Mesh/ScreenPass.h>
 #include <Editor/Light.h>
 
+void ComputeCoordinates() {
+	// Placeholder function to compute cubemap coordinates
+	std::cout << "Computed PMVC coordinates beep boop!" << "\n";
+}
+
 CubemapRenderer::CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
 	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance) : _renderPipelineManager(renderPipelineManager),
 	_resourceManager(resourceManager), _device(device), _instance(instance)
