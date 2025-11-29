@@ -201,16 +201,6 @@ void CubemapRenderer::CreateRenderPass(VkFormat format) {
 }
 
 void CubemapRenderer::CreateDescriptorSetLayouts() {
-	/*VkDescriptorSetLayoutBinding uboLayoutBinding{};
-	uboLayoutBinding.binding = 0;
-	uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	uboLayoutBinding.descriptorCount = 1;
-	uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-	std::array<VkDescriptorSetLayoutBinding, 1> layoutBindings{ uboLayoutBinding };
-
-	_uboLayout = _descriptorPool->CreateDescriptorSetLayout(layoutBindings);*/
-
 	VkDescriptorSetLayoutBinding layoutBinding{ };
 	layoutBinding.binding = 0;
 	layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -223,7 +213,6 @@ void CubemapRenderer::CreateDescriptorSetLayouts() {
 }
 
 /*void CubemapRenderer::AllocateDescriptorSets() {
-
 	/*RenderArrayType<VkDescriptorSetLayout> matricesDescriptorSetLayouts { };
 	std::ranges::fill(matricesDescriptorSetLayouts, _matricesLayout);
 	_matricesDescriptorSets = _descriptorPool->AllocateDescriptorSets(matricesDescriptorSetLayouts);

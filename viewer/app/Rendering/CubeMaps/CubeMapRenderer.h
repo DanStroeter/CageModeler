@@ -48,9 +48,7 @@ private:
 	//void CreateVertexBuffer(const std::vector<Vertex>& vertices);
 
 	PipelineHandle _cubemapPipelineHandle;
-
-	VkPipeline _copmutePipeline = VK_NULL_HANDLE;
-	VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
+	//PipelineHandle _computePipelineHandle;
 
 	std::shared_ptr<PolygonMesh> _cageMesh;
 	std::shared_ptr<PolygonMesh> _deformableMesh;
@@ -60,13 +58,14 @@ private:
 
 	// The render pass we use for rendering the entire scene. It is created by the render subsystem and passed to the editor.
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
-	
+
 	//VkDescriptorSetLayout _descriptorSetLayout = VK_NULL_HANDLE;
 
 	std::vector<VkImage> _cubemapImages = {};
 	std::vector<std::array<VkImageView, 6>> _faceImageViews = {};
 	std::vector<VkDeviceMemory> _cubemapImageMemory = {};
 	std::vector<VkImageView> _cubemapViews = {};
+	std::vector<VkFramebuffer> _faceFramebuffers = {};
 
 	// The render pipeline manager to add the scene graphics pipelines.
 	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr;
@@ -79,9 +78,6 @@ private:
 
 	//RenderResourceRef<DescriptorSetLayout> _uboLayout; not needed
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
-
-	VkDescriptorSet _matricesDescriptorSet;
-	MemoryMappedBuffer _matricesUniformBuffer;
-
-	std::vector<VkFramebuffer> _faceFramebuffers;
+	//VkDescriptorSet _matricesDescriptorSet;
+	//MemoryMappedBuffer _matricesUniformBuffer;
 };
