@@ -13,13 +13,6 @@
 #include <Rendering/RenderSubsystem.h>
 #include <Eigen/Core>
 
-//struct ViewInfo;
-//class ScreenPass;
-//class PolygonMesh;
-//class RenderProxyCollector;
-//class RenderResourceManager;
-//class RenderCommandScheduler;
-
 class CubemapRenderer
 {
 public:
@@ -27,29 +20,24 @@ public:
 	CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
 		const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance);
 	void Initialize();
-	void Deinitialize() {}; //todo
-	
-	//[[nodiscard]] std::shared_ptr<PolygonMesh> AddCage(const Eigen::MatrixXd& vertices,
-		//const Eigen::MatrixXi& indices);
-	//[[nodiscard]] std::shared_ptr<PolygonMesh> AddMesh(const Eigen::MatrixXd& vertices,
-		//const Eigen::MatrixXi& indices);
-	//void RemoveMesh(const std::shared_ptr<PolygonMesh>& mesh);
+	void Deinitialize() {}; //TODO
 
 	void ComputeCoordinates(); //Placeholder function to compute cubemap coordinates
+
+	void SetCage(const std::shared_ptr<PolygonMesh> cage) { _cageMesh = cage; }
+	void SetMesh(const std::shared_ptr<PolygonMesh> mesh) { _deformableMesh = mesh; }
 private:
 	SubsystemPtr<RenderSubsystem> _renderSubsystem;
 
 	void CreateImageViews(uint32_t size, VkFormat format);
-	
-	//void CreateScreenPasses();
-	//void CreateDescriptorSetLayouts();
-	//void CreateCubeMapRenderPipeline();
+	void CreateRenderPass(VkFormat format);
+	void CreateDescriptorSetLayouts();
+	void CreateCubemapRenderPipeline();
+	void CreateFramebuffer(uint32_t size);
+
 	//void CreateComputePipeline();
 	//void AllocateDescriptorSets();
 	//void CreateUniformBuffers();
-	//void CreateRenderPass(VkFormat format);
-	//void CreateDescriptorSetLayout();
-	//void CreateFramebuffer(uint32_t size);
 	//void CreateCommandPool(uint32_t queueFamilyIndex);
 	//void CreateCommandBuffer();
 	//void CreateSyncObjects();
@@ -59,36 +47,41 @@ private:
 	//void CreateIndexBuffer(const std::vector<uint32_t>& indices);
 	//void CreateVertexBuffer(const std::vector<Vertex>& vertices);
 
-	VkPipeline _cubemapPipeline = VK_NULL_HANDLE;
-	VkPipelineLayout _cubemapPipelineLayout = VK_NULL_HANDLE;
+	PipelineHandle _cubemapPipelineHandle;
 
 	VkPipeline _copmutePipeline = VK_NULL_HANDLE;
 	VkPipelineLayout computePipelineLayout = VK_NULL_HANDLE;
 
-	//VkDescriptorSet _descriptorSet = VK_NULL_HANDLE;
+	std::shared_ptr<PolygonMesh> _cageMesh;
+	std::shared_ptr<PolygonMesh> _deformableMesh;
 
 	RenderResourceRef<Device> _device;
 	RenderResourceRef<Instance> _instance;
+
+	// The render pass we use for rendering the entire scene. It is created by the render subsystem and passed to the editor.
+	VkRenderPass _renderPass = VK_NULL_HANDLE;
+	
+	//VkDescriptorSetLayout _descriptorSetLayout = VK_NULL_HANDLE;
 
 	std::vector<VkImage> _cubemapImages = {};
 	std::vector<std::array<VkImageView, 6>> _faceImageViews = {};
 	std::vector<VkDeviceMemory> _cubemapImageMemory = {};
 	std::vector<VkImageView> _cubemapViews = {};
 
-	/// The render pipeline manager to add the scene graphics pipelines.
-	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr; //reuse from scene
+	// The render pipeline manager to add the scene graphics pipelines.
+	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr;
 
-	/// Pointer to the resource manager.
-	std::shared_ptr<RenderResourceManager> _resourceManager = nullptr; //reuse from scene
+	// Pointer to the resource manager.
+	std::shared_ptr<RenderResourceManager> _resourceManager = nullptr; 
 
-	/// The Vulkan descriptor pool resource.
-	//RenderResourceRef<DescriptorPool> _descriptorPool; //make new one 
+	// The Vulkan descriptor pool resource.
+	RenderResourceRef<DescriptorPool> _descriptorPool;
 
-	/// The render pass we use for rendering the entire scene. It is created by the render subsystem and passed to the editor.
-	//VkRenderPass _renderPass = VK_NULL_HANDLE; //make new one
+	//RenderResourceRef<DescriptorSetLayout> _uboLayout; not needed
+	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
 
-	//RenderResourceRef<DescriptorSetLayout> _matricesLayout;
-	//std::vector<VkDescriptorSet> _matricesDescriptorSets;
-	//std::vector<MemoryMappedBuffer> _matricesUniformBuffers;
-	//more buffers that i need
+	VkDescriptorSet _matricesDescriptorSet;
+	MemoryMappedBuffer _matricesUniformBuffer;
+
+	std::vector<VkFramebuffer> _faceFramebuffers;
 };
