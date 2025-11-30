@@ -34,6 +34,7 @@ private:
 	void CreateDescriptorSetLayouts();
 	void CreateCubemapRenderPipeline();
 	void CreateFramebuffer(uint32_t size);
+	void CreateDepthImage(uint32_t size);
 
 	//void CreateComputePipeline();
 	//void AllocateDescriptorSets();
@@ -67,6 +68,9 @@ private:
 	std::vector<VkImageView> _cubemapViews = {};
 	std::vector<VkFramebuffer> _faceFramebuffers = {};
 
+	std::vector<VkImageView> _depthImageViews = {};
+		VkDeviceMemory _depthImageMemory = VK_NULL_HANDLE;
+		VkImage _depthImage	= VK_NULL_HANDLE;
 	// The render pipeline manager to add the scene graphics pipelines.
 	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr;
 

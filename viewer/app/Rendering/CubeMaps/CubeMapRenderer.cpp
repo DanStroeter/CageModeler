@@ -29,6 +29,7 @@ void CubemapRenderer::Initialize()
 	CreateRenderPass(VK_FORMAT_R8G8B8A8_UNORM);
 	CreateDescriptorSetLayouts();
 	CreateCubemapRenderPipeline();
+	CreateDepthImage(512);
 	CreateFramebuffer(512);
 }
 
@@ -40,7 +41,7 @@ void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
 	imageInfo.imageType = VK_IMAGE_TYPE_2D;
 	imageInfo.format = format;
 	imageInfo.extent = { size, size, 1 };
-	imageInfo.mipLevels = 0;
+	imageInfo.mipLevels = 1;
 	imageInfo.arrayLayers = 6;
 	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -93,11 +94,12 @@ void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
 
 	std::array<VkImageView, 6> faceImageViews = {};
 	// Create 6 image views
+
 	for (uint32_t face = 0; face < 6; ++face) {
 		VkImageViewCreateInfo viewInfo{};
 		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInfo.image = cubemapImage;
-		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // <-- IMPORTANT: per-face view is 2D
 		viewInfo.format = format;
 		viewInfo.components = {
 			VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -106,11 +108,10 @@ void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
 		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		viewInfo.subresourceRange.baseMipLevel = 0;
 		viewInfo.subresourceRange.levelCount = 1;
-		viewInfo.subresourceRange.baseArrayLayer = 0;
-		viewInfo.subresourceRange.layerCount = 6;
+		viewInfo.subresourceRange.baseArrayLayer = face; // point to single face
+		viewInfo.subresourceRange.layerCount = 1;        // single layer
 
 		VkImageView faceImageView = VK_NULL_HANDLE;
-
 		if (vkCreateImageView(_device, &viewInfo, nullptr, &faceImageView) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create Cubemap face image view!");
 		}
@@ -252,20 +253,97 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 		.Build();
 }
 
+void CubemapRenderer::CreateDepthImage(uint32_t size) {
+	VkFormat depthFormat = _device->FindDepthFormat();
+
+	VkImageCreateInfo depthImageInfo{};
+	depthImageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	depthImageInfo.imageType = VK_IMAGE_TYPE_2D;
+	depthImageInfo.format = depthFormat;
+	depthImageInfo.extent = { size, size, 1 };
+	depthImageInfo.mipLevels = 1;
+	depthImageInfo.arrayLayers = 6; // match cubemap faces
+	depthImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	depthImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	depthImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	depthImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	depthImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	if (vkCreateImage(_device, &depthImageInfo, nullptr, &_depthImage) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create depth image!");
+	}
+
+	VkMemoryRequirements memRequirements;
+	vkGetImageMemoryRequirements(_device, _depthImage, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	VkPhysicalDeviceMemoryProperties memProperties;
+	VkPhysicalDevice physicalDevice = _device->GetPhysicalDeviceHandle();
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+	uint32_t memoryTypeIndex = UINT32_MAX;
+	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+		if ((memRequirements.memoryTypeBits & (1 << i)) &&
+			(memProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+			memoryTypeIndex = i;
+			break;
+		}
+	}
+	if (memoryTypeIndex == UINT32_MAX) {
+		throw std::runtime_error("Failed to find suitable memory type for Cubemap image!");
+	}
+	allocInfo.memoryTypeIndex = memoryTypeIndex;
+
+	if (vkAllocateMemory(_device, &allocInfo, nullptr, &_depthImageMemory) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to allocate depth image memory!");
+	}
+	vkBindImageMemory(_device, _depthImage, _depthImageMemory, 0);
+
+	// Create per-face depth views
+	for (uint32_t face = 0; face < 6; ++face) {
+		VkImageViewCreateInfo viewInfo{};
+		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewInfo.image = _depthImage;
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // per-face view
+		viewInfo.format = depthFormat;
+		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		viewInfo.subresourceRange.baseMipLevel = 0;
+		viewInfo.subresourceRange.levelCount = 1;
+		viewInfo.subresourceRange.baseArrayLayer = face;
+		viewInfo.subresourceRange.layerCount = 1;
+
+		VkImageView depthView;
+		if (vkCreateImageView(_device, &viewInfo, nullptr, &depthView) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create depth image view!");
+		}
+		_depthImageViews.push_back(depthView);
+	}
+}
+
 void CubemapRenderer::CreateFramebuffer(uint32_t size) {
 	_faceFramebuffers.resize(6);
 	for (uint32_t i = 0; i < 6; ++i)
 	{
+		// attachments: color (face i) then depth
+		VkImageView attachments[2] = {
+			_faceImageViews[0][i], // per-face 2D view created above
+			_depthImageViews[i]        // or _depthViews[i] if you have per-face depth
+		};
+
 		VkFramebufferCreateInfo fbInfo{};
 		fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		fbInfo.renderPass = _renderPass;       
-		fbInfo.attachmentCount = 1;
-		fbInfo.pAttachments = &_cubemapViews[i];
+		fbInfo.renderPass = _renderPass;
+		fbInfo.attachmentCount = 2;
+		fbInfo.pAttachments = attachments;
 		fbInfo.width = size;
 		fbInfo.height = size;
 		fbInfo.layers = 1;
 
-		vkCreateFramebuffer(_device, &fbInfo, nullptr, &_faceFramebuffers[i]);
+		if (vkCreateFramebuffer(_device, &fbInfo, nullptr, &_faceFramebuffers[i]) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create cubemap face framebuffer!");
+		}
 	}
 }
 
