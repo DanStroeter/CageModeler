@@ -178,13 +178,18 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	const auto sampleCount = _device->GetMaximumUsableSampleCount();
 
 	// Create the multisampling state.
-	VkPipelineMultisampleStateCreateInfo multisampleState { };
-	multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	multisampleState.rasterizationSamples = sampleCount;
-	multisampleState.sampleShadingEnable = VK_TRUE;
-	multisampleState.minSampleShading = 0.2f;
-	multisampleState.alphaToCoverageEnable = VK_TRUE;
-	multisampleState.alphaToOneEnable = VK_FALSE;
+	VkPipelineMultisampleStateCreateInfo multisampleState{ };
+	if (objectProxy._multisampleStateSet == false) {
+		multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		multisampleState.rasterizationSamples = sampleCount;
+		multisampleState.sampleShadingEnable = VK_TRUE;
+		multisampleState.minSampleShading = 0.2f;
+		multisampleState.alphaToCoverageEnable = VK_TRUE;
+		multisampleState.alphaToOneEnable = VK_FALSE;
+	}
+	else {
+		multisampleState = objectProxy._multisampleState;
+	}
 
 	VkPipelineColorBlendStateCreateInfo colorBlendState { };
 	colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;

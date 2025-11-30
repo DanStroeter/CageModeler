@@ -238,6 +238,11 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 	depthStencil.depthBoundsTestEnable = VK_FALSE;
 	depthStencil.stencilTestEnable = VK_FALSE;
 
+	// Multisample state 
+	VkPipelineMultisampleStateCreateInfo msaa{};
+	msaa.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+	msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT; 
+
 	// Only the matrices layout is needed for cubemap rendering
 	std::array descriptorSetLayouts{ _matricesLayout->GetReference() };
 
@@ -250,7 +255,8 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Cubemap.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Cubemap.frag.spv")
-		.Build();
+		.SetMultisampleState(msaa)
+		.Build(); //TODO add multiample state .SetMultisampleState(msaa)
 }
 
 void CubemapRenderer::CreateDepthImage(uint32_t size) {

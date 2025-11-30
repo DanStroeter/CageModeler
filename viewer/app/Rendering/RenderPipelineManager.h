@@ -92,6 +92,13 @@ public:
 		return *this;
 	}
 
+	GraphicsPipelineObjectProxy& SetMultisampleState(const VkPipelineMultisampleStateCreateInfo& multisampleState)
+	{
+		_multisampleState = multisampleState;
+		_multisampleStateSet = true;
+		return *this;
+	}
+
 	[[nodiscard]] PipelineHandle Build() const;
 
 private:
@@ -113,6 +120,8 @@ private:
 	std::unordered_map<ShaderModuleType, std::filesystem::path> _shaderModules;
 	uint32_t _subpassIndex = 0;
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
+	VkPipelineMultisampleStateCreateInfo _multisampleState{};
+	bool _multisampleStateSet = false;
 };
 
 /**
