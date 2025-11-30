@@ -35,11 +35,11 @@ private:
 	void CreateCubemapRenderPipeline();
 	void CreateFramebuffer(uint32_t size);
 	void CreateDepthImage(uint32_t size);
+	void CreateCommandPool(uint32_t queueFamilyIndex);
 
 	//void CreateComputePipeline();
 	//void AllocateDescriptorSets();
 	//void CreateUniformBuffers();
-	//void CreateCommandPool(uint32_t queueFamilyIndex);
 	//void CreateCommandBuffer();
 	//void CreateSyncObjects();
 	//void CreateDescriptorPoolSets();
@@ -56,6 +56,8 @@ private:
 
 	RenderResourceRef<Device> _device;
 	RenderResourceRef<Instance> _instance;
+
+	VkCommandPool _graphicCommandPool = VK_NULL_HANDLE;
 
 	// The render pass we use for rendering the entire scene. It is created by the render subsystem and passed to the editor.
 	VkRenderPass _renderPass = VK_NULL_HANDLE;

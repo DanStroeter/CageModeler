@@ -31,6 +31,8 @@ void CubemapRenderer::Initialize()
 	CreateCubemapRenderPipeline();
 	CreateDepthImage(512);
 	CreateFramebuffer(512);
+	uint32_t graphicsQueueFamilyIndex = _device->GetQueueFamilies()._graphics.value();
+	CreateCommandPool(graphicsQueueFamilyIndex);
 }
 
 void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
@@ -99,7 +101,7 @@ void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
 		VkImageViewCreateInfo viewInfo{};
 		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInfo.image = cubemapImage;
-		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // <-- IMPORTANT: per-face view is 2D
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; 
 		viewInfo.format = format;
 		viewInfo.components = {
 			VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -108,8 +110,8 @@ void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
 		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		viewInfo.subresourceRange.baseMipLevel = 0;
 		viewInfo.subresourceRange.levelCount = 1;
-		viewInfo.subresourceRange.baseArrayLayer = face; // point to single face
-		viewInfo.subresourceRange.layerCount = 1;        // single layer
+		viewInfo.subresourceRange.baseArrayLayer = face; 
+		viewInfo.subresourceRange.layerCount = 1;       
 
 		VkImageView faceImageView = VK_NULL_HANDLE;
 		if (vkCreateImageView(_device, &viewInfo, nullptr, &faceImageView) != VK_SUCCESS) {
@@ -213,12 +215,6 @@ void CubemapRenderer::CreateDescriptorSetLayouts() {
 	_matricesLayout = _descriptorPool->CreateDescriptorSetLayout(layoutBindings);
 }
 
-/*void CubemapRenderer::AllocateDescriptorSets() {
-	/*RenderArrayType<VkDescriptorSetLayout> matricesDescriptorSetLayouts { };
-	std::ranges::fill(matricesDescriptorSetLayouts, _matricesLayout);
-	_matricesDescriptorSets = _descriptorPool->AllocateDescriptorSets(matricesDescriptorSetLayouts);
-}*/
-
 void CubemapRenderer::CreateCubemapRenderPipeline()
 {
 	// Blend state (disable blending, write all channels)
@@ -256,7 +252,7 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Cubemap.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Cubemap.frag.spv")
 		.SetMultisampleState(msaa)
-		.Build(); //TODO add multiample state .SetMultisampleState(msaa)
+		.Build(); 
 }
 
 void CubemapRenderer::CreateDepthImage(uint32_t size) {
@@ -353,56 +349,14 @@ void CubemapRenderer::CreateFramebuffer(uint32_t size) {
 	}
 }
 
-/*void CubemapRenderer::CreateScreenPasses()
-{
-	RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets{};
-	for (std::size_t i = 0; i < descriptorSets.size(); ++i)
-	{
-		descriptorSets[i] = std::vector{ _matricesDescriptorSets[i] };
-	}
+void CubemapRenderer::CreateCommandPool(uint32_t queueFamilyIndex) {
+	VkCommandPoolCreateInfo poolInfo{ };
+	poolInfo.queueFamilyIndex = queueFamilyIndex;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-	const auto backgroundScreenPass = std::make_shared<ScreenPass>(MeshProxySolidPipeline{
-		_backgroundPipelineHandle,
-		_staticMeshInfluenceMapPipelineHandle,
-		descriptorSets });
-	_screenPasses.push_back(backgroundScreenPass);
-	backgroundScreenPass->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);
+	vkCreateCommandPool(_device, &poolInfo, nullptr, &_graphicCommandPool);
 
-	const auto gridScreenPass = std::make_shared<ScreenPass>(MeshProxySolidPipeline{
-		_gridPipelineHandle,
-		_staticMeshInfluenceMapPipelineHandle,
-		descriptorSets });
-	_screenPasses.push_back(gridScreenPass);
-	gridScreenPass->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);
-	;
-}*/
-
-/*void CubemapRenderer::CreateUniformBuffers()
-{
-	CHECK_VK_HANDLE(_device);
-
-	_matricesUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
-	_lightsUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
-	_objectsDynamicUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
-
-	for (std::size_t index = 0; index < VulkanUtils::NumRenderFramesInFlight; ++index)
-	{
-		FrameInfo frameInfo{ };
-		_matricesUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemory(std::span(&frameInfo, 1),
-			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-
-		if (!_lightSources.empty())
-		{
-			_lightsUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemory(std::span(_lightSources),
-				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-		}
-
-		_objectsDynamicUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemoryAligned(std::span(_objectsBufferData.Data(), TotalNumSceneObjects),
-			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-	}
-	;
-}*/
+}
 
 /*void CubemapRenderer::AllocateDescriptorSets()
 {
@@ -464,8 +418,66 @@ void CubemapRenderer::CreateFramebuffer(uint32_t size) {
 		descriptorWrites[2].pBufferInfo = &objectBufferInfo;
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-		
-	}*/
+
+	}
+}
+
+/*void CubemapRenderer::AllocateDescriptorSets() {
+	/*RenderArrayType<VkDescriptorSetLayout> matricesDescriptorSetLayouts { };
+	std::ranges::fill(matricesDescriptorSetLayouts, _matricesLayout);
+	_matricesDescriptorSets = _descriptorPool->AllocateDescriptorSets(matricesDescriptorSetLayouts);
+}*/
+
+/*void CubemapRenderer::CreateScreenPasses()
+{
+	RenderArrayType<std::vector<VkDescriptorSet>> descriptorSets{};
+	for (std::size_t i = 0; i < descriptorSets.size(); ++i)
+	{
+		descriptorSets[i] = std::vector{ _matricesDescriptorSets[i] };
+	}
+
+	const auto backgroundScreenPass = std::make_shared<ScreenPass>(MeshProxySolidPipeline{
+		_backgroundPipelineHandle,
+		_staticMeshInfluenceMapPipelineHandle,
+		descriptorSets });
+	_screenPasses.push_back(backgroundScreenPass);
+	backgroundScreenPass->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);
+
+	const auto gridScreenPass = std::make_shared<ScreenPass>(MeshProxySolidPipeline{
+		_gridPipelineHandle,
+		_staticMeshInfluenceMapPipelineHandle,
+		descriptorSets });
+	_screenPasses.push_back(gridScreenPass);
+	gridScreenPass->CollectRenderProxy(_renderProxyCollector, _device, _renderCommandScheduler);
+	;
+}*/
+
+/*void CubemapRenderer::CreateUniformBuffers()
+{
+	CHECK_VK_HANDLE(_device);
+
+	_matricesUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
+	_lightsUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
+	_objectsDynamicUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
+
+	for (std::size_t index = 0; index < VulkanUtils::NumRenderFramesInFlight; ++index)
+	{
+		FrameInfo frameInfo{ };
+		_matricesUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemory(std::span(&frameInfo, 1),
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+
+		if (!_lightSources.empty())
+		{
+			_lightsUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemory(std::span(_lightSources),
+				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		}
+
+		_objectsDynamicUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemoryAligned(std::span(_objectsBufferData.Data(), TotalNumSceneObjects),
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+	}
+	;
+}*/
 
 /*void CubemapRenderer::CreateComputePipeline()
 {
@@ -476,14 +488,6 @@ void CubemapRenderer::CreateFramebuffer(uint32_t size) {
 		.SetDescriptorSetLayouts(std::span(descriptorSetLayouts))
 		.SetShaderModule(ShaderModuleType::Compute, "assets/shaders/CubemapCompute.comp.spv")
 		.Build();
-}*/
-
-/*void CubemapRenderer::CreateCommandPool(uint32_t queueFamilyIndex) {
-	VkCommandPoolCreateInfo poolInfo{ };
-	poolInfo.queueFamilyIndex = queueFamilyIndex;
-	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-
-	vkCreateCommandPool(_device, &poolInfo, nullptr, &_commandPool);
 }*/
 
 /*void CubemapRenderer::CreateVertexBuffer(const std::vector<Vertex>& vertices) {
