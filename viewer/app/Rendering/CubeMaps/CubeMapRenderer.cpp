@@ -355,7 +355,25 @@ void CubemapRenderer::CreateCommandPool(uint32_t queueFamilyIndex) {
 	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 	vkCreateCommandPool(_device, &poolInfo, nullptr, &_graphicCommandPool);
+}
 
+void CubemapRenderer::CreateVertexBuffer(const std::vector<Vertex>& vertices) {
+	// Create VkBuffer, allocate memory, copy data
+	// Use VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+}
+
+void CubemapRenderer::CreateIndexBuffer(const std::vector<uint32_t>& indices) {
+	// Create VkBuffer, allocate memory, copy data
+	// Use VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+}
+
+void CubemapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize) {
+	_uniformBuffer = _resourceManager->AllocateDeviceBuffer(
+		bufferSize,
+		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+	// Optionally map and store pointer for updates
 }
 
 /*void CubemapRenderer::AllocateDescriptorSets()
@@ -488,25 +506,6 @@ void CubemapRenderer::CreateCommandPool(uint32_t queueFamilyIndex) {
 		.SetDescriptorSetLayouts(std::span(descriptorSetLayouts))
 		.SetShaderModule(ShaderModuleType::Compute, "assets/shaders/CubemapCompute.comp.spv")
 		.Build();
-}*/
-
-/*void CubemapRenderer::CreateVertexBuffer(const std::vector<Vertex>& vertices) {
-	// Create VkBuffer, allocate memory, copy data
-	// Use VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-}*/
-
-/*void CubemapRenderer::CreateIndexBuffer(const std::vector<uint32_t>& indices) {
-	// Create VkBuffer, allocate memory, copy data
-	// Use VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-}*/
-
-/*void CubemapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize) {
-	_uniformBuffer = _resourceManager->AllocateDeviceBuffer(
-		bufferSize,
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-	// Optionally map and store pointer for updates
 }*/
 
 /*void CubemapRenderer::CreateDescriptorPool() {

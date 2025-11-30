@@ -36,17 +36,16 @@ private:
 	void CreateFramebuffer(uint32_t size);
 	void CreateDepthImage(uint32_t size);
 	void CreateCommandPool(uint32_t queueFamilyIndex);
+	void CreateVertexBuffer(const std::vector<Vertex>& vertices);
+	void CreateIndexBuffer(const std::vector<uint32_t>& indices);
+	void CreateUniformBuffer(VkDeviceSize bufferSize);
 
 	//void CreateComputePipeline();
 	//void AllocateDescriptorSets();
-	//void CreateUniformBuffers();
 	//void CreateCommandBuffer();
 	//void CreateSyncObjects();
 	//void CreateDescriptorPoolSets();
 	//void CreateDescriptorPool();
-	//void CreateUniformBuffer(VkDeviceSize bufferSize);
-	//void CreateIndexBuffer(const std::vector<uint32_t>& indices);
-	//void CreateVertexBuffer(const std::vector<Vertex>& vertices);
 
 	PipelineHandle _cubemapPipelineHandle;
 	//PipelineHandle _computePipelineHandle;
@@ -61,8 +60,6 @@ private:
 
 	// The render pass we use for rendering the entire scene. It is created by the render subsystem and passed to the editor.
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
-
-	//VkDescriptorSetLayout _descriptorSetLayout = VK_NULL_HANDLE;
 
 	std::vector<VkImage> _cubemapImages = {};
 	std::vector<std::array<VkImageView, 6>> _faceImageViews = {};
@@ -82,7 +79,6 @@ private:
 	// The Vulkan descriptor pool resource.
 	RenderResourceRef<DescriptorPool> _descriptorPool;
 
-	//RenderResourceRef<DescriptorSetLayout> _uboLayout; not needed
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
 	//VkDescriptorSet _matricesDescriptorSet;
 	//MemoryMappedBuffer _matricesUniformBuffer;
