@@ -286,6 +286,8 @@ void SceneRenderer::CreateBackgroundPipeline()
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Gradient.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Gradient.frag.spv")
+		.ResetMultisampleState()
+		.ResetViewportAndScissor()
 		.Build();
 }
 
@@ -347,6 +349,10 @@ void SceneRenderer::CreateStaticMeshPipeline()
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/StaticMesh.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/StaticMesh.frag.spv")
+		.ResetMultisampleState()
+		.ResetViewportAndScissor()
+		.ResetMultisampleState()
+		.ResetViewportAndScissor()
 		.SetShaderModuleSpecialization(ShaderModuleType::Fragment, specializationInfo)
 		.Build();
 
@@ -364,6 +370,8 @@ void SceneRenderer::CreateStaticMeshPipeline()
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/StaticMesh.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/StaticMesh.frag.spv")
 		.SetShaderModuleSpecialization(ShaderModuleType::Fragment, specializationInfo)
+		.ResetMultisampleState()
+		.ResetViewportAndScissor()
 		.Build();
 }
 
@@ -409,6 +417,8 @@ void SceneRenderer::CreateCagePipeline()
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/CageMesh.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/CageMesh.frag.spv")
+		.ResetMultisampleState()
+		.ResetViewportAndScissor()
 		.Build();
 }
 
@@ -448,6 +458,8 @@ void SceneRenderer::CreateWireframePipelines()
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Wireframe.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Wireframe.frag.spv")
+		.ResetMultisampleState()
+		.ResetViewportAndScissor()
 		.Build();
 
 	_edgesPipelineHandle = _renderPipelineManager->BeginPipeline()
@@ -461,6 +473,8 @@ void SceneRenderer::CreateWireframePipelines()
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Wireframe.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Wireframe.frag.spv")
+		.ResetMultisampleState()
+		.ResetViewportAndScissor()
 		.Build();
 
 	_polysPipelineHandle = _renderPipelineManager->BeginPipeline()
@@ -474,6 +488,8 @@ void SceneRenderer::CreateWireframePipelines()
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Wireframe.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Wireframe.frag.spv")
+		.ResetMultisampleState()
+		.ResetViewportAndScissor()
 		.Build();
 }
 
@@ -518,6 +534,8 @@ void SceneRenderer::CreateGizmoPipeline()
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Gizmo.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Gizmo.frag.spv")
+		.ResetMultisampleState()
+		.ResetViewportAndScissor()
 		.Build();
 }
 
@@ -557,6 +575,8 @@ void SceneRenderer::CreateViewportGridPipeline()
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Grid.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Grid.frag.spv")
+		.ResetMultisampleState()
+		.ResetViewportAndScissor()
 		.Build();
 }
 

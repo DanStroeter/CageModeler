@@ -63,9 +63,9 @@ private:
 	void CreateIndexBufferFromMesh();
 	void CreateUniformBuffer(VkDeviceSize bufferSize);
 	
-	void AllocateObjectDescriptorSet();
+	//void AllocateObjectDescriptorSet();
+	//void UpdateObjectDescriptorSet();
 	void AllocateMatricesDescriptorSet();
-	void AllocateObjectDescriptorSet();
 	void UpdateMatricesDescriptorSet();
 
 	void CreateCommandBuffer();
@@ -75,8 +75,6 @@ private:
 	float ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
 	float ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
 	glm::mat4 ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos);
-	void UpdateObjectDescriptorSet();
-	void AllocateObjectDescriptorSet();
 	std::vector<CubemapVertex> CreateCubemapVertexBuffer(const PolygonMesh& mesh);
 
 	//resources
@@ -111,11 +109,11 @@ private:
 	//descriptors
 	RenderResourceRef<DescriptorPool> _descriptorPool;
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
-	RenderResourceRef<DescriptorSetLayout> _objectDataLayout;
 	VkDescriptorSet _matricesDescriptorSet;
 	MemoryMappedBuffer _matricesUniformBuffer;
-	VkDescriptorSet _objectDataDescriptorSet;
-	MemoryMappedBuffer _objectDataBuffer;
+	//RenderResourceRef<DescriptorSetLayout> _objectDataLayout;
+	//VkDescriptorSet _objectDataDescriptorSet;
+	//MemoryMappedBuffer _objectDataBuffer;
 
 	//buffers
 	MemoryMappedBuffer _indexBuffer;
@@ -124,4 +122,8 @@ private:
 	
 	//sync
 	VkFence _renderFence;
+
+
+	//---------------------Debugging print
+
 };

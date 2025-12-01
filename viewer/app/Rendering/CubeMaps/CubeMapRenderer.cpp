@@ -30,19 +30,22 @@ void CubemapRenderer::Initialize()
 	CreateRenderPass(VK_FORMAT_R8G8B8A8_UNORM);
 	CreateDescriptorSetLayouts();
 	CreateCubemapRenderPipeline();
+
 	CreateDepthImage(512);
 	CreateFramebuffer(512);
+
 	uint32_t graphicsQueueFamilyIndex = _device->GetQueueFamilies()._graphics.value();
 	CreateCommandPool(graphicsQueueFamilyIndex);
 	VkDeviceSize uboSize = sizeof(CubemapMatricesUBO);
 	CreateUniformBuffer(uboSize);
+
 	AllocateMatricesDescriptorSet();
-	AllocateObjectDescriptorSet();
 	UpdateMatricesDescriptorSet();
-	UpdateObjectDescriptorSet();
+
 	CreateVertexBufferFromMesh();
 	CreateIndexBufferFromMesh();
 	CreateCommandBuffer();
+
 	CreateSyncObjects();
 }
 
@@ -224,16 +227,6 @@ void CubemapRenderer::CreateDescriptorSetLayouts() {
 	std::array<VkDescriptorSetLayoutBinding, 1> layoutBindings{ layoutBinding };
 
 	_matricesLayout = _descriptorPool->CreateDescriptorSetLayout(layoutBindings);
-
-	VkDescriptorSetLayoutBinding objectBinding{};
-	objectBinding.binding = 2; 
-	objectBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	objectBinding.descriptorCount = 1;
-	objectBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-	std::array<VkDescriptorSetLayoutBinding, 1> bindings{ objectBinding };
-
-	_objectDataLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
 }
 
 void CubemapRenderer::CreateCubemapRenderPipeline()
@@ -275,15 +268,6 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 		VK_COLOR_COMPONENT_A_BIT;
 	colorBlendAttachment.blendEnable = VK_FALSE;
 
-	VkDescriptorSetLayoutBinding objectBinding{};
-	objectBinding.binding = 2;
-	objectBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	objectBinding.descriptorCount = 1;
-	objectBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-	std::array<VkDescriptorSetLayoutBinding, 1> objectBindings{ objectBinding };
-	_objectDataLayout = _descriptorPool->CreateDescriptorSetLayout(objectBindings);
-
 	// Depth/stencil state
 	VkPipelineDepthStencilStateCreateInfo depthStencil{};
 	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -299,7 +283,19 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 	msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT; 
 
 	// Only the matrices layout is needed for cubemap rendering
-	std::array descriptorSetLayouts{ _matricesLayout->GetReference(), _objectDataLayout->GetReference() };
+	std::array descriptorSetLayouts{ _matricesLayout->GetReference() };
+
+	VkViewport viewport{};
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = (float)512;
+	viewport.height = (float)512;
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+
+	VkRect2D scissor{};
+	scissor.offset = { 0, 0 };
+	scissor.extent = { 512, 512 };
 
 	// Build the pipeline
 	_cubemapPipelineHandle = _renderPipelineManager->BeginPipeline()
@@ -311,6 +307,7 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Cubemap.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Cubemap.frag.spv")
 		.SetMultisampleState(msaa)
+		.SetViewportAndScissor(viewport, scissor)
 		.SetVertexInputBindingDescriptions(std::span(&bindingDesc, 1))
 		.SetVertexInputAttributeDescriptions(std::span(attributeDescs))
 		.Build(); 
@@ -504,20 +501,6 @@ void CubemapRenderer::AllocateMatricesDescriptorSet()
 		throw std::runtime_error("Failed to allocate cubemap matrices descriptor set");
 }
 
-void CubemapRenderer::AllocateObjectDescriptorSet()
-{
-	VkDescriptorSetLayout layout = _objectDataLayout->GetReference();
-
-	VkDescriptorSetAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = _descriptorPool; // same pool as matrices
-	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &layout;
-
-	if (vkAllocateDescriptorSets(_device, &allocInfo, &_objectDataDescriptorSet) != VK_SUCCESS)
-		throw std::runtime_error("Failed to allocate object descriptor set");
-}
-
 void CubemapRenderer::UpdateMatricesDescriptorSet()
 {
 	VkDescriptorBufferInfo bufferInfo{};
@@ -529,25 +512,6 @@ void CubemapRenderer::UpdateMatricesDescriptorSet()
 	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	write.dstSet = _matricesDescriptorSet;
 	write.dstBinding = 0;
-	write.dstArrayElement = 0;
-	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	write.descriptorCount = 1;
-	write.pBufferInfo = &bufferInfo;
-
-	vkUpdateDescriptorSets(_device, 1, &write, 0, nullptr);
-}
-
-void CubemapRenderer::UpdateObjectDescriptorSet()
-{
-	VkDescriptorBufferInfo bufferInfo{};
-	bufferInfo.buffer = _objectDataBuffer._deviceBuffer; // Vulkan buffer handle
-	bufferInfo.offset = 0;
-	bufferInfo.range = sizeof(CubemapVertex);
-
-	VkWriteDescriptorSet write{};
-	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.dstSet = _objectDataDescriptorSet;
-	write.dstBinding = 2; // matches shader
 	write.dstArrayElement = 0;
 	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	write.descriptorCount = 1;
@@ -658,17 +622,9 @@ void CubemapRenderer::RenderCubemaps()
 				cmdBuffer,
 				VK_PIPELINE_BIND_POINT_GRAPHICS,
 				pipelineLayout,
-				0, 1,
+				0, 
+				1,
 				&_matricesDescriptorSet,
-				0, nullptr
-			);
-
-			vkCmdBindDescriptorSets(
-				cmdBuffer,
-				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				pipelineLayout,
-				1, 1, // set = 1
-				&_objectDataDescriptorSet,
 				0, nullptr
 			);
 
