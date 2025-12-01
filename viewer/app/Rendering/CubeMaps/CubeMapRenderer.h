@@ -13,6 +13,7 @@
 #include <Rendering/RenderSubsystem.h>
 #include <Eigen/Core>
 
+
 class RenderSubsystem;
 
 struct CubemapMatricesUBO
@@ -125,5 +126,10 @@ private:
 
 
 	//---------------------Debugging print
-
+	
+	VkCommandBuffer BeginOneTimeCommands();
+	void ExportCubemapAsVerticalStrip(const std::string& filename);
+	void TransitionImageToTransferSrc(VkCommandBuffer cmd, VkImage image);
+	void EndOneTimeCommands(VkCommandBuffer cmd);
+	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 };
