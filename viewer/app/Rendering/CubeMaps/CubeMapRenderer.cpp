@@ -6,6 +6,7 @@
 #include <Mesh/PolygonMesh.h>
 #include <Mesh/ScreenPass.h>
 #include <Editor/Light.h>
+#include <cstddef>
 
 void ComputeCoordinates() {
 	// Placeholder function to compute cubemap coordinates
@@ -37,8 +38,8 @@ void CubemapRenderer::Initialize()
 	CreateUniformBuffer(uboSize);
 	AllocateMatricesDescriptorSet();
 	UpdateMatricesDescriptorSet();
-	CreateVertexBuffer(_cageMesh->GetGeometry()._positions);
-	CreateIndexBuffer(_cageMesh->GetGeometry()._indices);
+	CreateVertexBufferFromMesh();
+	CreateIndexBufferFromMesh();
 }
 
 void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
@@ -223,6 +224,35 @@ void CubemapRenderer::CreateDescriptorSetLayouts() {
 
 void CubemapRenderer::CreateCubemapRenderPipeline()
 {
+	VkVertexInputBindingDescription bindingDesc{};
+	bindingDesc.binding = 0;
+	bindingDesc.stride = sizeof(CubemapVertex);
+	bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+	std::array<VkVertexInputAttributeDescription, 3> attributeDescs{}; // now 3 attributes
+	attributeDescs[0].binding = 0;
+	attributeDescs[0].location = 0; // position
+	attributeDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+	attributeDescs[0].offset = offsetof(CubemapVertex, _position);
+
+	attributeDescs[1].binding = 0;
+	attributeDescs[1].location = 1; // triangle ID
+	attributeDescs[1].format = VK_FORMAT_R32_UINT;
+	attributeDescs[1].offset = offsetof(CubemapVertex, _triangleID);
+
+	attributeDescs[2].binding = 0;
+	attributeDescs[2].location = 2; // vertex index
+	attributeDescs[2].format = VK_FORMAT_R32_UINT;
+	attributeDescs[2].offset = offsetof(CubemapVertex, _vertexIndex);
+
+	// Vertex input state
+	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+	vertexInputInfo.vertexBindingDescriptionCount = 1;
+	vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
+	vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescs.size());
+	vertexInputInfo.pVertexAttributeDescriptions = attributeDescs.data();
+
 	// Blend state (disable blending, write all channels)
 	VkPipelineColorBlendAttachmentState colorBlendAttachment{};
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
@@ -258,6 +288,7 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Cubemap.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Cubemap.frag.spv")
 		.SetMultisampleState(msaa)
+		.SetVertexInputAttributeDescriptions(std::span(attributeDescs))
 		.Build(); 
 }
 
@@ -354,11 +385,14 @@ void CubemapRenderer::CreateFramebuffer(uint32_t size) {
 }
 
 void CubemapRenderer::CreateCommandPool(uint32_t queueFamilyIndex) {
-	VkCommandPoolCreateInfo poolInfo{ };
+	VkCommandPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolInfo.queueFamilyIndex = queueFamilyIndex;
 	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-	vkCreateCommandPool(_device, &poolInfo, nullptr, &_graphicCommandPool);
+	if (vkCreateCommandPool(_device, &poolInfo, nullptr, &_graphicCommandPool) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create command pool!");
+	}
 }
 
 void CubemapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize)
@@ -374,26 +408,41 @@ void CubemapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize)
 		);
 }
 
-void CubemapRenderer::CreateVertexBuffer(const std::vector < glm::vec3>& vertices)
+void CubemapRenderer::CreateVertexBufferFromMesh()
 {
-	if (!_cageMesh) {
-		throw std::runtime_error("Cage mesh not initialized!");
+	const auto& geom = _cageMesh->GetGeometry();
+	const auto& positions = geom._positions;
+	const auto& indices = geom._indices;
+
+	std::vector<CubemapVertex> vertexData;
+	vertexData.reserve(indices.size()); // 3 vertices per triangle
+
+	for (size_t tri = 0; tri < indices.size() / 3; ++tri)
+	{
+		for (int v = 0; v < 3; ++v)
+		{
+			uint32_t idx = indices[tri * 3 + v];
+			vertexData.push_back({
+				positions[idx],           // _position
+				static_cast<uint32_t>(tri), // _triangleID
+				static_cast<uint32_t>(v)   // _vertexIndex
+				});
+		}
 	}
 
 	_vertexBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span(vertices),
+		std::span(vertexData),
 		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 	);
 
-	memcpy(_vertexBuffer._mappedData, vertices.data(), vertices.size() * sizeof(Vertex));
+	memcpy(_vertexBuffer._mappedData, vertexData.data(), vertexData.size() * sizeof(CubemapVertex));
 }
 
-void CubemapRenderer::CreateIndexBuffer(const std::vector<uint32_t>& indices)
+void CubemapRenderer::CreateIndexBufferFromMesh()
 {
-	if (!_cageMesh) {
-		throw std::runtime_error("Cage mesh not initialized!");
-	}
+	const MeshGeometry& geom = _cageMesh.get()->GetGeometry();
+	const std::vector<uint32_t>& indices = geom._indices;
 
 	_indexBuffer = _resourceManager->CreateBufferAndMapMemory(
 		std::span(indices),
@@ -586,6 +635,29 @@ float CubemapRenderer::ComputeFarPlane(const glm::vec3& camPos, const std::vecto
 		if (dist > maxDist) maxDist = dist;
 	}
 	return maxDist * 1.05f;
+}
+
+std::vector<CubemapVertex> CreateCubemapVertexBuffer(const PolygonMesh& mesh)
+{
+	const auto& geom = mesh.GetGeometry();
+	const auto& positions = geom._positions;   // glm::vec3
+	const auto& indices = geom._indices;       // triangle indices (uint32_t)
+
+	std::vector<CubemapVertex> vertexBuffer;
+	vertexBuffer.reserve(indices.size()); // 3 vertices per triangle
+
+	for (size_t tri = 0; tri < indices.size() / 3; ++tri)
+	{
+		uint32_t i0 = indices[tri * 3 + 0];
+		uint32_t i1 = indices[tri * 3 + 1];
+		uint32_t i2 = indices[tri * 3 + 2];
+
+		vertexBuffer.push_back({ positions[i0], static_cast<uint32_t>(tri), 0 });
+		vertexBuffer.push_back({ positions[i1], static_cast<uint32_t>(tri), 1 });
+		vertexBuffer.push_back({ positions[i2], static_cast<uint32_t>(tri), 2 });
+	}
+
+	return vertexBuffer;
 }
 
 /*void CubemapRenderer::CreateComputePipeline()

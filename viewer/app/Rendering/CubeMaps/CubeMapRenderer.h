@@ -19,6 +19,13 @@ struct CubemapMatricesUBO
 	glm::mat4 views[6];   // View matrices for each cubemap face
 };
 
+struct CubemapVertex
+{
+	glm::vec3 _position;  // Vertex position
+	uint32_t _triangleID; // Triangle index
+	uint32_t _vertexIndex; // 0,1,2 per triangle
+};
+
 class CubemapRenderer
 {
 public:
@@ -44,16 +51,14 @@ private:
 	void CreateFramebuffer(uint32_t size);
 	void CreateDepthImage(uint32_t size);
 	void CreateCommandPool(uint32_t queueFamilyIndex);
-	void CreateVertexBuffer(const std::vector<Vertex>& vertices);
-	void CreateIndexBuffer(const std::vector<uint32_t>& indices);
+	void CreateVertexBufferFromMesh();
+	void CreateIndexBufferFromMesh();
 	void CreateUniformBuffer(VkDeviceSize bufferSize);
 
 	void AllocateMatricesDescriptorSet();
 	void UpdateMatricesDescriptorSet();
-	void CreateVertexBuffer(const std::vector < glm::vec3>& verticies);
-	void CreateIndexBuffer(const std::vector<uint32_t>& indices);
 	float ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
-		float ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
+	float ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
 
 	//createUBOBuffer?
 	//void CreateComputePipeline();
