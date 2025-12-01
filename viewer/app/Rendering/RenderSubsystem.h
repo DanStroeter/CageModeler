@@ -17,6 +17,7 @@ class WindowSubsystem;
 class ResourceManager;
 class RenderPipelineManager;
 class CubemapRenderer;
+class Editor;
 
 class RenderSubsystem final : public Subsystem
 {
@@ -30,7 +31,6 @@ public:
 	//~END Subsystem
 
 	void InitializeEditor(const std::shared_ptr<Editor>& editor);
-	void InitializeCubeMapRenderer();
 
 	void OnWindowResized();
 

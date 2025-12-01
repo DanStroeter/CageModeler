@@ -28,7 +28,7 @@ void App::Start()
 	renderSubsystem->InitializeEditor(_editor);
 
 	//TODO put this where rendering for cube maps is actually needed(when pmvc get calculated)
-	renderSubsystem->InitializeCubeMapRenderer();
+	
 	// Add input delegates for window events.
 
 	AddInputDelegates();
@@ -38,6 +38,7 @@ void App::Start()
 
 	auto currentTime = std::chrono::high_resolution_clock::now();
 	auto accumulator = 0.0;
+	bool cubemapstart = true;
 
 	while (_isRunning)
 	{

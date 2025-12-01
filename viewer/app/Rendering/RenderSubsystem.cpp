@@ -105,25 +105,13 @@ void RenderSubsystem::InitializeEditor(const std::shared_ptr<Editor>& editor)
 		_renderResourceManager,
 		_renderPass);
 
+	_cubemapRenderer = std::make_shared<CubemapRenderer>(_renderPipelineManager, _renderResourceManager, _device, _instance);
+
 	_editor = editor;
-	_editor->Initialize(_sceneRenderer);
+	_editor->Initialize(_sceneRenderer, _cubemapRenderer);
 
 	// Finishes the ImGui setup.
 	_uiBackend->Init(*_windowSubsystem->_window);
-}
-
-void RenderSubsystem::InitializeCubeMapRenderer()
-{
-	_cubemapRenderer = std::make_shared<CubemapRenderer>(_renderPipelineManager, _renderResourceManager, _device, _instance);
-	_cubemapRenderer->Initialize();
-	if (_cage) {
-		_cubemapRenderer->SetCage(_cage);
-	}
-
-	if (_deformableMesh) {
-		_cubemapRenderer->SetMesh(_deformableMesh);
-	}
-	_cubemapRenderer->RenderCubemaps();
 }
 
 void RenderSubsystem::ReleaseResource()

@@ -9,6 +9,7 @@
 #include <Mesh/MeshTransformation.h>
 #include <Thread/ThreadPool.h>
 #include <Tools/Tool.h>
+#include <Rendering/CubeMaps/CubeMapRenderer.h>
 
 class ProjectSettingsPanel;
 class ProjectOptionsPanel;
@@ -23,6 +24,7 @@ class StatusBar;
 class RenderPipelineManager;
 class InputSubsystem;
 class NewCagePanel;
+class CubemapRenderer;
 
 /**
  * This class serves as a mediator between the user interface backend and the current state of the application.
@@ -35,7 +37,7 @@ public:
 	Editor(const SubsystemPtr<InputSubsystem>& inputSubsystem,
 		const SubsystemPtr<CameraSubsystem>& cameraSubsystem);
 
-	void Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer);
+	void Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, const std::shared_ptr<CubemapRenderer>& cubemapRenderer);
 
 	void RecordUI();
 
@@ -236,6 +238,8 @@ private:
 
 	/// The currently active scene.
 	std::unique_ptr<Scene> _scene = nullptr;
+
+	std::shared_ptr<CubemapRenderer> _cubemapRenderer = nullptr;
 
 	/// All gizmos in the scene.
 	std::shared_ptr<Gizmo> _gizmo;

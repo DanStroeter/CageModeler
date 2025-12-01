@@ -13,6 +13,8 @@
 #include <Rendering/RenderSubsystem.h>
 #include <Eigen/Core>
 
+class RenderSubsystem;
+
 struct CubemapMatricesUBO
 {
 	glm::mat4 proj;       // Projection matrix
@@ -37,9 +39,12 @@ public:
 
 	void ComputeCoordinates(); //Placeholder function to compute cubemap coordinates
 	void RenderCubemaps();
-
-	void SetCage(const std::shared_ptr<PolygonMesh> cage) { _cageMesh = cage; }
-	void SetMesh(const std::shared_ptr<PolygonMesh> mesh) { _deformableMesh = mesh; }
+	void SetCage(const EigenMesh& mesh) {
+		_cageMesh = mesh;
+	}
+	void SetMesh(const EigenMesh& mesh) {
+		_deformableMesh = mesh;
+	}
 private:
 	CubemapMatricesUBO _computeMatricesUBO;
 	SubsystemPtr<RenderSubsystem> _renderSubsystem;
@@ -54,24 +59,25 @@ private:
 	void CreateVertexBufferFromMesh();
 	void CreateIndexBufferFromMesh();
 	void CreateUniformBuffer(VkDeviceSize bufferSize);
-
 	void AllocateMatricesDescriptorSet();
 	void UpdateMatricesDescriptorSet();
 	float ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
 	float ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
-
 	//createUBOBuffer?
 	//void CreateComputePipeline();
 	void CreateCommandBuffer();
 	void CreateSyncObjects();
 	glm::mat4 ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos);
 
+	void UpdateObjectDescriptorSet();
+	void AllocateObjectDescriptorSet();
+
 
 	PipelineHandle _cubemapPipelineHandle;
 	//PipelineHandle _computePipelineHandle;
 
-	std::shared_ptr<PolygonMesh> _cageMesh;
-	std::shared_ptr<PolygonMesh> _deformableMesh;
+	EigenMesh _cageMesh;
+	EigenMesh _deformableMesh;
 
 	RenderResourceRef<Device> _device;
 	RenderResourceRef<Instance> _instance;
@@ -97,8 +103,14 @@ private:
 	RenderResourceRef<DescriptorPool> _descriptorPool;
 
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
+	RenderResourceRef<DescriptorSetLayout> _objectDataLayout;
+
 	VkDescriptorSet _matricesDescriptorSet;
 	MemoryMappedBuffer _matricesUniformBuffer;
+
+	VkDescriptorSet _objectDataDescriptorSet;
+	MemoryMappedBuffer _objectDataBuffer;
+
 
 	MemoryMappedBuffer _indexBuffer;
 	MemoryMappedBuffer _vertexBuffer;

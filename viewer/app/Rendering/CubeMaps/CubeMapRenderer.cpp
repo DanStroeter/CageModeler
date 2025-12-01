@@ -40,6 +40,8 @@ void CubemapRenderer::Initialize()
 	UpdateMatricesDescriptorSet();
 	CreateVertexBufferFromMesh();
 	CreateIndexBufferFromMesh();
+	CreateCommandBuffer();
+	CreateSyncObjects();
 }
 
 void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
@@ -220,6 +222,16 @@ void CubemapRenderer::CreateDescriptorSetLayouts() {
 	std::array<VkDescriptorSetLayoutBinding, 1> layoutBindings{ layoutBinding };
 
 	_matricesLayout = _descriptorPool->CreateDescriptorSetLayout(layoutBindings);
+
+	VkDescriptorSetLayoutBinding objectBinding{};
+	objectBinding.binding = 2; // matches shader
+	objectBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	objectBinding.descriptorCount = 1;
+	objectBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // used in vertex shader
+
+	std::array<VkDescriptorSetLayoutBinding, 1> bindings{ objectBinding };
+
+	_objectDataLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
 }
 
 void CubemapRenderer::CreateCubemapRenderPipeline()
@@ -261,6 +273,15 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 		VK_COLOR_COMPONENT_A_BIT;
 	colorBlendAttachment.blendEnable = VK_FALSE;
 
+	VkDescriptorSetLayoutBinding objectBinding{};
+	objectBinding.binding = 2;
+	objectBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	objectBinding.descriptorCount = 1;
+	objectBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+	std::array<VkDescriptorSetLayoutBinding, 1> objectBindings{ objectBinding };
+	_objectDataLayout = _descriptorPool->CreateDescriptorSetLayout(objectBindings);
+
 	// Depth/stencil state
 	VkPipelineDepthStencilStateCreateInfo depthStencil{};
 	depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -276,7 +297,7 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 	msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT; 
 
 	// Only the matrices layout is needed for cubemap rendering
-	std::array descriptorSetLayouts{ _matricesLayout->GetReference() };
+	std::array descriptorSetLayouts{ _matricesLayout->GetReference(), _objectDataLayout->GetReference() };
 
 	// Build the pipeline
 	_cubemapPipelineHandle = _renderPipelineManager->BeginPipeline()
@@ -288,6 +309,7 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Cubemap.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Cubemap.frag.spv")
 		.SetMultisampleState(msaa)
+		.SetVertexInputBindingDescriptions(std::span(&bindingDesc, 1))
 		.SetVertexInputAttributeDescriptions(std::span(attributeDescs))
 		.Build(); 
 }
@@ -410,22 +432,28 @@ void CubemapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize)
 
 void CubemapRenderer::CreateVertexBufferFromMesh()
 {
-	const auto& geom = _cageMesh->GetGeometry();
-	const auto& positions = geom._positions;
-	const auto& indices = geom._indices;
+	const EigenMesh geom = _cageMesh; // pointer to EigenMesh
+	const auto& positions = geom._vertices; // Eigen::MatrixXd, size = (numVertices x 3)
+	const auto& faces = geom._faces;       // Eigen::MatrixXi, size = (numTriangles x 3)
 
 	std::vector<CubemapVertex> vertexData;
-	vertexData.reserve(indices.size()); // 3 vertices per triangle
+	vertexData.reserve(faces.rows() * 3); // 3 vertices per triangle
 
-	for (size_t tri = 0; tri < indices.size() / 3; ++tri)
+	for (int tri = 0; tri < faces.rows(); ++tri)
 	{
 		for (int v = 0; v < 3; ++v)
 		{
-			uint32_t idx = indices[tri * 3 + v];
+			int idx = faces(tri, v); // vertex index in positions
+			glm::vec3 pos(
+				static_cast<float>(positions(idx, 0)),
+				static_cast<float>(positions(idx, 1)),
+				static_cast<float>(positions(idx, 2))
+			);
+
 			vertexData.push_back({
-				positions[idx],           // _position
+				pos,                       // _position
 				static_cast<uint32_t>(tri), // _triangleID
-				static_cast<uint32_t>(v)   // _vertexIndex
+				static_cast<uint32_t>(v)    // _vertexIndex
 				});
 		}
 	}
@@ -441,8 +469,15 @@ void CubemapRenderer::CreateVertexBufferFromMesh()
 
 void CubemapRenderer::CreateIndexBufferFromMesh()
 {
-	const MeshGeometry& geom = _cageMesh.get()->GetGeometry();
-	const std::vector<uint32_t>& indices = geom._indices;
+	const EigenMesh& geom = _cageMesh;
+
+	// Flatten the Eigen::MatrixXi (_faces) into a std::vector<uint32_t>
+	std::vector<uint32_t> indices;
+	indices.reserve(geom._faces.size()); // total number of elements
+
+	for (int i = 0; i < geom._faces.rows(); ++i)
+		for (int j = 0; j < geom._faces.cols(); ++j)
+			indices.push_back(static_cast<uint32_t>(geom._faces(i, j)));
 
 	_indexBuffer = _resourceManager->CreateBufferAndMapMemory(
 		std::span(indices),
@@ -468,6 +503,20 @@ void CubemapRenderer::AllocateMatricesDescriptorSet()
 		throw std::runtime_error("Failed to allocate cubemap matrices descriptor set");
 }
 
+void CubemapRenderer::AllocateObjectDescriptorSet()
+{
+	VkDescriptorSetLayout layout = _objectDataLayout->GetReference();
+
+	VkDescriptorSetAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = _descriptorPool; // same pool as matrices
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts = &layout;
+
+	if (vkAllocateDescriptorSets(_device, &allocInfo, &_objectDataDescriptorSet) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate object descriptor set");
+}
+
 void CubemapRenderer::UpdateMatricesDescriptorSet()
 {
 	VkDescriptorBufferInfo bufferInfo{};
@@ -479,6 +528,25 @@ void CubemapRenderer::UpdateMatricesDescriptorSet()
 	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 	write.dstSet = _matricesDescriptorSet;
 	write.dstBinding = 0;
+	write.dstArrayElement = 0;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	write.descriptorCount = 1;
+	write.pBufferInfo = &bufferInfo;
+
+	vkUpdateDescriptorSets(_device, 1, &write, 0, nullptr);
+}
+
+void CubemapRenderer::UpdateObjectDescriptorSet()
+{
+	VkDescriptorBufferInfo bufferInfo{};
+	bufferInfo.buffer = _objectDataBuffer._deviceBuffer; // Vulkan buffer handle
+	bufferInfo.offset = 0;
+	bufferInfo.range = sizeof(CubemapVertex);
+
+	VkWriteDescriptorSet write{};
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet = _objectDataDescriptorSet;
+	write.dstBinding = 2; // matches shader
 	write.dstArrayElement = 0;
 	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	write.descriptorCount = 1;
@@ -516,10 +584,7 @@ void CubemapRenderer::CreateSyncObjects()
 
 void CubemapRenderer::RenderCubemaps()
 {
-	if (!_cageMesh) return;
-
-	const auto& vertices = _cageMesh->GetGeometry()._positions;
-
+	LOG_DEBUG("Rendering started!");
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -530,6 +595,17 @@ void CubemapRenderer::RenderCubemaps()
 
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+	std::vector<glm::vec3> vertices;
+	for (int i = 0; i < _cageMesh._vertices.rows(); ++i)
+	{
+		const auto& v = _cageMesh._vertices.row(i);
+		vertices.push_back(glm::vec3(
+			static_cast<float>(v(0)),
+			static_cast<float>(v(1)),
+			static_cast<float>(v(2))
+		));
+	}
 
 	for (size_t vertexIndex = 0; vertexIndex < vertices.size(); ++vertexIndex)
 	{
@@ -586,7 +662,16 @@ void CubemapRenderer::RenderCubemaps()
 				0, nullptr
 			);
 
-			vkCmdDrawIndexed(cmdBuffer, static_cast<uint32_t>(_cageMesh->GetGeometry()._indices.size()), 1, 0, 0, 0);
+			vkCmdBindDescriptorSets(
+				cmdBuffer,
+				VK_PIPELINE_BIND_POINT_GRAPHICS,
+				pipelineLayout,
+				1, 1, // set = 1
+				&_objectDataDescriptorSet,
+				0, nullptr
+			);
+
+			vkCmdDrawIndexed(cmdBuffer, static_cast<uint32_t>(_cageMesh._faces.size()), 1, 0, 0, 0);
 
 			vkCmdEndRenderPass(cmdBuffer);
 			vkEndCommandBuffer(cmdBuffer);

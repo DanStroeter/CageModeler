@@ -103,9 +103,10 @@ Editor::Editor(const SubsystemPtr<InputSubsystem>& inputSubsystem,
 		}});
 }
 
-void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer)
+void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, const std::shared_ptr<CubemapRenderer>& cubemapRenderer)
 {
 	_scene = std::make_unique<Scene>(sceneRenderer);
+	_cubemapRenderer = cubemapRenderer;
 
 	// Sets up all the scene lights before initializing the renderer. Hacky!
 	CreateSceneLights();
@@ -658,8 +659,17 @@ void Editor::OnNewProjectCreated()
 			mesh->SetModelMatrix(newModelMatrix);
 
 			_deformedCageHandle = _scene->AddCage(_projectData->_deformedCage._vertices, _projectData->_deformedCage._faces);
+
+
+			_cubemapRenderer->SetCage(_projectData->_mesh);
+			_cubemapRenderer->SetMesh(_projectData->_deformedCage);
+			_cubemapRenderer->Initialize();
+			_cubemapRenderer->RenderCubemaps();
+
 			const auto cageMesh = _scene->GetMesh(_deformedCageHandle);
 			cageMesh->SetModelMatrix(newModelMatrix);
+
+			
 
 			// We only recompute the vertex colors if they were previously on.
 			const auto renderInfluenceMap = _projectModel->CanRenderInfluenceMap();
