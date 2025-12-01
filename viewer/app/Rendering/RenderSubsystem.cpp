@@ -123,6 +123,7 @@ void RenderSubsystem::InitializeCubeMapRenderer()
 	if (_deformableMesh) {
 		_cubemapRenderer->SetMesh(_deformableMesh);
 	}
+	_cubemapRenderer->RenderCubemaps();
 }
 
 void RenderSubsystem::ReleaseResource()
