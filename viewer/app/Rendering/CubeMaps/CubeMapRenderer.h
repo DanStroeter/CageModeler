@@ -29,6 +29,7 @@ public:
 	void Deinitialize() {}; //TODO
 
 	void ComputeCoordinates(); //Placeholder function to compute cubemap coordinates
+	void RenderCubemaps();
 
 	void SetCage(const std::shared_ptr<PolygonMesh> cage) { _cageMesh = cage; }
 	void SetMesh(const std::shared_ptr<PolygonMesh> mesh) { _deformableMesh = mesh; }
@@ -51,14 +52,15 @@ private:
 	void UpdateMatricesDescriptorSet();
 	void CreateVertexBuffer(const std::vector < glm::vec3>& verticies);
 	void CreateIndexBuffer(const std::vector<uint32_t>& indices);
-	//createUBOBuffer
+	float ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
+		float ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
 
+	//createUBOBuffer?
 	//void CreateComputePipeline();
-	//void AllocateDescriptorSets();
-	//void CreateCommandBuffer();
-	//void CreateSyncObjects();
-	//void CreateDescriptorPoolSets();
-	//void CreateDescriptorPool();
+	void CreateCommandBuffer();
+	void CreateSyncObjects();
+	glm::mat4 ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos);
+
 
 	PipelineHandle _cubemapPipelineHandle;
 	//PipelineHandle _computePipelineHandle;
@@ -71,7 +73,6 @@ private:
 
 	VkCommandPool _graphicCommandPool = VK_NULL_HANDLE;
 
-	// The render pass we use for rendering the entire scene. It is created by the render subsystem and passed to the editor.
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
 
 	std::vector<VkImage> _cubemapImages = {};
@@ -83,13 +84,11 @@ private:
 	std::vector<VkImageView> _depthImageViews = {};
 		VkDeviceMemory _depthImageMemory = VK_NULL_HANDLE;
 		VkImage _depthImage	= VK_NULL_HANDLE;
-	// The render pipeline manager to add the scene graphics pipelines.
+
 	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr;
 
-	// Pointer to the resource manager.
 	std::shared_ptr<RenderResourceManager> _resourceManager = nullptr; 
 
-	// The Vulkan descriptor pool resource.
 	RenderResourceRef<DescriptorPool> _descriptorPool;
 
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
@@ -98,4 +97,8 @@ private:
 
 	MemoryMappedBuffer _indexBuffer;
 	MemoryMappedBuffer _vertexBuffer;
+
+	std::vector<VkCommandBuffer> _commandBuffers;
+
+	VkFence _renderFence;
 };

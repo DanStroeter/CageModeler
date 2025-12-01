@@ -35,6 +35,8 @@ void CubemapRenderer::Initialize()
 	CreateCommandPool(graphicsQueueFamilyIndex);
 	VkDeviceSize uboSize = sizeof(CubemapMatricesUBO);
 	CreateUniformBuffer(uboSize);
+	AllocateMatricesDescriptorSet();
+	UpdateMatricesDescriptorSet();
 	CreateVertexBuffer(_cageMesh->GetGeometry()._positions);
 	CreateIndexBuffer(_cageMesh->GetGeometry()._indices);
 }
@@ -403,7 +405,7 @@ void CubemapRenderer::CreateIndexBuffer(const std::vector<uint32_t>& indices)
 }
 
 
-/*void CubemapRenderer::AllocateMatricesDescriptorSet()
+void CubemapRenderer::AllocateMatricesDescriptorSet()
 {
 	VkDescriptorSetLayout layout = _matricesLayout->GetReference();
 
@@ -436,102 +438,155 @@ void CubemapRenderer::UpdateMatricesDescriptorSet()
 	vkUpdateDescriptorSets(_device, 1, &write, 0, nullptr);
 }
 
-/*void CubemapRenderer::AllocateDescriptorSets()
+void CubemapRenderer::CreateCommandBuffer()
 {
-	CHECK_VK_HANDLE(_device);
+	// Allocate one primary command buffer per cubemap face
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = _graphicCommandPool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = 6;
 
-	RenderArrayType<VkDescriptorSetLayout> matricesDescriptorSetLayouts{ };
-	std::ranges::fill(matricesDescriptorSetLayouts, _matricesLayout);
-	_matricesDescriptorSets = _descriptorPool->AllocateDescriptorSets(matricesDescriptorSetLayouts);
-
-	RenderArrayType<VkDescriptorSetLayout> objectDataDescriptorSetLayouts{ };
-	std::ranges::fill(objectDataDescriptorSetLayouts, _objectDataLayout);
-	_objectDataDescriptorSets = _descriptorPool->AllocateDescriptorSets(objectDataDescriptorSetLayouts);
-
-	RenderArrayType<VkDescriptorSetLayout> lightsDescriptorSetLayouts{ };
-	std::ranges::fill(lightsDescriptorSetLayouts, _lightsLayout);
-	_lightsDescriptorSets = _descriptorPool->AllocateDescriptorSets(lightsDescriptorSetLayouts);
-
-	for (std::size_t index = 0; index < VulkanUtils::NumRenderFramesInFlight; ++index)
-	{
-		std::array<VkWriteDescriptorSet, 3> descriptorWrites{ };
-
-		VkDescriptorBufferInfo matricesBufferInfo{ };
-		matricesBufferInfo.buffer = _matricesUniformBuffers[index]._deviceBuffer;
-		matricesBufferInfo.offset = 0;
-		matricesBufferInfo.range = sizeof(FrameInfo);
-
-		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[0].dstSet = _matricesDescriptorSets[index];
-		descriptorWrites[0].dstBinding = 0;
-		descriptorWrites[0].dstArrayElement = 0;
-		descriptorWrites[0].descriptorCount = 1;
-		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		descriptorWrites[0].pBufferInfo = &matricesBufferInfo;
-
-		VkDescriptorBufferInfo lightsBufferInfo{ };
-		lightsBufferInfo.buffer = _lightsUniformBuffers[index]._deviceBuffer;
-		lightsBufferInfo.offset = 0;
-		lightsBufferInfo.range = sizeof(PointLightGPU) * _lightSources.size();
-
-		descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[1].dstSet = _lightsDescriptorSets[index];
-		descriptorWrites[1].dstBinding = 1;
-		descriptorWrites[1].dstArrayElement = 0;
-		descriptorWrites[1].descriptorCount = 1;
-		descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		descriptorWrites[1].pBufferInfo = &lightsBufferInfo;
-
-		VkDescriptorBufferInfo objectBufferInfo{ };
-		objectBufferInfo.buffer = _objectsDynamicUniformBuffers[index]._deviceBuffer;
-		objectBufferInfo.offset = 0;
-		objectBufferInfo.range = _objectsBufferDynamicAlignment;
-
-		descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[2].dstSet = _objectDataDescriptorSets[index];
-		descriptorWrites[2].dstBinding = 2;
-		descriptorWrites[2].dstArrayElement = 0;
-		descriptorWrites[2].descriptorCount = 1;
-		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-		descriptorWrites[2].pBufferInfo = &objectBufferInfo;
-
-		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-
+	_commandBuffers.resize(6);
+	if (vkAllocateCommandBuffers(_device, &allocInfo, _commandBuffers.data()) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to allocate cubemap command buffers!");
 	}
 }
 
-/*void CubemapRenderer::AllocateDescriptorSets() {
-	/*RenderArrayType<VkDescriptorSetLayout> matricesDescriptorSetLayouts { };
-	std::ranges::fill(matricesDescriptorSetLayouts, _matricesLayout);
-	_matricesDescriptorSets = _descriptorPool->AllocateDescriptorSets(matricesDescriptorSetLayouts);
-}*/
-
-/*void CubemapRenderer::CreateUniformBuffers()
+void CubemapRenderer::CreateSyncObjects()
 {
-	CHECK_VK_HANDLE(_device);
+	VkFenceCreateInfo fenceInfo{};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = 0; 
 
-	_matricesUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
-	_lightsUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
-	_objectsDynamicUniformBuffers.resize(VulkanUtils::NumRenderFramesInFlight);
-
-	for (std::size_t index = 0; index < VulkanUtils::NumRenderFramesInFlight; ++index)
+	if (vkCreateFence(_device, &fenceInfo, nullptr, &_renderFence) != VK_SUCCESS)
 	{
-		FrameInfo frameInfo{ };
-		_matricesUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemory(std::span(&frameInfo, 1),
-			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-
-		if (!_lightSources.empty())
-		{
-			_lightsUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemory(std::span(_lightSources),
-				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-		}
-
-		_objectsDynamicUniformBuffers[index] = _resourceManager->CreateBufferAndMapMemoryAligned(std::span(_objectsBufferData.Data(), TotalNumSceneObjects),
-			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+		throw std::runtime_error("Failed to create cubemap render fence!");
 	}
-	;
-}*/
+}
+
+void CubemapRenderer::RenderCubemaps()
+{
+	if (!_cageMesh) return;
+
+	const auto& vertices = _cageMesh->GetGeometry()._positions;
+
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	VkClearValue clearValues[2];
+	clearValues[0].color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+	clearValues[1].depthStencil = { 1.0f, 0 };
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+	for (size_t vertexIndex = 0; vertexIndex < vertices.size(); ++vertexIndex)
+	{
+		const glm::vec3& camPos = vertices[vertexIndex];
+
+		float nearPlane = ComputeNearPlane(camPos, vertices);
+		float farPlane = ComputeFarPlane(camPos, vertices);
+
+		// Update UBO
+		CubemapMatricesUBO ubo{};
+		ubo.proj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
+
+		for (int i = 0; i < 6; ++i)
+			ubo.views[i] = ComputeCubemapViewMatrix(i, camPos);
+
+		memcpy(_matricesUniformBuffer._mappedData, &ubo, sizeof(ubo));
+
+		// Render each cubemap face sequentially
+		for (int face = 0; face < 6; ++face)
+		{
+			VkCommandBuffer cmdBuffer = _commandBuffers[face];
+
+			vkResetCommandBuffer(cmdBuffer, 0);
+			vkBeginCommandBuffer(cmdBuffer, &beginInfo);
+
+			VkRenderPassBeginInfo renderPassInfo{};
+			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+			renderPassInfo.renderPass = _renderPass;
+			renderPassInfo.framebuffer = _faceFramebuffers[face];
+			renderPassInfo.renderArea.offset = { 0, 0 };
+			renderPassInfo.renderArea.extent = { 512, 512 }; // cubemap size
+			renderPassInfo.clearValueCount = 2;
+			renderPassInfo.pClearValues = clearValues;
+
+			vkCmdBeginRenderPass(cmdBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+			const PipelineObject& pipelineObj = _renderPipelineManager->GetPipelineObject(_cubemapPipelineHandle);
+			VkPipeline pipelineHandle = pipelineObj._handle;
+			VkPipelineLayout pipelineLayout = pipelineObj._pipelineLayout;
+
+			vkCmdBindPipeline(cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineHandle);
+
+			VkBuffer vertexBuffers[] = { _vertexBuffer._deviceBuffer };
+			VkDeviceSize offsets[] = { 0 };
+			vkCmdBindVertexBuffers(cmdBuffer, 0, 1, vertexBuffers, offsets);
+			vkCmdBindIndexBuffer(cmdBuffer, _indexBuffer._deviceBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+			vkCmdBindDescriptorSets(
+				cmdBuffer,
+				VK_PIPELINE_BIND_POINT_GRAPHICS,
+				pipelineLayout,
+				0, 1,
+				&_matricesDescriptorSet,
+				0, nullptr
+			);
+
+			vkCmdDrawIndexed(cmdBuffer, static_cast<uint32_t>(_cageMesh->GetGeometry()._indices.size()), 1, 0, 0, 0);
+
+			vkCmdEndRenderPass(cmdBuffer);
+			vkEndCommandBuffer(cmdBuffer);
+
+			submitInfo.commandBufferCount = 1;
+			submitInfo.pCommandBuffers = &cmdBuffer;
+			uint32_t graphicsFamily = _device->GetQueueFamilies()._graphics.value();
+			VkQueue graphicsQueue;
+			vkGetDeviceQueue(_device, graphicsFamily, 0, &graphicsQueue);
+			vkQueueSubmit(graphicsQueue, 1, &submitInfo, _renderFence);
+			vkWaitForFences(_device, 1, &_renderFence, VK_TRUE, UINT64_MAX);
+			vkResetFences(_device, 1, &_renderFence);
+		}
+	}
+}
+
+glm::mat4 CubemapRenderer::ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos)
+{
+	switch (faceIndex)
+	{
+	case 0: return glm::lookAt(pos, pos + glm::vec3(1, 0, 0), glm::vec3(0, -1, 0)); // +X
+	case 1: return glm::lookAt(pos, pos + glm::vec3(-1, 0, 0), glm::vec3(0, -1, 0)); // -X
+	case 2: return glm::lookAt(pos, pos + glm::vec3(0, 1, 0), glm::vec3(0, 0, 1));  // +Y
+	case 3: return glm::lookAt(pos, pos + glm::vec3(0, -1, 0), glm::vec3(0, 0, -1)); // -Y
+	case 4: return glm::lookAt(pos, pos + glm::vec3(0, 0, 1), glm::vec3(0, -1, 0)); // +Z
+	case 5: return glm::lookAt(pos, pos + glm::vec3(0, 0, -1), glm::vec3(0, -1, 0)); // -Z
+	default: return glm::mat4(1.0f);
+	}
+}
+
+float CubemapRenderer::ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices)
+{
+	float minDist = std::numeric_limits<float>::max();
+	for (const auto& v : vertices) {
+		float dist = glm::length(v - camPos);
+		if (dist < minDist) minDist = dist;
+	}
+	return minDist * 0.95f;
+}
+
+float CubemapRenderer::ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices)
+{
+	float maxDist = 0.0f;
+	for (const auto& v : vertices) {
+		float dist = glm::length(v - camPos);
+		if (dist > maxDist) maxDist = dist;
+	}
+	return maxDist * 1.05f;
+}
 
 /*void CubemapRenderer::CreateComputePipeline()
 {
@@ -543,90 +598,4 @@ void CubemapRenderer::UpdateMatricesDescriptorSet()
 		.SetShaderModule(ShaderModuleType::Compute, "assets/shaders/CubemapCompute.comp.spv")
 		.Build();
 }*/
-
-/*void CubemapRenderer::CreateDescriptorPool() {
-	VkDescriptorPoolSize poolSize{};
-	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSize.descriptorCount = 6; // one per Cubemap face
-
-	VkDescriptorPoolCreateInfo poolInfo{};
-	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolInfo.poolSizeCount = 1;
-	poolInfo.pPoolSizes = &poolSize;
-	poolInfo.maxSets = 6;
-
-	vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPoolHandle);
-}*/
-
-/*void CubemapRenderer::CreateDescriptorPoolSets() {
-	std::vector<VkDescriptorSetLayout> layouts(6, _descriptorSetLayout);
-	VkDescriptorSetAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = _descriptorPoolHandle;
-	allocInfo.descriptorSetCount = 6;
-	allocInfo.pSetLayouts = layouts.data();
-
-	_descriptorSets.resize(6);
-	vkAllocateDescriptorSets(_device, &allocInfo, _descriptorSets.data());
-
-	for (size_t i = 0; i < 6; ++i) {
-		VkDescriptorBufferInfo bufferInfo{};
-		bufferInfo.buffer = _uniformBuffer._handle;
-		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(YourUniformStruct);
-
-		VkWriteDescriptorSet descriptorWrite{};
-		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite.dstSet = _descriptorSets[i];
-		descriptorWrite.dstBinding = 0;
-		descriptorWrite.dstArrayElement = 0;
-		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		descriptorWrite.descriptorCount = 1;
-		descriptorWrite.pBufferInfo = &bufferInfo;
-
-		vkUpdateDescriptorSets(_device, 1, &descriptorWrite, 0, nullptr);
-	}
-}*/
-
-/*void CubemapRenderer::CreateCommandBuffer() {
-	VkCommandBufferAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = _commandPool;
-	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount = 6; // one per face
-
-	_commandBuffers.resize(6);
-	vkAllocateCommandBuffers(_device, &allocInfo, _commandBuffers.data());
-}*/
-
-/*void CubemapRenderer::CreateSyncObjects() {
-	VkSemaphoreCreateInfo semaphoreInfo{};
-	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-	VkFenceCreateInfo fenceInfo{};
-	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-	for (int i = 0; i < 6; ++i) {
-		vkCreateSemaphore(_device, &semaphoreInfo, nullptr, &_renderFinishedSemaphores[i]);
-		vkCreateFence(_device, &fenceInfo, nullptr, &_inFlightFences[i]);
-	}
-}*/
-
-/*
-CubemapMatricesUBO ubo{};
-ubo.proj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
-
-for (int i = 0; i < 6; ++i)
-	ubo.views[i] = ComputeCubemapViewMatrix(i, cubemapPosition);
-
-memcpy(_matricesUniformBuffer._mappedData, &ubo, sizeof(ubo));
-
-vkCmdBindDescriptorSets(cmdBuffer,
-						VK_PIPELINE_BIND_POINT_GRAPHICS,
-						_cubemapPipelineHandle->Layout,
-						0, 1,
-						&_matricesDescriptorSet,
-						0, nullptr);
-*/
 
