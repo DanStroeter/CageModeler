@@ -1,12 +1,15 @@
 #version 450
 
-#include "Common.inc.glsl"
+layout(location = 0) in vec3 OutColor;
+layout(location = 1) flat in uint TriangleID;
 
-layout (location = 0) out vec4 OutColor;
-
-layout (location = 0) in vec3 InOutVertexColor;
+layout(location = 0) out vec4 FragColor;
 
 void main()
 {
-	OutColor = vec4(LinearToSRGB(InOutVertexColor), 0.45);
+    // Triangle ID in alpha channel
+    float id = float(TriangleID);
+
+    // RGB comes from interpolated vertex colors
+    FragColor = vec4(OutColor, id);
 }
