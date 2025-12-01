@@ -5,18 +5,9 @@ struct PerFrameData {
     mat4 View;
 };
 
-struct PerObjectData {
-    mat4 Model;
-};
-
 layout(set = 0, binding = 0) uniform FrameDataBlock
 {
     PerFrameData FrameData;
-};
-
-layout(set = 1, binding = 2) uniform ObjectDataBlock
-{
-    PerObjectData ObjectData;
 };
 
 // Vertex attributes
@@ -39,5 +30,5 @@ void main()
     OutColor = color;
     TriangleID = InTriangleID; // flat, not interpolated
 
-    gl_Position = FrameData.Projection * FrameData.View * ObjectData.Model * vec4(InPosition, 1.0);
+    gl_Position = FrameData.Projection * FrameData.View * vec4(InPosition, 1.0);
 }
