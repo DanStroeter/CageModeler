@@ -13,6 +13,12 @@
 #include <Rendering/RenderSubsystem.h>
 #include <Eigen/Core>
 
+struct CubemapMatricesUBO
+{
+	glm::mat4 proj;       // Projection matrix
+	glm::mat4 views[6];   // View matrices for each cubemap face
+};
+
 class CubemapRenderer
 {
 public:
@@ -27,6 +33,7 @@ public:
 	void SetCage(const std::shared_ptr<PolygonMesh> cage) { _cageMesh = cage; }
 	void SetMesh(const std::shared_ptr<PolygonMesh> mesh) { _deformableMesh = mesh; }
 private:
+	CubemapMatricesUBO _computeMatricesUBO;
 	SubsystemPtr<RenderSubsystem> _renderSubsystem;
 
 	void CreateImageViews(uint32_t size, VkFormat format);
@@ -39,6 +46,12 @@ private:
 	void CreateVertexBuffer(const std::vector<Vertex>& vertices);
 	void CreateIndexBuffer(const std::vector<uint32_t>& indices);
 	void CreateUniformBuffer(VkDeviceSize bufferSize);
+
+	void AllocateMatricesDescriptorSet();
+	void UpdateMatricesDescriptorSet();
+	void CreateVertexBuffer(const std::vector < glm::vec3>& verticies);
+	void CreateIndexBuffer(const std::vector<uint32_t>& indices);
+	//createUBOBuffer
 
 	//void CreateComputePipeline();
 	//void AllocateDescriptorSets();
@@ -80,6 +93,9 @@ private:
 	RenderResourceRef<DescriptorPool> _descriptorPool;
 
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
-	//VkDescriptorSet _matricesDescriptorSet;
-	//MemoryMappedBuffer _matricesUniformBuffer;
+	VkDescriptorSet _matricesDescriptorSet;
+	MemoryMappedBuffer _matricesUniformBuffer;
+
+	MemoryMappedBuffer _indexBuffer;
+	MemoryMappedBuffer _vertexBuffer;
 };
