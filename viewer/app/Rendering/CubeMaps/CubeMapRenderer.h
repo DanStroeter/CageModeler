@@ -34,11 +34,13 @@ public:
 	CubemapRenderer() = delete;
 	CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
 		const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance);
+	
 	void Initialize();
 	void Deinitialize() {}; //TODO
 
-	void ComputeCoordinates(); //Placeholder function to compute cubemap coordinates
+	//void ComputeCoordinates(); //Placeholder function to compute cubemap coordinates
 	void RenderCubemaps();
+
 	void SetCage(const EigenMesh& mesh) {
 		_cageMesh = mesh;
 	}
@@ -46,76 +48,80 @@ public:
 		_deformableMesh = mesh;
 	}
 private:
-	CubemapMatricesUBO _computeMatricesUBO;
-	SubsystemPtr<RenderSubsystem> _renderSubsystem;
+	//void CreateComputePipeline();
 
+	//init functions
 	void CreateImageViews(uint32_t size, VkFormat format);
 	void CreateRenderPass(VkFormat format);
 	void CreateDescriptorSetLayouts();
 	void CreateCubemapRenderPipeline();
-	void CreateFramebuffer(uint32_t size);
 	void CreateDepthImage(uint32_t size);
+	void CreateFramebuffer(uint32_t size);
 	void CreateCommandPool(uint32_t queueFamilyIndex);
+	
 	void CreateVertexBufferFromMesh();
 	void CreateIndexBufferFromMesh();
 	void CreateUniformBuffer(VkDeviceSize bufferSize);
+	
+	void AllocateObjectDescriptorSet();
 	void AllocateMatricesDescriptorSet();
+	void AllocateObjectDescriptorSet();
 	void UpdateMatricesDescriptorSet();
-	float ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
-	float ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
-	//createUBOBuffer?
-	//void CreateComputePipeline();
+
 	void CreateCommandBuffer();
 	void CreateSyncObjects();
-	glm::mat4 ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos);
 
+	//helper functions
+	float ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
+	float ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
+	glm::mat4 ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos);
 	void UpdateObjectDescriptorSet();
 	void AllocateObjectDescriptorSet();
+	std::vector<CubemapVertex> CreateCubemapVertexBuffer(const PolygonMesh& mesh);
 
+	//resources
+	RenderResourceRef<Device> _device;
+	RenderResourceRef<Instance> _instance;
+	SubsystemPtr<RenderSubsystem> _renderSubsystem;
+	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr;
+	std::shared_ptr<RenderResourceManager> _resourceManager = nullptr;
 
-	PipelineHandle _cubemapPipelineHandle;
-	//PipelineHandle _computePipelineHandle;
-
+	//geodata
 	EigenMesh _cageMesh;
 	EigenMesh _deformableMesh;
 
-	RenderResourceRef<Device> _device;
-	RenderResourceRef<Instance> _instance;
-
+	//pipeline
 	VkCommandPool _graphicCommandPool = VK_NULL_HANDLE;
-
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
+	PipelineHandle _cubemapPipelineHandle;
+	//PipelineHandle _computePipelineHandle;
 
+	//images
 	std::vector<VkImage> _cubemapImages = {};
-	std::vector<std::array<VkImageView, 6>> _faceImageViews = {};
 	std::vector<VkDeviceMemory> _cubemapImageMemory = {};
 	std::vector<VkImageView> _cubemapViews = {};
+	std::vector<std::array<VkImageView, 6>> _faceImageViews = {};
 	std::vector<VkFramebuffer> _faceFramebuffers = {};
 
+	//depth
 	std::vector<VkImageView> _depthImageViews = {};
 		VkDeviceMemory _depthImageMemory = VK_NULL_HANDLE;
 		VkImage _depthImage	= VK_NULL_HANDLE;
-
-	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr;
-
-	std::shared_ptr<RenderResourceManager> _resourceManager = nullptr; 
-
+	
+	//descriptors
 	RenderResourceRef<DescriptorPool> _descriptorPool;
-
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
 	RenderResourceRef<DescriptorSetLayout> _objectDataLayout;
-
 	VkDescriptorSet _matricesDescriptorSet;
 	MemoryMappedBuffer _matricesUniformBuffer;
-
 	VkDescriptorSet _objectDataDescriptorSet;
 	MemoryMappedBuffer _objectDataBuffer;
 
-
+	//buffers
 	MemoryMappedBuffer _indexBuffer;
 	MemoryMappedBuffer _vertexBuffer;
-
 	std::vector<VkCommandBuffer> _commandBuffers;
-
+	
+	//sync
 	VkFence _renderFence;
 };

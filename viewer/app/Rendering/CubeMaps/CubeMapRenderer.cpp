@@ -37,7 +37,9 @@ void CubemapRenderer::Initialize()
 	VkDeviceSize uboSize = sizeof(CubemapMatricesUBO);
 	CreateUniformBuffer(uboSize);
 	AllocateMatricesDescriptorSet();
+	AllocateObjectDescriptorSet();
 	UpdateMatricesDescriptorSet();
+	UpdateObjectDescriptorSet();
 	CreateVertexBufferFromMesh();
 	CreateIndexBufferFromMesh();
 	CreateCommandBuffer();
@@ -45,7 +47,7 @@ void CubemapRenderer::Initialize()
 }
 
 void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
-	// Create Cubemap image
+	//Create image
 	VkImageCreateInfo imageInfo{};
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
@@ -224,10 +226,10 @@ void CubemapRenderer::CreateDescriptorSetLayouts() {
 	_matricesLayout = _descriptorPool->CreateDescriptorSetLayout(layoutBindings);
 
 	VkDescriptorSetLayoutBinding objectBinding{};
-	objectBinding.binding = 2; // matches shader
+	objectBinding.binding = 2; 
 	objectBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	objectBinding.descriptorCount = 1;
-	objectBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; // used in vertex shader
+	objectBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 	std::array<VkDescriptorSetLayoutBinding, 1> bindings{ objectBinding };
 
@@ -241,7 +243,7 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 	bindingDesc.stride = sizeof(CubemapVertex);
 	bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-	std::array<VkVertexInputAttributeDescription, 3> attributeDescs{}; // now 3 attributes
+	std::array<VkVertexInputAttributeDescription, 3> attributeDescs{};
 	attributeDescs[0].binding = 0;
 	attributeDescs[0].location = 0; // position
 	attributeDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -432,18 +434,18 @@ void CubemapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize)
 
 void CubemapRenderer::CreateVertexBufferFromMesh()
 {
-	const EigenMesh geom = _cageMesh; // pointer to EigenMesh
-	const auto& positions = geom._vertices; // Eigen::MatrixXd, size = (numVertices x 3)
-	const auto& faces = geom._faces;       // Eigen::MatrixXi, size = (numTriangles x 3)
+	const EigenMesh geom = _cageMesh;
+	const auto& positions = geom._vertices;
+	const auto& faces = geom._faces;      
 
 	std::vector<CubemapVertex> vertexData;
-	vertexData.reserve(faces.rows() * 3); // 3 vertices per triangle
+	vertexData.reserve(faces.rows() * 3); 
 
 	for (int tri = 0; tri < faces.rows(); ++tri)
 	{
 		for (int v = 0; v < 3; ++v)
 		{
-			int idx = faces(tri, v); // vertex index in positions
+			int idx = faces(tri, v);
 			glm::vec3 pos(
 				static_cast<float>(positions(idx, 0)),
 				static_cast<float>(positions(idx, 1)),
@@ -451,9 +453,9 @@ void CubemapRenderer::CreateVertexBufferFromMesh()
 			);
 
 			vertexData.push_back({
-				pos,                       // _position
-				static_cast<uint32_t>(tri), // _triangleID
-				static_cast<uint32_t>(v)    // _vertexIndex
+				pos,                     
+				static_cast<uint32_t>(tri),
+				static_cast<uint32_t>(v)  
 				});
 		}
 	}
@@ -471,9 +473,8 @@ void CubemapRenderer::CreateIndexBufferFromMesh()
 {
 	const EigenMesh& geom = _cageMesh;
 
-	// Flatten the Eigen::MatrixXi (_faces) into a std::vector<uint32_t>
 	std::vector<uint32_t> indices;
-	indices.reserve(geom._faces.size()); // total number of elements
+	indices.reserve(geom._faces.size());
 
 	for (int i = 0; i < geom._faces.rows(); ++i)
 		for (int j = 0; j < geom._faces.cols(); ++j)
@@ -722,7 +723,7 @@ float CubemapRenderer::ComputeFarPlane(const glm::vec3& camPos, const std::vecto
 	return maxDist * 1.05f;
 }
 
-std::vector<CubemapVertex> CreateCubemapVertexBuffer(const PolygonMesh& mesh)
+std::vector<CubemapVertex> CubemapRenderer::CreateCubemapVertexBuffer(const PolygonMesh& mesh)
 {
 	const auto& geom = mesh.GetGeometry();
 	const auto& positions = geom._positions;   // glm::vec3
