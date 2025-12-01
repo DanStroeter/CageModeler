@@ -99,6 +99,26 @@ public:
 		return *this;
 	}
 
+	GraphicsPipelineObjectProxy& SetViewportAndScissor(const VkViewport& viewport, const VkRect2D& scissor)
+	{
+		_viewport = viewport;
+		_scissor = scissor;
+		_viewportStateSet = true;
+		return *this;
+	}
+
+	GraphicsPipelineObjectProxy& ResetMultisampleState()
+	{
+		_multisampleStateSet = false;
+		return *this;
+	}
+
+	GraphicsPipelineObjectProxy& ResetViewportAndScissor()
+	{
+		_viewportStateSet = false;
+		return *this;
+	}
+
 	[[nodiscard]] PipelineHandle Build() const;
 
 private:
@@ -122,6 +142,9 @@ private:
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
 	VkPipelineMultisampleStateCreateInfo _multisampleState{};
 	bool _multisampleStateSet = false;
+	VkViewport _viewport = {};
+	VkRect2D _scissor = {};
+	bool _viewportStateSet = false;
 };
 
 /**

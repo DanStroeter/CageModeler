@@ -73,7 +73,7 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 		loadedShaderModules.push_back(shaderModule);
 
 		// Vertex shader stage.
-		VkPipelineShaderStageCreateInfo vertShaderStage { };
+		VkPipelineShaderStageCreateInfo vertShaderStage{ };
 		vertShaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShaderStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
 		vertShaderStage.module = shaderModule;
@@ -96,7 +96,7 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 		loadedShaderModules.push_back(shaderModule);
 
 		// Vertex shader stage.
-		VkPipelineShaderStageCreateInfo geomShaderStage { };
+		VkPipelineShaderStageCreateInfo geomShaderStage{ };
 		geomShaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		geomShaderStage.stage = VK_SHADER_STAGE_GEOMETRY_BIT;
 		geomShaderStage.module = shaderModule;
@@ -119,7 +119,7 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 		loadedShaderModules.push_back(shaderModule);
 
 		// Vertex shader stage.
-		VkPipelineShaderStageCreateInfo fragShaderStage { };
+		VkPipelineShaderStageCreateInfo fragShaderStage{ };
 		fragShaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShaderStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 		fragShaderStage.module = shaderModule;
@@ -134,19 +134,19 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 		shaderStages.push_back(fragShaderStage);
 	}
 
-	constexpr std::array dynamicStates {
+	constexpr std::array dynamicStates{
 		VK_DYNAMIC_STATE_VIEWPORT,
 		VK_DYNAMIC_STATE_SCISSOR
 	};
 
 	// Dynamic state creation.
-	VkPipelineDynamicStateCreateInfo dynamicState { };
+	VkPipelineDynamicStateCreateInfo dynamicState{ };
 	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
 	dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
 	dynamicState.pDynamicStates = dynamicStates.data();
 
 	// Vertex input and vertex shader bindings.
-	VkPipelineVertexInputStateCreateInfo vertexInputState { };
+	VkPipelineVertexInputStateCreateInfo vertexInputState{ };
 	vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	vertexInputState.vertexBindingDescriptionCount = static_cast<uint32_t>(objectProxy._vertexBindingDescriptions.size());
 	vertexInputState.pVertexBindingDescriptions = objectProxy._vertexBindingDescriptions.data();
@@ -154,15 +154,19 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	vertexInputState.pVertexAttributeDescriptions = objectProxy._vertexAttributeDescriptions.data();
 
 	// Input assembly of the pipeline.
-	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState { };
+	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState{ };
 	inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 	inputAssemblyState.topology = objectProxy._assemblyState._topology;
 	inputAssemblyState.primitiveRestartEnable = VK_FALSE;
 
-	VkPipelineViewportStateCreateInfo viewportState { };
+	VkPipelineViewportStateCreateInfo viewportState{ };
 	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 	viewportState.viewportCount = 1;
 	viewportState.scissorCount = 1;
+	if (objectProxy._viewportStateSet) {
+		viewportState.pViewports = &objectProxy._viewport;
+		viewportState.pScissors = &objectProxy._scissor;
+	}
 
 	// Create the rasterization state to change any rasterizationState details.
 	VkPipelineRasterizationStateCreateInfo rasterizationState { };
@@ -223,7 +227,14 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	graphicsPipelineCreateInfo.pMultisampleState = &multisampleState;
 	graphicsPipelineCreateInfo.pDepthStencilState = &objectProxy._depthStencil;
 	graphicsPipelineCreateInfo.pColorBlendState = &colorBlendState;
-	graphicsPipelineCreateInfo.pDynamicState = &dynamicState;
+	
+	if (objectProxy._viewportStateSet) {
+		graphicsPipelineCreateInfo.pDynamicState = nullptr;
+	}
+	else {
+		graphicsPipelineCreateInfo.pDynamicState = &dynamicState;
+	}
+
 	graphicsPipelineCreateInfo.layout = pipelineLayout;
 	graphicsPipelineCreateInfo.renderPass = objectProxy._renderPass;
 	graphicsPipelineCreateInfo.subpass = objectProxy._subpassIndex;
