@@ -19,7 +19,7 @@ class RenderSubsystem;
 struct CubemapMatricesUBO
 {
 	glm::mat4 proj;       // Projection matrix
-	glm::mat4 views[6];   // View matrices for each cubemap face
+	glm::mat4 view;   // View matrices for each cubemap face
 };
 
 struct CubemapVertex

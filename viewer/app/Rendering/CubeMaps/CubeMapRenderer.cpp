@@ -242,7 +242,7 @@ void CubemapRenderer::CreateCubemapRenderPipeline()
 
 	std::array<VkVertexInputAttributeDescription, 3> attributeDescs{};
 	attributeDescs[0].binding = 0;
-	attributeDescs[0].location = 0; // position
+	attributeDescs[0].location = 0; //position
 	attributeDescs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 	attributeDescs[0].offset = offsetof(CubemapVertex, _position);
 
@@ -584,17 +584,25 @@ void CubemapRenderer::RenderCubemaps()
 		float farPlane = ComputeFarPlane(camPos, vertices);
 
 		// Update UBO
-		CubemapMatricesUBO ubo{};
+		/*CubemapMatricesUBO ubo{};
 		ubo.proj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
+		ubo.proj[1][1] *= -1.0f;
 
 		for (int i = 0; i < 6; ++i)
-			ubo.views[i] = ComputeCubemapViewMatrix(i, camPos);
+			ubo.views[i] = ComputeCubemapViewMatrix(i, camPos);*/
 
-		memcpy(_matricesUniformBuffer._mappedData, &ubo, sizeof(ubo));
+		//memcpy(_matricesUniformBuffer._mappedData, &ubo, sizeof(ubo));
 
 		// Render each cubemap face sequentially
 		for (int face = 0; face < 6; ++face)
 		{
+			CubemapMatricesUBO faceUBO{};
+			faceUBO.proj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
+			faceUBO.proj[1][1] *= -1.0f;
+
+			faceUBO.view = ComputeCubemapViewMatrix(face, camPos); // only one view per face
+			memcpy(_matricesUniformBuffer._mappedData, &faceUBO, sizeof(faceUBO));
+
 			VkCommandBuffer cmdBuffer = _commandBuffers[face];
 
 			vkResetCommandBuffer(cmdBuffer, 0);
@@ -605,7 +613,7 @@ void CubemapRenderer::RenderCubemaps()
 			renderPassInfo.renderPass = _renderPass;
 			renderPassInfo.framebuffer = _faceFramebuffers[face];
 			renderPassInfo.renderArea.offset = { 0, 0 };
-			renderPassInfo.renderArea.extent = { 512, 512 }; // cubemap size
+			renderPassInfo.renderArea.extent = { 512, 512 };
 			renderPassInfo.clearValueCount = 2;
 			renderPassInfo.pClearValues = clearValues;
 
@@ -688,11 +696,11 @@ float CubemapRenderer::ComputeFarPlane(const glm::vec3& camPos, const std::vecto
 std::vector<CubemapVertex> CubemapRenderer::CreateCubemapVertexBuffer(const PolygonMesh& mesh)
 {
 	const auto& geom = mesh.GetGeometry();
-	const auto& positions = geom._positions;   // glm::vec3
-	const auto& indices = geom._indices;       // triangle indices (uint32_t)
+	const auto& positions = geom._positions;  
+	const auto& indices = geom._indices;
 
 	std::vector<CubemapVertex> vertexBuffer;
-	vertexBuffer.reserve(indices.size()); // 3 vertices per triangle
+	vertexBuffer.reserve(indices.size());
 
 	for (size_t tri = 0; tri < indices.size() / 3; ++tri)
 	{
@@ -708,6 +716,7 @@ std::vector<CubemapVertex> CubemapRenderer::CreateCubemapVertexBuffer(const Poly
 	return vertexBuffer;
 }
 
+//--------------------------------Debug functions--------------------------------//
 /*void CubemapRenderer::CreateComputePipeline()
 {
 	// Create the compute pipeline.
