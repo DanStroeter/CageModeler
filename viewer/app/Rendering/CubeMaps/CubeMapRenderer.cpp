@@ -741,7 +741,7 @@ uint32_t CubemapRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFl
 
 void CubemapRenderer::ExportCubemapAsVerticalStrip(const std::string& filename)
 {
-	const uint32_t faceSize = 512; // your cubemap resolution
+	const uint32_t faceSize = 512; // cubemap resolution
 	const uint32_t numFaces = 6;
 	const VkDeviceSize imageSizePerFace = faceSize * faceSize * 4; // RGBA8
 	const VkDeviceSize totalSize = imageSizePerFace * numFaces;
@@ -763,13 +763,15 @@ void CubemapRenderer::ExportCubemapAsVerticalStrip(const std::string& filename)
 	VkMemoryAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocInfo.allocationSize = memRequirements.size;
-	allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+	allocInfo.memoryTypeIndex = FindMemoryType(
+		memRequirements.memoryTypeBits,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
 
 	vkAllocateMemory(_device, &allocInfo, nullptr, &stagingMemory);
 	vkBindBufferMemory(_device, stagingBuffer, stagingMemory, 0);
 
-	// --- 2. Copy cubemap faces to staging buffer ---
+	// --- 2. Record command buffer to copy cubemap to staging buffer ---
 	VkCommandBuffer cmdBuffer = BeginOneTimeCommands();
 
 	// Transition cubemap image to transfer src
@@ -788,18 +790,45 @@ void CubemapRenderer::ExportCubemapAsVerticalStrip(const std::string& filename)
 		regions[face].imageExtent = { faceSize, faceSize, 1 };
 	}
 
-	vkCmdCopyImageToBuffer(cmdBuffer, _cubemapImages[0], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-		stagingBuffer, static_cast<uint32_t>(regions.size()), regions.data());
+	vkCmdCopyImageToBuffer(
+		cmdBuffer,
+		_cubemapImages[0],
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		stagingBuffer,
+		static_cast<uint32_t>(regions.size()),
+		regions.data()
+	);
 
-	EndOneTimeCommands(cmdBuffer); // submit and wait
+	// --- 3. Submit command buffer with a fence ---
+	vkEndCommandBuffer(cmdBuffer);
 
-	// --- 3. Map memory and write vertical strip ---
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &cmdBuffer;
+
+	VkQueue graphicsQueue;
+	vkGetDeviceQueue(_device, _device->GetQueueFamilies()._graphics.value(), 0, &graphicsQueue);
+
+	VkFenceCreateInfo fenceInfo{};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = 0;
+
+	VkFence fence;
+	vkCreateFence(_device, &fenceInfo, nullptr, &fence);
+
+	vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence);
+	vkWaitForFences(_device, 1, &fence, VK_TRUE, UINT64_MAX);
+
+	vkDestroyFence(_device, fence, nullptr);
+	vkFreeCommandBuffers(_device, _graphicCommandPool, 1, &cmdBuffer);
+
+	// --- 4. Map staging buffer and write vertical strip ---
 	uint8_t* data;
 	vkMapMemory(_device, stagingMemory, 0, totalSize, 0, reinterpret_cast<void**>(&data));
 
 	std::vector<uint8_t> strip(faceSize * faceSize * 4 * numFaces);
 
-	// Copy each face row-wise into vertical strip
 	for (uint32_t face = 0; face < numFaces; ++face) {
 		std::memcpy(
 			strip.data() + face * faceSize * faceSize * 4,
@@ -812,7 +841,7 @@ void CubemapRenderer::ExportCubemapAsVerticalStrip(const std::string& filename)
 
 	vkUnmapMemory(_device, stagingMemory);
 
-	// --- 4. Cleanup ---
+	// --- 5. Cleanup ---
 	vkDestroyBuffer(_device, stagingBuffer, nullptr);
 	vkFreeMemory(_device, stagingMemory, nullptr);
 
