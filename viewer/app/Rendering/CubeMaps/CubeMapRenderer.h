@@ -125,7 +125,7 @@ private:
 	VkFence _renderFence;
 
 
-	//---------------------Debugging print
+	//---------------------Debugging print(Keep to map approach by lipman to original method)
 	
 	VkCommandBuffer BeginOneTimeCommands();
 	void ExportCubemapAsVerticalStrip(const std::string& filename);

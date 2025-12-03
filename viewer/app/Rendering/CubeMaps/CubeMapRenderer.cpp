@@ -433,7 +433,7 @@ void CubemapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize)
 		);
 }
 
-void CubemapRenderer::CreateVertexBufferFromMesh()
+/*void CubemapRenderer::CreateVertexBufferFromMesh()
 {
 	const EigenMesh geom = _cageMesh;
 	const auto& positions = geom._vertices;
@@ -468,9 +468,93 @@ void CubemapRenderer::CreateVertexBufferFromMesh()
 	);
 
 	memcpy(_vertexBuffer._mappedData, vertexData.data(), vertexData.size() * sizeof(CubemapVertex));
+}*/
+
+void CubemapRenderer::CreateVertexBufferFromMesh()
+{
+	const EigenMesh& geom = _cageMesh;
+	const auto& positions = geom._vertices;
+	const auto& faces = geom._faces;
+
+	std::vector<CubemapVertex> vertexData;
+	vertexData.reserve(faces.rows() * 3);
+
+	for (int tri = 0; tri < faces.rows(); ++tri)
+	{
+		for (int v = 0; v < 3; ++v)
+		{
+			int idx = faces(tri, v);
+
+			glm::vec3 pos(
+				static_cast<float>(positions(idx, 0)),
+				static_cast<float>(positions(idx, 1)),
+				static_cast<float>(positions(idx, 2))
+			);
+
+			vertexData.push_back({
+				pos,
+				static_cast<uint32_t>(tri), // triangle ID
+				static_cast<uint32_t>(v)    // local vertex ID (0,1,2)
+				});
+		}
+	}
+
+	_vertexBuffer = _resourceManager->CreateBufferAndMapMemory(
+		std::span<std::byte>((std::byte*)nullptr,
+			vertexData.size() * sizeof(CubemapVertex)),
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	memcpy(_vertexBuffer._mappedData, vertexData.data(),
+		vertexData.size() * sizeof(CubemapVertex));
 }
 
-void CubemapRenderer::CreateIndexBufferFromMesh()
+/*void CubemapRenderer::CreateVertexBufferFromMesh()
+{
+	const EigenMesh& geom = _cageMesh;
+	const auto& positions = geom._vertices; // MatrixXd (N×3)
+	const auto& faces = geom._faces;         // MatrixXi (M×3)
+
+	std::vector<CubemapVertex> vertexData;
+	vertexData.reserve(faces.rows() * 3);
+
+	for (int tri = 0; tri < faces.rows(); ++tri)
+	{
+		for (int v = 0; v < 3; ++v)
+		{
+			int idx = faces(tri, v);
+
+			glm::vec3 pos(
+				static_cast<float>(positions(idx, 0)),
+				static_cast<float>(positions(idx, 1)),
+				static_cast<float>(positions(idx, 2))
+			);
+
+			vertexData.push_back({
+				pos,
+				static_cast<uint32_t>(tri), // triangle ID
+				static_cast<uint32_t>(v)    // local vertex ID (0,1,2)
+				});
+		}
+	}
+
+	// Allocate GPU memory large enough for vertexData, but don't upload yet.
+	_vertexBuffer = _resourceManager->CreateBufferAndMapMemory(
+		std::span<std::byte>((std::byte*)nullptr,
+			vertexData.size() * sizeof(CubemapVertex)),
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	// Upload once
+	memcpy(_vertexBuffer._mappedData, vertexData.data(),
+		vertexData.size() * sizeof(CubemapVertex));
+}
+
+
+/*void CubemapRenderer::CreateIndexBufferFromMesh()
 {
 	const EigenMesh& geom = _cageMesh;
 
@@ -488,8 +572,65 @@ void CubemapRenderer::CreateIndexBufferFromMesh()
 	);
 
 	memcpy(_indexBuffer._mappedData, indices.data(), indices.size() * sizeof(uint32_t));
-}
+}*/
 
+/*void CubemapRenderer::CreateIndexBufferFromMesh()
+{
+	const EigenMesh& geom = _cageMesh;
+	const auto& faces = geom._faces; // M×3
+
+	std::vector<uint32_t> indices;
+	indices.reserve(faces.rows() * 3);
+
+	for (int i = 0; i < faces.rows(); ++i)
+	{
+		for (int j = 0; j < 3; ++j)
+		{
+			int idx = faces(i, j);
+
+			if (idx < 0 || idx >= geom._vertices.rows()) {
+				LOG_ERROR("CreateIndexBufferFromMesh: invalid index %d", idx);
+				continue;
+			}
+
+			indices.push_back(static_cast<uint32_t>(idx));
+		}
+	}
+
+	_indexBuffer = _resourceManager->CreateBufferAndMapMemory(
+		std::span<std::byte>((std::byte*)nullptr,
+			indices.size() * sizeof(uint32_t)),
+		VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	memcpy(_indexBuffer._mappedData,
+		indices.data(),
+		indices.size() * sizeof(uint32_t));
+}*/
+
+void CubemapRenderer::CreateIndexBufferFromMesh()
+{
+	const EigenMesh& geom = _cageMesh;
+	const auto& faces = geom._faces;
+
+	// Each triangle has 3 unique vertices in the vertex buffer
+	const size_t vertexCount = faces.rows() * 3;
+
+	std::vector<uint32_t> indices(vertexCount);
+	for (uint32_t i = 0; i < vertexCount; ++i)
+		indices[i] = i;
+
+	_indexBuffer = _resourceManager->CreateBufferAndMapMemory(
+		std::span(indices),
+		VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	memcpy(_indexBuffer._mappedData, indices.data(),
+		indices.size() * sizeof(uint32_t));
+}
 
 void CubemapRenderer::AllocateMatricesDescriptorSet()
 {
@@ -566,9 +707,9 @@ void CubemapRenderer::RenderCubemaps()
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
 	std::vector<glm::vec3> vertices;
-	for (int i = 0; i < _cageMesh._vertices.rows(); ++i)
+	for (int i = 0; i < _deformableMesh._vertices.rows(); ++i)
 	{
-		const auto& v = _cageMesh._vertices.row(i);
+		const auto& v = _deformableMesh._vertices.row(i);
 		vertices.push_back(glm::vec3(
 			static_cast<float>(v(0)),
 			static_cast<float>(v(1)),
@@ -580,9 +721,12 @@ void CubemapRenderer::RenderCubemaps()
 	{
 		const glm::vec3& camPos = vertices[vertexIndex];
 
-		float nearPlane = ComputeNearPlane(camPos, vertices);
-		float farPlane = ComputeFarPlane(camPos, vertices);
-
+		float nearPlane = 0.1f;   
+		float farPlane = 1000.0f; //temporary
+		
+		//float nearPlane = ComputeNearPlane(camPos, vertices);
+		//float farPlane = ComputeFarPlane(camPos, vertices);
+		
 		// Update UBO
 		/*CubemapMatricesUBO ubo{};
 		ubo.proj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
