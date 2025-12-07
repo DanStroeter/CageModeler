@@ -11,19 +11,11 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../../external/stb_image_write.h"
 
-void ComputeCoordinates() {
-	// Placeholder function to compute cubemap coordinates
-	std::cout << "Computed PMVC coordinates beep boop!" << "\n";
-}
-
 CubemapRenderer::CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
 	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance) : _renderPipelineManager(renderPipelineManager),
 	_resourceManager(resourceManager), _device(device), _instance(instance)
 {
 	//TODO alignment??
-	// Calculate required alignment based on minimum device offset alignment
-	//_objectsBufferDynamicAlignment = _device->GetMinimumMemoryAlignment<ModelInfo>();
-	//_objectsBufferData.Resize(TotalNumSceneObjects);
 }
 
 void CubemapRenderer::Initialize()
@@ -433,43 +425,6 @@ void CubemapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize)
 		);
 }
 
-/*void CubemapRenderer::CreateVertexBufferFromMesh()
-{
-	const EigenMesh geom = _cageMesh;
-	const auto& positions = geom._vertices;
-	const auto& faces = geom._faces;      
-
-	std::vector<CubemapVertex> vertexData;
-	vertexData.reserve(faces.rows() * 3); 
-
-	for (int tri = 0; tri < faces.rows(); ++tri)
-	{
-		for (int v = 0; v < 3; ++v)
-		{
-			int idx = faces(tri, v);
-			glm::vec3 pos(
-				static_cast<float>(positions(idx, 0)),
-				static_cast<float>(positions(idx, 1)),
-				static_cast<float>(positions(idx, 2))
-			);
-
-			vertexData.push_back({
-				pos,                     
-				static_cast<uint32_t>(tri),
-				static_cast<uint32_t>(v)  
-				});
-		}
-	}
-
-	_vertexBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span(vertexData),
-		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	memcpy(_vertexBuffer._mappedData, vertexData.data(), vertexData.size() * sizeof(CubemapVertex));
-}*/
-
 void CubemapRenderer::CreateVertexBufferFromMesh()
 {
 	const EigenMesh& geom = _cageMesh;
@@ -509,106 +464,6 @@ void CubemapRenderer::CreateVertexBufferFromMesh()
 	memcpy(_vertexBuffer._mappedData, vertexData.data(),
 		vertexData.size() * sizeof(CubemapVertex));
 }
-
-/*void CubemapRenderer::CreateVertexBufferFromMesh()
-{
-	const EigenMesh& geom = _cageMesh;
-	const auto& positions = geom._vertices; // MatrixXd (N×3)
-	const auto& faces = geom._faces;         // MatrixXi (M×3)
-
-	std::vector<CubemapVertex> vertexData;
-	vertexData.reserve(faces.rows() * 3);
-
-	for (int tri = 0; tri < faces.rows(); ++tri)
-	{
-		for (int v = 0; v < 3; ++v)
-		{
-			int idx = faces(tri, v);
-
-			glm::vec3 pos(
-				static_cast<float>(positions(idx, 0)),
-				static_cast<float>(positions(idx, 1)),
-				static_cast<float>(positions(idx, 2))
-			);
-
-			vertexData.push_back({
-				pos,
-				static_cast<uint32_t>(tri), // triangle ID
-				static_cast<uint32_t>(v)    // local vertex ID (0,1,2)
-				});
-		}
-	}
-
-	// Allocate GPU memory large enough for vertexData, but don't upload yet.
-	_vertexBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr,
-			vertexData.size() * sizeof(CubemapVertex)),
-		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	// Upload once
-	memcpy(_vertexBuffer._mappedData, vertexData.data(),
-		vertexData.size() * sizeof(CubemapVertex));
-}
-
-
-/*void CubemapRenderer::CreateIndexBufferFromMesh()
-{
-	const EigenMesh& geom = _cageMesh;
-
-	std::vector<uint32_t> indices;
-	indices.reserve(geom._faces.size());
-
-	for (int i = 0; i < geom._faces.rows(); ++i)
-		for (int j = 0; j < geom._faces.cols(); ++j)
-			indices.push_back(static_cast<uint32_t>(geom._faces(i, j)));
-
-	_indexBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span(indices),
-		VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	memcpy(_indexBuffer._mappedData, indices.data(), indices.size() * sizeof(uint32_t));
-}*/
-
-/*void CubemapRenderer::CreateIndexBufferFromMesh()
-{
-	const EigenMesh& geom = _cageMesh;
-	const auto& faces = geom._faces; // M×3
-
-	std::vector<uint32_t> indices;
-	indices.reserve(faces.rows() * 3);
-
-	for (int i = 0; i < faces.rows(); ++i)
-	{
-		for (int j = 0; j < 3; ++j)
-		{
-			int idx = faces(i, j);
-
-			if (idx < 0 || idx >= geom._vertices.rows()) {
-				LOG_ERROR("CreateIndexBufferFromMesh: invalid index %d", idx);
-				continue;
-			}
-
-			indices.push_back(static_cast<uint32_t>(idx));
-		}
-	}
-
-	_indexBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr,
-			indices.size() * sizeof(uint32_t)),
-		VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	memcpy(_indexBuffer._mappedData,
-		indices.data(),
-		indices.size() * sizeof(uint32_t));
-}*/
 
 void CubemapRenderer::CreateIndexBufferFromMesh()
 {
@@ -726,16 +581,6 @@ void CubemapRenderer::RenderCubemaps()
 		
 		//float nearPlane = ComputeNearPlane(camPos, vertices);
 		//float farPlane = ComputeFarPlane(camPos, vertices);
-		
-		// Update UBO
-		/*CubemapMatricesUBO ubo{};
-		ubo.proj = glm::perspective(glm::radians(90.0f), 1.0f, nearPlane, farPlane);
-		ubo.proj[1][1] *= -1.0f;
-
-		for (int i = 0; i < 6; ++i)
-			ubo.views[i] = ComputeCubemapViewMatrix(i, camPos);*/
-
-		//memcpy(_matricesUniformBuffer._mappedData, &ubo, sizeof(ubo));
 
 		// Render each cubemap face sequentially
 		for (int face = 0; face < 6; ++face)
@@ -798,8 +643,8 @@ void CubemapRenderer::RenderCubemaps()
 			vkWaitForFences(_device, 1, &_renderFence, VK_TRUE, UINT64_MAX);
 			vkResetFences(_device, 1, &_renderFence);
 		}
-		std::string filename = "debug_cubemap_" + std::to_string(vertexIndex) + ".png";
-		ExportCubemapAsVerticalStrip("F:/Cubemaps/" + filename);
+		//std::string filename = "debug_cubemap_" + std::to_string(vertexIndex) + ".png";
+		//ExportCubemapAsVerticalStrip("F:/Cubemaps/" + filename);
 	}
 }
 
@@ -861,16 +706,6 @@ std::vector<CubemapVertex> CubemapRenderer::CreateCubemapVertexBuffer(const Poly
 }
 
 //--------------------------------Debug functions--------------------------------//
-/*void CubemapRenderer::CreateComputePipeline()
-{
-	// Create the compute pipeline.
-	std::array descriptorSetLayouts{ _matricesLayout->GetReference(),
-		_objectDataLayout->GetReference() };
-	_computePipelineHandle = _renderPipelineManager->BeginPipeline()
-		.SetDescriptorSetLayouts(std::span(descriptorSetLayouts))
-		.SetShaderModule(ShaderModuleType::Compute, "assets/shaders/CubemapCompute.comp.spv")
-		.Build();
-}*/
 uint32_t CubemapRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
 {
 	VkPhysicalDeviceMemoryProperties memProperties;
@@ -1051,5 +886,301 @@ void CubemapRenderer::EndOneTimeCommands(VkCommandBuffer cmd) {
 	vkFreeCommandBuffers(_device, _graphicCommandPool, 1, &cmd);
 }
 
+//--------------------------------ComputeShader functions--------------------------------//
+/*void ComputeCoordinates() {
+	// Placeholder function to compute cubemap coordinates
+	std::cout << "Computed PMVC coordinates beep boop!" << "\n";
+	int faceSize = 4; // example small face
+	std::vector<std::vector<float>> weights(faceSize, std::vector<float>(faceSize));
 
+	for (int y = 0; y < faceSize; ++y)
+		for (int x = 0; x < faceSize; ++x)
+			weights[y][x] = ComputePixelWeight(x, y, faceSize);
 
+	// Print weights
+	for (int y = 0; y < faceSize; ++y)
+	{
+		for (int x = 0; x < faceSize; ++x)
+			std::cout << weights[y][x] << " ";
+		std::cout << "\n";
+	}
+}*/
+
+void CubemapRenderer::CartesianToSpherical(float x, float y, float z, float& theta, float& phi)
+{
+	theta = acosf(z);         // polar angle [0, pi]
+	phi = atan2f(y, x);     // azimuth [-pi, pi]
+}
+
+// Compute pixel solid angle weight for one cube map face
+float CubemapRenderer::ComputeSphereWeight(int px, int py, int faceSize)
+{
+	// Step 1: pixel coordinates in [-1,1]
+	float invSize = 1.0f / faceSize;
+	float x0 = 2.0f * px * invSize - 1.0f;
+	float y0 = 2.0f * py * invSize - 1.0f;
+	float x1 = 2.0f * (px + 1) * invSize - 1.0f;
+	float y1 = 2.0f * (py + 1) * invSize - 1.0f;
+
+	// Step 2: map corners to unit sphere
+	auto MapToSphere = [](float x, float y) -> std::array<float, 3> {
+		float z = 1.0f; // +Z face
+		float len = sqrtf(x * x + y * y + z * z);
+		return { x / len, y / len, z / len };
+	};
+
+	auto c00 = MapToSphere(x0, y0);
+	auto c01 = MapToSphere(x0, y1);
+	auto c10 = MapToSphere(x1, y0);
+	auto c11 = MapToSphere(x1, y1);
+
+	// Step 3: convert to spherical coordinates
+	float theta00, phi00, theta01, phi01, theta10, phi10, theta11, phi11;
+	CartesianToSpherical(c00[0], c00[1], c00[2], theta00, phi00);
+	CartesianToSpherical(c01[0], c01[1], c01[2], theta01, phi01);
+	CartesianToSpherical(c10[0], c10[1], c10[2], theta10, phi10);
+	CartesianToSpherical(c11[0], c11[1], c11[2], theta11, phi11);
+
+	// Step 4-5: Integrate solid angle over pixel
+	float dPhi = std::max({ phi00, phi01, phi10, phi11 }) - std::min({ phi00, phi01, phi10, phi11 });
+	float dTheta = std::max({ theta00, theta01, theta10, theta11 }) - std::min({ theta00, theta01, theta10, theta11 });
+
+	// Inner integral: sin(theta) dTheta
+	float thetaMin = std::min({ theta00, theta01, theta10, theta11 });
+	float thetaMax = std::max({ theta00, theta01, theta10, theta11 });
+	float innerIntegral = cosf(thetaMin) - cosf(thetaMax);
+
+	// Outer integral: dPhi * innerIntegral
+	float weight = dPhi * innerIntegral;
+
+	// Step 6: normalize by pixel area in cube map (optional)
+	// float cubePixelArea = (2.0f / faceSize) * (2.0f / faceSize);
+	// weight /= cubePixelArea;
+
+	return weight;
+}
+
+void CubemapRenderer::CreateComputeDescriptorSetLayout() {
+	std::vector<VkDescriptorSetLayoutBinding> bindings;
+
+	bindings.push_back({
+		0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+		VK_SHADER_STAGE_COMPUTE_BIT
+		});
+	bindings.push_back({
+		1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+		VK_SHADER_STAGE_COMPUTE_BIT
+		});
+
+	bindings.push_back({
+		2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+		VK_SHADER_STAGE_COMPUTE_BIT
+		});
+	bindings.push_back({
+		3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1,
+		VK_SHADER_STAGE_COMPUTE_BIT
+		});
+
+	_computeLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
+}
+
+void CubemapRenderer::CreateComputeBuffers() {
+	size_t numVertices = _cageMesh._vertices.rows();
+	size_t lambdaSize = numVertices * 3 * sizeof(float);
+	size_t wsumSize = numVertices * sizeof(float);
+
+	_lambdaBuffer = _resourceManager->CreateBufferAndMapMemory(
+		std::span<std::byte>((std::byte*)nullptr, lambdaSize),
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+	_wsumBuffer = _resourceManager->CreateBufferAndMapMemory(
+		std::span<std::byte>((std::byte*)nullptr, wsumSize),
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+}
+
+void CubemapRenderer::AllocateComputeDescriptorSet() {
+	VkDescriptorSetLayout layout = _computeLayout->GetReference();
+
+	VkDescriptorSetAllocateInfo alloc{};
+	alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	alloc.descriptorPool = _descriptorPool;
+	alloc.descriptorSetCount = 1;
+	alloc.pSetLayouts = &layout;
+
+	vkAllocateDescriptorSets(_device, &alloc, &_computeDescriptorSet);
+}
+
+void CubemapRenderer::UpdateComputeDescriptorSet() {
+
+	VkDescriptorImageInfo triInfo{};
+	triInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	triInfo.imageView = _triangleIndexImageView;
+	triInfo.sampler = _sampler;
+
+	VkDescriptorImageInfo baryInfo{};
+	baryInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	baryInfo.imageView = _triangleIndexImageView;
+	baryInfo.sampler = _sampler;
+
+	VkDescriptorBufferInfo lambdaInfo{};
+	lambdaInfo.buffer = _lambdaBuffer._deviceBuffer;
+	lambdaInfo.range = VK_WHOLE_SIZE;
+
+	VkDescriptorBufferInfo wsumInfo{};
+	wsumInfo.buffer = _wsumBuffer._deviceBuffer;
+	wsumInfo.range = VK_WHOLE_SIZE;
+
+	std::array<VkWriteDescriptorSet, 4> writes{};
+
+	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr, _computeDescriptorSet, 0, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		&triInfo, nullptr, nullptr };
+
+	writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr, _computeDescriptorSet, 1, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+		&baryInfo, nullptr, nullptr };
+
+	writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr, _computeDescriptorSet, 2, 0, 1,
+		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		nullptr, &lambdaInfo, nullptr };
+
+	writes[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+		nullptr, _computeDescriptorSet, 3, 0, 1,
+		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+		nullptr, &wsumInfo, nullptr };
+
+	vkUpdateDescriptorSets(_device, writes.size(), writes.data(), 0, nullptr);
+}
+
+void CubemapRenderer::CreateComputePipeline() {
+	std::array layouts{ _computeLayout->GetReference() };
+
+	_computePipelineHandle =
+		_renderPipelineManager->BeginPipeline()
+		.SetDescriptorSetLayouts(std::span(layouts))
+		.SetShaderModule(ShaderModuleType::Compute,
+			"assets/shaders/WeightCompute.comp.spv")
+		.Build();
+}
+
+void CubemapRenderer::CreateComputeCommandBuffer() {
+	VkCommandBufferAllocateInfo alloc{};
+	alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	alloc.commandPool = _graphicCommandPool;
+	alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	alloc.commandBufferCount = 1;
+
+	vkAllocateCommandBuffers(_device, &alloc, &_computeCommandBuffer);
+}
+
+void CubemapRenderer::ComputeCoordinates(uint32_t face, uint32_t cubeIndex) {
+	VkImageViewCreateInfo viewInfo{};
+	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+	viewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT; // or your actual format
+	viewInfo.image = _cubemapImages[cubeIndex];
+	viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	viewInfo.subresourceRange.levelCount = 1;
+	viewInfo.subresourceRange.layerCount = 6;
+
+	vkCreateImageView(_device, &viewInfo, nullptr, &_triangleIndexImageView);
+
+	vkResetCommandBuffer(_computeCommandBuffer, 0);
+
+	VkCommandBufferBeginInfo begin{};
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+	vkBeginCommandBuffer(_computeCommandBuffer, &begin);
+
+	VkImageSubresourceRange subresourceRange{};
+	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	subresourceRange.baseMipLevel = 0;
+	subresourceRange.levelCount = 1;
+	subresourceRange.baseArrayLayer = face;    // <- which cubemap face
+	subresourceRange.layerCount = 1;          // only this face
+
+	// ensure images are in GENERAL layout for compute read
+	// (your RenderPass leaves them in COLOR_ATTACHMENT_OPTIMAL)
+	InsertImageMemoryBarrierToGeneral(_computeCommandBuffer, _cubemapImages[cubeIndex], subresourceRange);
+
+	const PipelineObject& obj =
+		_renderPipelineManager->GetPipelineObject(_computePipelineHandle);
+
+	vkCmdBindPipeline(_computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, obj._handle);
+
+	vkCmdBindDescriptorSets(
+		_computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+		obj._pipelineLayout, 0, 1,
+		&_computeDescriptorSet, 0, nullptr);
+
+	uint32_t groupsX = (512 + 7) / 8;
+	uint32_t groupsY = (512 + 7) / 8;
+
+	vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, 6);
+
+	vkEndCommandBuffer(_computeCommandBuffer);
+
+	VkSubmitInfo submit{};
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &_computeCommandBuffer;
+
+	VkQueue queue;
+	vkGetDeviceQueue(_device, _device->GetQueueFamilies()._graphics.value(), 0, &queue);
+
+	vkQueueSubmit(queue, 1, &submit, _renderFence);
+	vkWaitForFences(_device, 1, &_renderFence, VK_TRUE, UINT64_MAX);
+	vkResetFences(_device, 1, &_renderFence);
+}
+
+void CubemapRenderer::InsertImageMemoryBarrierToGeneral(
+	VkCommandBuffer cmd,
+	VkImage image,
+	VkImageSubresourceRange subresourceRange)
+{
+	VkImageMemoryBarrier barrier{};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+
+	// Compute shader will read the image (sampled)
+	barrier.srcAccessMask =
+		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |       // from rasterization
+		VK_ACCESS_TRANSFER_WRITE_BIT |
+		VK_ACCESS_SHADER_WRITE_BIT;                  // if previous compute wrote
+
+	barrier.dstAccessMask =
+		VK_ACCESS_SHADER_READ_BIT;                   // compute reads
+
+	barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;     // compute-readable
+	barrier.image = image;
+	barrier.subresourceRange = subresourceRange;
+
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT |
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier
+	);
+}
+
+void CubemapRenderer::CreateSampler() {
+	VkSamplerCreateInfo s{};
+	s.magFilter = VK_FILTER_NEAREST;
+	s.minFilter = VK_FILTER_NEAREST;
+	s.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	s.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	s.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	s.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+	vkCreateSampler(_device, &s, nullptr, &_sampler);
+}

@@ -6,7 +6,8 @@ enum class ShaderModuleType: uint8_t
 {
 	Vertex,
 	Geometry,
-	Fragment
+	Fragment,
+	Compute
 };
 
 struct PipelineObject

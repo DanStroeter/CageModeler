@@ -137,7 +137,9 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCancelled(); },
 		[this] { OnNewProjectCreated(); });
 
-	_projectModel->_deformationType = DeformationType::Green;
+	//_projectModel->_deformationType = DeformationType::MVC;
+	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
+	//_projectModel->_cageFilepath = "assets/meshes/cube_cages_triangulated.obj";
 	_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
 	_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
 	_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated_embedding.msh";
@@ -661,8 +663,8 @@ void Editor::OnNewProjectCreated()
 			_deformedCageHandle = _scene->AddCage(_projectData->_deformedCage._vertices, _projectData->_deformedCage._faces);
 
 
-			_cubemapRenderer->SetCage(_projectData->_mesh);
-			_cubemapRenderer->SetMesh(_projectData->_deformedCage);
+			_cubemapRenderer->SetCage(_projectData->_cage);
+			_cubemapRenderer->SetMesh(_projectData->_mesh);
 			_cubemapRenderer->Initialize();
 			_cubemapRenderer->RenderCubemaps();
 

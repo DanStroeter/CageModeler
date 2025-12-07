@@ -39,7 +39,6 @@ public:
 	void Initialize();
 	void Deinitialize() {}; //TODO
 
-	//void ComputeCoordinates(); //Placeholder function to compute cubemap coordinates
 	void RenderCubemaps();
 
 	void SetCage(const EigenMesh& mesh) {
@@ -49,8 +48,6 @@ public:
 		_deformableMesh = mesh;
 	}
 private:
-	//void CreateComputePipeline();
-
 	//init functions
 	void CreateImageViews(uint32_t size, VkFormat format);
 	void CreateRenderPass(VkFormat format);
@@ -63,9 +60,7 @@ private:
 	void CreateVertexBufferFromMesh();
 	void CreateIndexBufferFromMesh();
 	void CreateUniformBuffer(VkDeviceSize bufferSize);
-	
-	//void AllocateObjectDescriptorSet();
-	//void UpdateObjectDescriptorSet();
+
 	void AllocateMatricesDescriptorSet();
 	void UpdateMatricesDescriptorSet();
 
@@ -93,7 +88,6 @@ private:
 	VkCommandPool _graphicCommandPool = VK_NULL_HANDLE;
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
 	PipelineHandle _cubemapPipelineHandle;
-	//PipelineHandle _computePipelineHandle;
 
 	//images
 	std::vector<VkImage> _cubemapImages = {};
@@ -112,9 +106,6 @@ private:
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
 	VkDescriptorSet _matricesDescriptorSet;
 	MemoryMappedBuffer _matricesUniformBuffer;
-	//RenderResourceRef<DescriptorSetLayout> _objectDataLayout;
-	//VkDescriptorSet _objectDataDescriptorSet;
-	//MemoryMappedBuffer _objectDataBuffer;
 
 	//buffers
 	MemoryMappedBuffer _indexBuffer;
@@ -132,4 +123,28 @@ private:
 	void TransitionImageToTransferSrc(VkCommandBuffer cmd, VkImage image);
 	void EndOneTimeCommands(VkCommandBuffer cmd);
 	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+	//----------------------Compute Stage
+	PipelineHandle _computePipelineHandle;
+	RenderResourceRef<DescriptorSetLayout> _computeLayout;
+	VkDescriptorSet _computeDescriptorSet;
+	MemoryMappedBuffer _lambdaBuffer;
+	MemoryMappedBuffer _wsumBuffer;
+	VkCommandBuffer _computeCommandBuffer;
+	VkSampler _sampler;
+	VkImageView _triangleIndexImageView;
+
+	void CreateComputeDescriptorSetLayout();
+	void CreateComputeBuffers();
+	void AllocateComputeDescriptorSet();
+	void UpdateComputeDescriptorSet(); 
+	void CreateComputePipeline();
+	void CreateComputeCommandBuffer();
+	void ComputeCoordinates(uint32_t face, uint32_t cubeIndex);
+	void CreateSampler();
+
+	void InsertImageMemoryBarrierToGeneral(VkCommandBuffer cmd, VkImage image, VkImageSubresourceRange subresourceRange);
+	float ComputeSphereWeight(int px, int py, int faceSize);
+	void CartesianToSpherical(float x, float y, float z, float& theta, float& phi);
+
 };
