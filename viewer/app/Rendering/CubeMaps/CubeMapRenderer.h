@@ -130,9 +130,17 @@ private:
 	VkDescriptorSet _computeDescriptorSet;
 	MemoryMappedBuffer _lambdaBuffer;
 	MemoryMappedBuffer _wsumBuffer;
+
+	MemoryMappedBuffer _lambdaStagingBuffer;
+	MemoryMappedBuffer _wsumStagingBuffer;
+	MemoryMappedBuffer _vertexListBuffer;
+
+	std::vector<std::vector<float>> _lambdaResults; //cpu readback storage
+	std::vector<std::vector<float>> _wsumResults;   //cpu readback storage
+
 	VkCommandBuffer _computeCommandBuffer;
 	VkSampler _sampler;
-	VkImageView _triangleIndexImageView;
+	VkImageView _baryTexImageView;
 
 	void CreateComputeDescriptorSetLayout();
 	void CreateComputeBuffers();
@@ -140,8 +148,11 @@ private:
 	void UpdateComputeDescriptorSet(); 
 	void CreateComputePipeline();
 	void CreateComputeCommandBuffer();
-	void ComputeCoordinates(uint32_t face, uint32_t cubeIndex);
+	void ComputeCoordinates(uint32_t cubeIndex);
 	void CreateSampler();
+	void ReadbackCompute(uint32_t cubeIndex);
+	void storeLambdaForVertex(uint32_t cubeIndex, const float* lambdaCPU);
+	void storeWsumForVertex(uint32_t cubeIndex, const float* wsumCPU);
 
 	void InsertImageMemoryBarrierToGeneral(VkCommandBuffer cmd, VkImage image, VkImageSubresourceRange subresourceRange);
 	float ComputeSphereWeight(int px, int py, int faceSize);
