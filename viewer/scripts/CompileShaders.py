@@ -1,4 +1,4 @@
-import os
+﻿import os
 import subprocess
 import shutil
 import sys
@@ -15,7 +15,7 @@ def compile_shader(filename, input_path, output_path, shader_type):
 # Set up directories.
 input_dir = sys.argv[1]
 output_dir = sys.argv[2]
-allowed_file_ext = ['vert', 'frag']
+allowed_file_ext = ['vert', 'frag', 'comp', 'comp.glsl']
 
 # Removes compiled shaders.
 if os.path.isdir(output_dir):
