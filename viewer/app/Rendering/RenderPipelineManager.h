@@ -7,6 +7,7 @@
 #include <filesystem>
 
 class RenderPipelineManager;
+struct ComputePipelineObjectProxy;
 
 struct InputAssemblyState
 {
@@ -174,6 +175,7 @@ public:
 	}
 
 	void ReleaseResource();
+	[[nodiscard]] PipelineHandle BuildComputePipeline(const ComputePipelineObjectProxy& objectProxy);
 
 private:
 	[[nodiscard]] PipelineHandle BuildGraphicsPipeline(const GraphicsPipelineObjectProxy& objectProxy);
@@ -186,4 +188,18 @@ private:
 	std::vector<bool> _allocatedPipelines;
 	std::array<PipelineObject, MaximumNumberPipelines> _pipelines;
 	RenderResourceRef<Device> _device;
+};
+
+struct ComputePipelineObjectProxy
+{
+	std::weak_ptr<RenderPipelineManager> _renderPipelineManager;
+	std::filesystem::path _shaderModule;
+	std::vector<VkDescriptorSetLayout> _descriptorSetLayouts;
+
+	PipelineHandle Build() const
+	{
+		if (auto manager = _renderPipelineManager.lock())
+			return manager->BuildComputePipeline(*this);
+		return PipelineHandle();
+	}
 };

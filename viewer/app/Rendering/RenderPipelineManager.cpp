@@ -268,3 +268,44 @@ PipelineHandle GraphicsPipelineObjectProxy::Build() const
 
 	return PipelineHandle();
 }
+
+PipelineHandle RenderPipelineManager::BuildComputePipeline(const ComputePipelineObjectProxy& objectProxy)
+{
+	CHECK_VK_HANDLE(_device);
+
+	// Load shader module
+	const auto shaderCode = VulkanUtils::ReadBinaryFile(objectProxy._shaderModule.string());
+	const auto shaderModule = CreateShaderModule(shaderCode);
+
+	VkPipelineShaderStageCreateInfo stage{};
+	stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	stage.module = shaderModule;
+	stage.pName = "main";
+
+	// Pipeline layout
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(objectProxy._descriptorSetLayouts.size());
+	pipelineLayoutInfo.pSetLayouts = objectProxy._descriptorSetLayouts.data();
+
+	VkPipelineLayout pipelineLayout;
+	VK_CHECK(vkCreatePipelineLayout(_device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
+
+	VkComputePipelineCreateInfo pipelineInfo{};
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	pipelineInfo.stage = stage;
+	pipelineInfo.layout = pipelineLayout;
+
+	VkPipeline pipeline;
+	VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline));
+
+	vkDestroyShaderModule(_device, shaderModule, nullptr);
+
+	// store pipeline in manager
+	const auto nextFreeIndex = std::find(_allocatedPipelines.begin(), _allocatedPipelines.end(), false) - _allocatedPipelines.begin();
+	_allocatedPipelines[nextFreeIndex] = true;
+	_pipelines[nextFreeIndex] = PipelineObject(pipeline, pipelineLayout);
+
+	return PipelineHandle(nextFreeIndex);
+}

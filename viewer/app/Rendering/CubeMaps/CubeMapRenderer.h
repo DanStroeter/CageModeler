@@ -140,7 +140,7 @@ private:
 
 	VkCommandBuffer _computeCommandBuffer;
 	VkSampler _sampler;
-	VkImageView _baryTexImageView;
+	VkImageView _baryTexImageView = VK_NULL_HANDLE;
 
 	void CreateComputeDescriptorSetLayout();
 	void CreateComputeBuffers();
@@ -150,6 +150,7 @@ private:
 	void CreateComputeCommandBuffer();
 	void ComputeCoordinates(uint32_t cubeIndex);
 	void CreateSampler();
+
 	void ReadbackCompute(uint32_t cubeIndex);
 	void storeLambdaForVertex(uint32_t cubeIndex, const float* lambdaCPU);
 	void storeWsumForVertex(uint32_t cubeIndex, const float* wsumCPU);
