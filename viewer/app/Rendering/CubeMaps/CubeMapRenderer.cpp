@@ -676,7 +676,7 @@ void CubemapRenderer::RenderCubemaps()
 		ComputeCoordinates(vertexIndex);
 
 		// Copy results from device-local → staging
-		//ReadbackCompute(vertexIndex);
+		ReadbackCompute(vertexIndex);
 	}
 }
 
@@ -752,9 +752,11 @@ uint32_t CubemapRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFl
 
 void CubemapRenderer::ExportCubemapAsVerticalStrip(const std::string& filename)
 {
-	const uint32_t faceSize = 512; // cubemap resolution
+	const uint32_t faceSize = 512;
 	const uint32_t numFaces = 6;
-	const VkDeviceSize imageSizePerFace = faceSize * faceSize * 4; // RGBA8
+	const uint32_t channels = 4;
+	const VkDeviceSize srcBytesPerTexel = sizeof(float) * channels; // 16 bytes/texel
+	const VkDeviceSize imageSizePerFace = faceSize * faceSize * srcBytesPerTexel;
 	const VkDeviceSize totalSize = imageSizePerFace * numFaces;
 
 	// --- 1. Create staging buffer ---
@@ -785,7 +787,7 @@ void CubemapRenderer::ExportCubemapAsVerticalStrip(const std::string& filename)
 	// --- 2. Record command buffer to copy cubemap to staging buffer ---
 	VkCommandBuffer cmdBuffer = BeginOneTimeCommands();
 
-	// Transition cubemap image to transfer src
+	// We’ll fix this function below (layout transition)
 	TransitionImageToTransferSrc(cmdBuffer, _cubemapImages[0]);
 
 	std::vector<VkBufferImageCopy> regions(numFaces);
@@ -810,49 +812,45 @@ void CubemapRenderer::ExportCubemapAsVerticalStrip(const std::string& filename)
 		regions.data()
 	);
 
-	// --- 3. Submit command buffer with a fence ---
-	vkEndCommandBuffer(cmdBuffer);
+	EndOneTimeCommands(cmdBuffer);   // uses queueWaitIdle + free
 
-	VkSubmitInfo submitInfo{};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &cmdBuffer;
+	// --- 3. Map staging buffer and convert float4 -> 8-bit RGBA ---
+	void* raw = nullptr;
+	vkMapMemory(_device, stagingMemory, 0, totalSize, 0, &raw);
+	float* src = reinterpret_cast<float*>(raw);
 
-	VkQueue graphicsQueue;
-	vkGetDeviceQueue(_device, _device->GetQueueFamilies()._graphics.value(), 0, &graphicsQueue);
+	// Output: 4 bytes/px for PNG
+	const size_t outBytesPerTexel = 4;
+	std::vector<uint8_t> strip(faceSize * faceSize * numFaces * outBytesPerTexel);
 
-	VkFenceCreateInfo fenceInfo{};
-	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	fenceInfo.flags = 0;
-
-	VkFence fence;
-	vkCreateFence(_device, &fenceInfo, nullptr, &fence);
-
-	vkQueueSubmit(graphicsQueue, 1, &submitInfo, fence);
-	vkWaitForFences(_device, 1, &fence, VK_TRUE, UINT64_MAX);
-
-	vkDestroyFence(_device, fence, nullptr);
-	vkFreeCommandBuffers(_device, _graphicCommandPool, 1, &cmdBuffer);
-
-	// --- 4. Map staging buffer and write vertical strip ---
-	uint8_t* data;
-	vkMapMemory(_device, stagingMemory, 0, totalSize, 0, reinterpret_cast<void**>(&data));
-
-	std::vector<uint8_t> strip(faceSize * faceSize * 4 * numFaces);
+	const size_t texelCountPerFace = faceSize * faceSize;
 
 	for (uint32_t face = 0; face < numFaces; ++face) {
-		std::memcpy(
-			strip.data() + face * faceSize * faceSize * 4,
-			data + face * faceSize * faceSize * 4,
-			faceSize * faceSize * 4
-		);
-	}
+		for (size_t i = 0; i < texelCountPerFace; ++i) {
+			size_t srcIndex = (face * texelCountPerFace + i) * channels;
+			size_t dstIndex = (face * texelCountPerFace + i) * outBytesPerTexel;
 
-	stbi_write_png(filename.c_str(), faceSize, faceSize * numFaces, 4, strip.data(), faceSize * 4);
+			for (int c = 0; c < 4; ++c) {
+				float f = src[srcIndex + c];
+				// simple clamp 0..1 → 0..255
+				f = std::max(0.0f, std::min(1.0f, f));
+				strip[dstIndex + c] = static_cast<uint8_t>(f * 255.0f);
+			}
+		}
+	}
 
 	vkUnmapMemory(_device, stagingMemory);
 
-	// --- 5. Cleanup ---
+	stbi_write_png(
+		filename.c_str(),
+		faceSize,
+		faceSize * numFaces,
+		4,
+		strip.data(),
+		faceSize * 4
+	);
+
+	// --- 4. Cleanup ---
 	vkDestroyBuffer(_device, stagingBuffer, nullptr);
 	vkFreeMemory(_device, stagingMemory, nullptr);
 
@@ -880,8 +878,11 @@ void CubemapRenderer::TransitionImageToTransferSrc(VkCommandBuffer cmd, VkImage 
 {
 	VkImageMemoryBarrier barrier{};
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+
+	// After compute pass we explicitly put it in GENERAL
 	barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.image = image;
@@ -890,13 +891,14 @@ void CubemapRenderer::TransitionImageToTransferSrc(VkCommandBuffer cmd, VkImage 
 	barrier.subresourceRange.levelCount = 1;
 	barrier.subresourceRange.baseArrayLayer = 0;
 	barrier.subresourceRange.layerCount = 6;
-	barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+	barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;   // compute sampled it
 	barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
 
 	vkCmdPipelineBarrier(
 		cmd,
-		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  // from compute
+		VK_PIPELINE_STAGE_TRANSFER_BIT,        // to copy
 		0,
 		0, nullptr,
 		0, nullptr,
@@ -1123,74 +1125,6 @@ void CubemapRenderer::CreateComputeCommandBuffer() {
 
 	vkAllocateCommandBuffers(_device, &alloc, &_computeCommandBuffer);
 }
-
-/*void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex) {
-	
-	_baryTexImageView = _baryTexImageViews[cubeIndex];
-	UpdateComputeDescriptorSet();
-
-	vkResetCommandBuffer(_computeCommandBuffer, 0);
-
-	VkCommandBufferBeginInfo begin{};
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-
-	vkBeginCommandBuffer(_computeCommandBuffer, &begin);
-
-	VkImageSubresourceRange subresourceRange{};
-	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	subresourceRange.baseMipLevel = 0;
-	subresourceRange.levelCount = 1;
-	subresourceRange.baseArrayLayer = 0;    // start of cubemap
-	subresourceRange.layerCount = 6;
-
-	// ensure images are in GENERAL layout for compute read
-	// (your RenderPass leaves them in COLOR_ATTACHMENT_OPTIMAL)
-	InsertImageMemoryBarrierToGeneral(_computeCommandBuffer, _cubemapImages[cubeIndex], subresourceRange);
-
-	const PipelineObject& obj =
-		_renderPipelineManager->GetPipelineObject(_computePipelineHandle);
-
-	vkCmdBindPipeline(_computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, obj._handle);
-
-	vkCmdBindDescriptorSets(
-		_computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-		obj._pipelineLayout, 0, 1,
-		&_computeDescriptorSet, 0, nullptr);
-
-	// --- Push constants ---
-	ComputePushConstants pc{};
-	pc.uNumCubemaps = static_cast<int>(_deformableMesh._vertices.rows());   // or however many cubemaps you have
-	pc.uNumCageVertices = static_cast<int>(_cageMesh._vertices.rows());
-	pc.uFaceSize = glm::ivec2(512, 512);  // your cubemap resolution
-	pc.uFacesPerCubemap = 6;
-
-	vkCmdPushConstants(
-		_computeCommandBuffer,
-		obj._pipelineLayout,
-		VK_SHADER_STAGE_COMPUTE_BIT,
-		0,
-		sizeof(ComputePushConstants),
-		&pc
-	);
-
-	uint32_t groupsX = (512 + 7) / 8;
-	uint32_t groupsY = (512 + 7) / 8;
-
-	vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, 6);
-
-	vkEndCommandBuffer(_computeCommandBuffer);
-
-	VkSubmitInfo submit{};
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit.commandBufferCount = 1;
-	submit.pCommandBuffers = &_computeCommandBuffer;
-
-	VkQueue queue;
-	vkGetDeviceQueue(_device, _device->GetQueueFamilies()._graphics.value(), 0, &queue);
-
-	vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
-	vkQueueWaitIdle(queue);
-}*/
 
 void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex)
 {
