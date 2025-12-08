@@ -195,6 +195,7 @@ struct ComputePipelineObjectProxy
 	std::weak_ptr<RenderPipelineManager> _renderPipelineManager;
 	std::filesystem::path _shaderModule;
 	std::vector<VkDescriptorSetLayout> _descriptorSetLayouts;
+	VkPushConstantRange _pushConstantRanges;
 
 	PipelineHandle Build() const
 	{

@@ -288,6 +288,8 @@ PipelineHandle RenderPipelineManager::BuildComputePipeline(const ComputePipeline
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(objectProxy._descriptorSetLayouts.size());
 	pipelineLayoutInfo.pSetLayouts = objectProxy._descriptorSetLayouts.data();
+	pipelineLayoutInfo.pushConstantRangeCount = 1;
+	pipelineLayoutInfo.pPushConstantRanges = &objectProxy._pushConstantRanges;
 
 	VkPipelineLayout pipelineLayout;
 	VK_CHECK(vkCreatePipelineLayout(_device, &pipelineLayoutInfo, nullptr, &pipelineLayout));

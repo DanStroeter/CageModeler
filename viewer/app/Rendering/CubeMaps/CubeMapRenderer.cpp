@@ -43,13 +43,15 @@ void CubemapRenderer::Initialize()
 
 	CreateSyncObjects();
 
+	CreateComputeCommandPool(graphicsQueueFamilyIndex);
+	CreateCubemapImageViews();
 	CreateComputeDescriptorSetLayout();
 	CreateComputeBuffers();
 	AllocateComputeDescriptorSet();
 	CreateComputePipeline();
 	CreateComputeCommandBuffer();
 	CreateSampler();
-	UpdateComputeDescriptorSet();
+	//UpdateComputeDescriptorSet();
 }
 
 void CubemapRenderer::CreateImageViews(uint32_t size, VkFormat format) {
@@ -420,6 +422,17 @@ void CubemapRenderer::CreateCommandPool(uint32_t queueFamilyIndex) {
 	}
 }
 
+void CubemapRenderer::CreateComputeCommandPool(uint32_t queueFamilyIndex)
+{
+	VkCommandPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo.queueFamilyIndex = queueFamilyIndex;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+	if (vkCreateCommandPool(_device, &poolInfo, nullptr, &_computeCommandPool) != VK_SUCCESS)
+		throw std::runtime_error("Failed to create compute command pool!");
+}
+
 void CubemapRenderer::CreateUniformBuffer(VkDeviceSize bufferSize)
 {
 	std::span<std::byte> sizeSpan(static_cast<std::byte*>(nullptr), bufferSize);
@@ -588,7 +601,12 @@ void CubemapRenderer::RenderCubemaps()
 		float farPlane = 1000.0f; //temporary
 		//float nearPlane = ComputeNearPlane(camPos, vertices);
 		//float farPlane = ComputeFarPlane(camPos, vertices);
+		std::string w =
+			"Computing cubemap " + std::to_string(vertexIndex + 1) +
+			" / " + std::to_string(vertices.size()) +
+			" (" + std::to_string(100.0f * (vertexIndex + 1) / vertices.size()) + "%)";
 
+		LOG_DEBUG(w);
 		// Render each cubemap face sequentially
 		for (int face = 0; face < 6; ++face)
 		{
@@ -646,9 +664,11 @@ void CubemapRenderer::RenderCubemaps()
 			uint32_t graphicsFamily = _device->GetQueueFamilies()._graphics.value();
 			VkQueue graphicsQueue;
 			vkGetDeviceQueue(_device, graphicsFamily, 0, &graphicsQueue);
-			vkQueueSubmit(graphicsQueue, 1, &submitInfo, _renderFence);
-			vkWaitForFences(_device, 1, &_renderFence, VK_TRUE, UINT64_MAX);
-			vkResetFences(_device, 1, &_renderFence);
+			vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+			vkQueueWaitIdle(graphicsQueue);
+			//vkQueueSubmit(graphicsQueue, 1, &submitInfo, _renderFence);
+			//vkWaitForFences(_device, 1, &_renderFence, VK_TRUE, UINT64_MAX);
+			//vkResetFences(_device, 1, &_renderFence);
 		}
 		//std::string filename = "debug_cubemap_" + std::to_string(vertexIndex) + ".png";
 		//ExportCubemapAsVerticalStrip("F:/Cubemaps/" + filename);
@@ -969,49 +989,13 @@ void CubemapRenderer::CreateComputeDescriptorSetLayout() {
 	_computeLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
 }
 
-/*void CubemapRenderer::CreateComputeBuffers() {
-	size_t numVertices = _cageMesh._vertices.rows();
-	size_t lambdaSize = numVertices * sizeof(float) * 6;
-	size_t wsumSize = 6 * sizeof(float);
-
-	_lambdaBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr, lambdaSize),
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-	);
-	_wsumBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr, wsumSize),
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-	);
-
-	size_t vertexListSize = _cageMesh._faces.size() * 3 * sizeof(uint32_t);
-	_vertexListBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)_cageMesh._faces.data(), vertexListSize),
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-	);
-	_resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr, lambdaSize),
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	_wsumStagingBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr, wsumSize),
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-}*/
-
 void CubemapRenderer::CreateComputeBuffers() {
 	size_t numVertices = _cageMesh._vertices.rows();
 	size_t lambdaSize = numVertices * sizeof(float) * 6;
 	size_t wsumSize = 6 * sizeof(float);
 
 	// -----------------------------
-	// CPU-visible staging buffers for readback
+	// CPU visible staging buffers
 	// -----------------------------
 	_lambdaStagingBuffer = _resourceManager->CreateBufferAndMapMemory(
 		std::span<std::byte>((std::byte*)nullptr, lambdaSize),
@@ -1026,39 +1010,48 @@ void CubemapRenderer::CreateComputeBuffers() {
 	);
 
 	// -----------------------------
-	// GPU-only buffers (DEVICE_LOCAL) for compute shader
+	// GPU-only buffers
 	// -----------------------------
-	_lambdaBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr, lambdaSize),
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	_lambdaBuffer = _resourceManager->AllocateDeviceBuffer(
+		lambdaSize,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
-	_wsumBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr, wsumSize),
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	_wsumBuffer = _resourceManager->AllocateDeviceBuffer(
+		wsumSize,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
 	// -----------------------------
-	// Vertex list buffer (GPU-only)
+	// Vertex index list
 	// -----------------------------
 	size_t vertexListSize = _cageMesh._faces.size() * 3 * sizeof(uint32_t);
-	_vertexListBuffer = _resourceManager->CreateBufferAndMapMemory(
+
+	// staging upload
+	auto vertexListStaging = _resourceManager->CreateBufferAndMapMemory(
 		std::span<std::byte>((std::byte*)_cageMesh._faces.data(), vertexListSize),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	_vertexListBuffer = _resourceManager->AllocateDeviceBuffer(
+		vertexListSize,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
-	/*// Optionally, create a CPU staging buffer to upload vertex list
-	_vertexListStagingBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)_cageMesh._faces.data(), vertexListSize),
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);*/
-
-	// Copy CPU -> GPU for vertex list
-	//CopyBuffer(_vertexListStagingBuffer._deviceBuffer, _vertexListBuffer._deviceBuffer, vertexListSize);
+	
+	CopyBuffer(
+		vertexListStaging._deviceBuffer,
+		_vertexListBuffer._deviceBuffer,
+		vertexListSize
+	);
 }
 
 void CubemapRenderer::AllocateComputeDescriptorSet() {
@@ -1107,12 +1100,16 @@ void CubemapRenderer::UpdateComputeDescriptorSet() {
 }
 
 void CubemapRenderer::CreateComputePipeline() {
-	std::array layouts{ _computeLayout->GetReference() };
-
 	ComputePipelineObjectProxy proxy;
 	proxy._renderPipelineManager = _renderPipelineManager;
 	proxy._shaderModule = "assets/shaders/PMVCCompute.comp.spv";
 	proxy._descriptorSetLayouts = { _computeLayout };
+
+	VkPushConstantRange range{};
+	range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	range.offset = 0;
+	range.size = sizeof(ComputePushConstants);
+	proxy._pushConstantRanges = { range }; 
 
 	_computePipelineHandle = proxy.Build();
 }
@@ -1120,24 +1117,17 @@ void CubemapRenderer::CreateComputePipeline() {
 void CubemapRenderer::CreateComputeCommandBuffer() {
 	VkCommandBufferAllocateInfo alloc{};
 	alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	alloc.commandPool = _graphicCommandPool;
+	alloc.commandPool = _computeCommandPool;   
 	alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 	alloc.commandBufferCount = 1;
 
 	vkAllocateCommandBuffers(_device, &alloc, &_computeCommandBuffer);
 }
 
-void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex) {
-	VkImageViewCreateInfo viewInfo{};
-	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-	viewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT; // or your actual format
-	viewInfo.image = _cubemapImages[cubeIndex];
-	viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	viewInfo.subresourceRange.levelCount = 1;
-	viewInfo.subresourceRange.layerCount = 6;
-
-	vkCreateImageView(_device, &viewInfo, nullptr, &_baryTexImageView);
+/*void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex) {
+	
+	_baryTexImageView = _baryTexImageViews[cubeIndex];
+	UpdateComputeDescriptorSet();
 
 	vkResetCommandBuffer(_computeCommandBuffer, 0);
 
@@ -1167,6 +1157,22 @@ void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex) {
 		obj._pipelineLayout, 0, 1,
 		&_computeDescriptorSet, 0, nullptr);
 
+	// --- Push constants ---
+	ComputePushConstants pc{};
+	pc.uNumCubemaps = static_cast<int>(_deformableMesh._vertices.rows());   // or however many cubemaps you have
+	pc.uNumCageVertices = static_cast<int>(_cageMesh._vertices.rows());
+	pc.uFaceSize = glm::ivec2(512, 512);  // your cubemap resolution
+	pc.uFacesPerCubemap = 6;
+
+	vkCmdPushConstants(
+		_computeCommandBuffer,
+		obj._pipelineLayout,
+		VK_SHADER_STAGE_COMPUTE_BIT,
+		0,
+		sizeof(ComputePushConstants),
+		&pc
+	);
+
 	uint32_t groupsX = (512 + 7) / 8;
 	uint32_t groupsY = (512 + 7) / 8;
 
@@ -1182,9 +1188,83 @@ void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex) {
 	VkQueue queue;
 	vkGetDeviceQueue(_device, _device->GetQueueFamilies()._graphics.value(), 0, &queue);
 
-	vkQueueSubmit(queue, 1, &submit, _renderFence);
-	vkWaitForFences(_device, 1, &_renderFence, VK_TRUE, UINT64_MAX);
-	vkResetFences(_device, 1, &_renderFence);
+	vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+	vkQueueWaitIdle(queue);
+}*/
+
+void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex)
+{
+	// We only have one cubemap image & view, reused for each vertex.
+	// So we always use index 0 here.
+	//(void)cubeIndex; // cubeIndex only used to index CPU-side result arrays, not GPU resources
+
+	_baryTexImageView = _baryTexImageViews[0];
+	UpdateComputeDescriptorSet();
+
+	vkResetCommandBuffer(_computeCommandBuffer, 0);
+
+	VkCommandBufferBeginInfo begin{};
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+	vkBeginCommandBuffer(_computeCommandBuffer, &begin);
+
+	VkImageSubresourceRange subresourceRange{};
+	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	subresourceRange.baseMipLevel = 0;
+	subresourceRange.levelCount = 1;
+	subresourceRange.baseArrayLayer = 0;
+	subresourceRange.layerCount = 6;
+
+	// Transition the *single* cubemap image we are reusing:
+	InsertImageMemoryBarrierToGeneral(
+		_computeCommandBuffer,
+		_cubemapImages[0],      // <-- always 0
+		subresourceRange
+	);
+
+	const PipelineObject& obj =
+		_renderPipelineManager->GetPipelineObject(_computePipelineHandle);
+
+	vkCmdBindPipeline(_computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, obj._handle);
+
+	vkCmdBindDescriptorSets(
+		_computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+		obj._pipelineLayout, 0, 1,
+		&_computeDescriptorSet, 0, nullptr);
+
+	// --- Push constants: we are only processing ONE cubemap on this dispatch ---
+	ComputePushConstants pc{};
+	pc.uNumCubemaps = 1;                             // important
+	pc.uNumCageVertices = static_cast<int>(_cageMesh._vertices.rows());
+	pc.uFaceSize = glm::ivec2(512, 512);
+	pc.uFacesPerCubemap = 6;
+
+	vkCmdPushConstants(
+		_computeCommandBuffer,
+		obj._pipelineLayout,
+		VK_SHADER_STAGE_COMPUTE_BIT,
+		0,
+		sizeof(ComputePushConstants),
+		&pc
+	);
+
+	uint32_t groupsX = (512 + 7) / 8;
+	uint32_t groupsY = (512 + 7) / 8;
+
+	vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, 1);  // one cubemap
+
+	vkEndCommandBuffer(_computeCommandBuffer);
+
+	VkSubmitInfo submit{};
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &_computeCommandBuffer;
+
+	VkQueue queue;
+	vkGetDeviceQueue(_device, _device->GetQueueFamilies()._graphics.value(), 0, &queue);
+
+	vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+	vkQueueWaitIdle(queue);
 }
 
 void CubemapRenderer::ReadbackCompute(uint32_t cubeIndex)
@@ -1292,13 +1372,101 @@ void CubemapRenderer::InsertImageMemoryBarrierToGeneral(
 }
 
 void CubemapRenderer::CreateSampler() {
-	VkSamplerCreateInfo s{};
-	s.magFilter = VK_FILTER_NEAREST;
-	s.minFilter = VK_FILTER_NEAREST;
-	s.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-	s.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	s.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	s.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		VkSamplerCreateInfo s{};
+		s.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+		s.pNext = nullptr;
+		s.flags = 0;
 
-	vkCreateSampler(_device, &s, nullptr, &_sampler);
+		s.magFilter = VK_FILTER_NEAREST;
+		s.minFilter = VK_FILTER_NEAREST;
+		s.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+
+		s.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		s.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		s.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+		s.mipLodBias = 0.0f;
+		s.minLod = 0.0f;
+		s.maxLod = 0.0f;
+
+		s.anisotropyEnable = VK_FALSE;
+		s.maxAnisotropy = 1.0f;
+
+		s.compareEnable = VK_FALSE;
+		s.compareOp = VK_COMPARE_OP_ALWAYS;
+
+		s.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		s.unnormalizedCoordinates = VK_FALSE;
+
+		if (vkCreateSampler(_device, &s, nullptr, &_sampler) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create sampler for compute image!");
+		}
+}
+
+void CubemapRenderer::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size)
+{
+	// Allocate a temporary one-time command buffer
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool = _graphicCommandPool;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer cmd;
+	vkAllocateCommandBuffers(_device, &allocInfo, &cmd);
+
+	// Begin recording
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(cmd, &beginInfo);
+
+	// Copy command
+	VkBufferCopy copyRegion{};
+	copyRegion.srcOffset = 0;
+	copyRegion.dstOffset = 0;
+	copyRegion.size = size;
+	vkCmdCopyBuffer(cmd, src, dst, 1, &copyRegion);
+
+	vkEndCommandBuffer(cmd);
+
+	// Submit and wait
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &cmd;
+
+	VkQueue graphicsQueue;
+	vkGetDeviceQueue(_device, _device->GetQueueFamilies()._graphics.value(), 0, &graphicsQueue);
+
+	vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(graphicsQueue);
+
+	// Clean up
+	vkFreeCommandBuffers(_device, _graphicCommandPool, 1, &cmd);
+}
+
+void CubemapRenderer::CreateCubemapImageViews() {
+	_baryTexImageViews.resize(_cubemapImages.size());
+
+	for (size_t i = 0; i < _cubemapImages.size(); i++) {
+
+		VkImageViewCreateInfo viewInfo{};
+		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+		viewInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		viewInfo.image = _cubemapImages[i];
+
+		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		viewInfo.subresourceRange.baseMipLevel = 0;      // REQUIRED
+		viewInfo.subresourceRange.levelCount = 1;
+
+		viewInfo.subresourceRange.baseArrayLayer = 0;    // REQUIRED
+		viewInfo.subresourceRange.layerCount = 6;        // cubemap = 6 layers
+
+		if (vkCreateImageView(_device, &viewInfo, nullptr, &_baryTexImageViews[i]) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create cubemap bary image view!");
+		}
+	}
 }

@@ -16,6 +16,15 @@
 
 class RenderSubsystem;
 
+struct ComputePushConstants
+{
+	int   uNumCubemaps;
+	int   uNumCageVertices;
+	glm::ivec2 uFaceSize;
+	int   uFacesPerCubemap;
+};
+
+
 struct CubemapMatricesUBO
 {
 	glm::mat4 proj;       // Projection matrix
@@ -128,12 +137,12 @@ private:
 	PipelineHandle _computePipelineHandle;
 	RenderResourceRef<DescriptorSetLayout> _computeLayout;
 	VkDescriptorSet _computeDescriptorSet;
-	MemoryMappedBuffer _lambdaBuffer;
-	MemoryMappedBuffer _wsumBuffer;
+	Buffer _lambdaBuffer;
+	Buffer _wsumBuffer;
 
 	MemoryMappedBuffer _lambdaStagingBuffer;
 	MemoryMappedBuffer _wsumStagingBuffer;
-	MemoryMappedBuffer _vertexListBuffer;
+	Buffer _vertexListBuffer;
 
 	std::vector<std::vector<float>> _lambdaResults; //cpu readback storage
 	std::vector<std::vector<float>> _wsumResults;   //cpu readback storage
@@ -141,6 +150,9 @@ private:
 	VkCommandBuffer _computeCommandBuffer;
 	VkSampler _sampler;
 	VkImageView _baryTexImageView = VK_NULL_HANDLE;
+	std::vector<VkImageView> _baryTexImageViews;
+
+	VkCommandPool _computeCommandPool;
 
 	void CreateComputeDescriptorSetLayout();
 	void CreateComputeBuffers();
@@ -150,6 +162,8 @@ private:
 	void CreateComputeCommandBuffer();
 	void ComputeCoordinates(uint32_t cubeIndex);
 	void CreateSampler();
+	void CreateCubemapImageViews();
+	void CreateComputeCommandPool(uint32_t queueFamilyIndex);
 
 	void ReadbackCompute(uint32_t cubeIndex);
 	void storeLambdaForVertex(uint32_t cubeIndex, const float* lambdaCPU);
@@ -158,5 +172,6 @@ private:
 	void InsertImageMemoryBarrierToGeneral(VkCommandBuffer cmd, VkImage image, VkImageSubresourceRange subresourceRange);
 	float ComputeSphereWeight(int px, int py, int faceSize);
 	void CartesianToSpherical(float x, float y, float z, float& theta, float& phi);
+	void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
 };
