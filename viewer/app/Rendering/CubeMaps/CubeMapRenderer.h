@@ -145,7 +145,7 @@ private:
 	Buffer _vertexListBuffer;
 
 	std::vector<std::vector<float>> _lambdaResults; //cpu readback storage
-	std::vector<std::vector<float>> _wsumResults;   //cpu readback storage
+	std::vector<float> _wsumResults;   //cpu readback storage
 
 	VkCommandBuffer _computeCommandBuffer;
 	VkSampler _sampler;
@@ -173,5 +173,5 @@ private:
 	float ComputeSphereWeight(int px, int py, int faceSize);
 	void CartesianToSpherical(float x, float y, float z, float& theta, float& phi);
 	void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-
+	void WriteWeightsToFile(const std::string& filename);
 };

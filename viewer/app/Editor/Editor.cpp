@@ -143,7 +143,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	//_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
 	//_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
 	_projectModel->_embeddingFilepath = "assets/meshes/sphere_cages_triangulated.msh";
-	_projectModel->_deformedCageFilepath = "assets/meshes/sphere_cages_triangulated_deformed.obj";
+	_projectModel->_deformedCageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 

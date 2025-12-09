@@ -678,6 +678,7 @@ void CubemapRenderer::RenderCubemaps()
 		// Copy results from device-local → staging
 		ReadbackCompute(vertexIndex);
 	}
+	WriteWeightsToFile("DebugWeights");
 }
 
 glm::mat4 CubemapRenderer::ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos)
@@ -1182,10 +1183,11 @@ void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex)
 		&pc
 	);
 
-	uint32_t groupsX = (512 + 7) / 8;
+	/*uint32_t groupsX = (512 + 7) / 8;
 	uint32_t groupsY = (512 + 7) / 8;
 
-	vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, 1);  // one cubemap
+	vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, 1);  // one cubemap*/
+	vkCmdDispatch(_computeCommandBuffer, 1, 1, 1);
 
 	vkEndCommandBuffer(_computeCommandBuffer);
 
@@ -1237,12 +1239,13 @@ void CubemapRenderer::ReadbackCompute(uint32_t cubeIndex)
 }
 
 // store lambda results read back from the GPU into CPU-side container
+// but ADD the values instead of overwriting
 void CubemapRenderer::storeLambdaForVertex(uint32_t cubeIndex, const float* lambdaCPU)
 {
 	const size_t numCageVerts = static_cast<size_t>(_cageMesh._vertices.rows());
 	if (numCageVerts == 0) return;
 
-	const size_t expectedSize = numCageVerts * 6; // 6 faces
+	const size_t expectedSize = numCageVerts; // cage verts = one lambda each
 
 	// ensure outer vector is large enough
 	if (_lambdaResults.size() <= cubeIndex)
@@ -1252,23 +1255,29 @@ void CubemapRenderer::storeLambdaForVertex(uint32_t cubeIndex, const float* lamb
 	if (_lambdaResults[cubeIndex].size() != expectedSize)
 		_lambdaResults[cubeIndex].assign(expectedSize, 0.0f);
 
-	// copy data
-	std::memcpy(_lambdaResults[cubeIndex].data(), lambdaCPU, expectedSize * sizeof(float));
+	// accumulate (add) instead of copy
+	float* dst = _lambdaResults[cubeIndex].data();
+	for (size_t i = 0; i < expectedSize; i++)
+	{
+		dst[i] += lambdaCPU[i];
+	}
 }
 
 // store wsum (6 floats) for this cubemap / vertex
+// but accumulate the values instead of overwriting
 void CubemapRenderer::storeWsumForVertex(uint32_t cubeIndex, const float* wsumCPU)
 {
 	if (!wsumCPU) return;
 
 	// ensure outer vector is large enough
 	if (_wsumResults.size() <= cubeIndex)
-		_wsumResults.resize(cubeIndex + 1, { 0.0f,0.0f,0.0f,0.0f,0.0f,0.0f });
+		_wsumResults.resize(cubeIndex + 1, { 0.0f });
 
-	// copy 6 floats into std::array
+	// accumulate 6 floats into std::array
 	for (int f = 0; f < 6; ++f)
-		_wsumResults[cubeIndex][f] = wsumCPU[f];
+		_wsumResults[cubeIndex] += wsumCPU[f];
 }
+
 
 void CubemapRenderer::InsertImageMemoryBarrierToGeneral(
 	VkCommandBuffer cmd,
@@ -1404,3 +1413,25 @@ void CubemapRenderer::CreateCubemapImageViews() {
 		}
 	}
 }
+
+void CubemapRenderer::WriteWeightsToFile(const std::string& filename)
+{
+	std::ofstream file(filename);
+	if (!file.is_open()) {
+		throw std::runtime_error("Failed to open weight write file!");
+	}
+	file << "===== LAMBDA BUFFER (" << _lambdaResults.size() << " floats) =====\n";
+	for (size_t i = 0; i < _lambdaResults.size(); i++) {
+		for (size_t j = 0; j < _lambdaResults[i].size(); j++) {
+			file << "lambda[" << i << "] = " << std::to_string(_lambdaResults[i][j]) << "\n";
+		}
+	}
+	file << "\n";
+	file << "===== WSUM BUFFER (" << _wsumResults.size() << " floats) =====\n";
+	for (size_t i = 0; i < _wsumResults.size(); i++) {
+			file << "wsum[" << i << "] = " << std::to_string(_wsumResults[i]) << "\n";
+	}
+	file.close();
+	LOG_INFO("Weights written to " + filename);
+}
+
