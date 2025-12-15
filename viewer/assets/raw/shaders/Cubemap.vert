@@ -8,6 +8,7 @@ struct PerFrameData {
 layout(set = 0, binding = 0) uniform FrameDataBlock
 {
     PerFrameData FrameData;
+    float invNumTriangles;
 };
 
 // Vertex attributes
@@ -17,7 +18,7 @@ layout(location = 2) in uint InVertexIndex; // 0,1,2 per triangle
 
 // Outputs to fragment shader
 layout(location = 0) out vec3 OutColor;
-layout(location = 1) flat out uint TriangleID;
+layout(location = 1) flat out float TriangleID;
 
 void main()
 {
@@ -28,7 +29,7 @@ void main()
     else color = vec3(0.0, 0.0, 1.0); // blue
 
     OutColor = color;
-    TriangleID = InTriangleID; // flat, not interpolated
+    TriangleID = float(InTriangleID) * invNumTriangles;
 
     gl_Position = FrameData.Projection * FrameData.View * vec4(InPosition, 1.0);
 }

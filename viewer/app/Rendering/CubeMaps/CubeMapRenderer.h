@@ -22,6 +22,7 @@ struct ComputePushConstants
 	int   uNumCageVertices;
 	glm::ivec2 uFaceSize;
 	int   uFacesPerCubemap;
+	int uNumTriangles;
 };
 
 
@@ -29,6 +30,8 @@ struct CubemapMatricesUBO
 {
 	glm::mat4 proj;       // Projection matrix
 	glm::mat4 view;   // View matrices for each cubemap face
+	float invNumTriangles;
+	float _pad[3];
 };
 
 struct CubemapVertex

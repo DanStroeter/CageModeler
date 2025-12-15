@@ -13,7 +13,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_BINARY_DIR})
 file(GLOB_RECURSE IMGUI_BINDINGS "${CMAKE_SOURCE_DIR}/viewer/external/ImGUI/Bindings/src/*.cpp")
 include_directories("${CMAKE_SOURCE_DIR}/viewer/external/ImGUI/Bindings/include")
 
-# On Apple we have MoltenVK, but we want to also be able to include the auto-generated header file
+# On Apple we have MoltenVK, but we want to also be able to inaclude the auto-generated header file
 # vk_enum_string_helper.h to access result-to-string conversion for Vulkan result types.
 IF (APPLE)
     include_directories("/usr/local/include")

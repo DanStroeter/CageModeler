@@ -24,6 +24,7 @@ layout(push_constant) uniform Params {
     int   uNumCageVertices;
     ivec2 uFaceSize;
     int   uFacesPerCubemap;
+    int   uNumTriangles; 
 } params;
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
@@ -55,8 +56,10 @@ void main()
                 float b1 = tex.g;
                 float b2 = tex.b;
 
-                uint tri = uint(tex.a);
-                if (tri == uint(0xFFFFFFFF)) continue;
+		uint tri = uint(tex.a * float(params.uNumTriangles) + 0.5);
+
+                if (tri >= uint(params.uNumTriangles))
+                  continue;
 
                 uint i0 = vertexList[tri * 3u + 0u];
                 uint i1 = vertexList[tri * 3u + 1u];
@@ -74,9 +77,4 @@ void main()
     }
 
     wsum[cubemapIdx] = wsum_local;
-
-    if (wsum_local > 0.0) {
-        for (int i = 0; i < params.uNumCageVertices; ++i)
-            lambda[base + uint(i)] /= wsum_local;
-    }
 }
