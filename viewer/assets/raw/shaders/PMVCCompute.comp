@@ -32,7 +32,8 @@ layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
     uint cubemapIdx = gl_GlobalInvocationID.x;
-    if (cubemapIdx >= uint(params.uNumCubemaps)) return;
+	    
+if (cubemapIdx >= uint(params.uNumCubemaps)) return;
 
     uint base = cubemapIdx * uint(params.uNumCageVertices);
 
@@ -57,7 +58,6 @@ void main()
                 float b2 = tex.b;
 
 		uint tri = uint(tex.a * float(params.uNumTriangles) + 0.5);
-
                 if (tri >= uint(params.uNumTriangles))
                   continue;
 
@@ -67,9 +67,9 @@ void main()
 
                 float w = 1.0;
 
-                if (i0 < uint(params.uNumCageVertices)) lambda[base + i0] += b0 * w;
-                if (i1 < uint(params.uNumCageVertices)) lambda[base + i1] += b1 * w;
-                if (i2 < uint(params.uNumCageVertices)) lambda[base + i2] += b2 * w;
+                lambda[base + i0] += b0 * w;
+                lambda[base + i1] += b1 * w;
+                lambda[base + i2] += b2 * w;
 
                 wsum_local += w;
             }

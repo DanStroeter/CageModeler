@@ -583,7 +583,7 @@ void CubemapRenderer::RenderCubemaps()
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
 	const uint32_t numTriangles =
-		static_cast<uint32_t>(_cageMesh._faces.size());
+		static_cast<uint32_t>(_cageMesh._faces.size() / 3);
 
 	const float invNumTriangles =
 		1.0f / static_cast<float>(numTriangles);
@@ -994,25 +994,31 @@ void CubemapRenderer::CreateComputeDescriptorSetLayout() {
 	_computeLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
 }
 
-void CubemapRenderer::CreateComputeBuffers() {
-	size_t numVertices = _cageMesh._vertices.rows();
-	size_t lambdaSize = numVertices * sizeof(float) * 6;
-	size_t wsumSize = 6 * sizeof(float);
+void CubemapRenderer::CreateComputeBuffers()
+{
+	// -------------------------------
+	// Lambda / wsum buffers (ONE cubemap per dispatch)
+	// -------------------------------
+	const size_t numVertices =
+		static_cast<size_t>(_cageMesh._vertices.rows());
+
+	const size_t lambdaBytes = numVertices * sizeof(float);
+	const size_t wsumBytes = sizeof(float);
 
 	_lambdaStagingBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr, lambdaSize),
+		std::span<std::byte>((std::byte*)nullptr, lambdaBytes),
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 	);
 
 	_wsumStagingBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr, wsumSize),
+		std::span<std::byte>((std::byte*)nullptr, wsumBytes),
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 	);
 
 	_lambdaBuffer = _resourceManager->AllocateDeviceBuffer(
-		lambdaSize,
+		lambdaBytes,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -1020,33 +1026,63 @@ void CubemapRenderer::CreateComputeBuffers() {
 	);
 
 	_wsumBuffer = _resourceManager->AllocateDeviceBuffer(
-		wsumSize,
+		wsumBytes,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
-	size_t vertexListSize = _cageMesh._faces.size() * 3 * sizeof(uint32_t);
+	// -------------------------------
+	// Vertex index list (flatten Eigen faces)
+	// -------------------------------
+	const int triCount = _cageMesh._faces.rows();
+	if (_cageMesh._faces.cols() != 3) {
+		throw std::runtime_error("EigenMesh faces must be T x 3.");
+	}
 
-	// staging upload
-	auto vertexListStaging = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)_cageMesh._faces.data(), vertexListSize),
+	std::vector<uint32_t> vertexList(static_cast<size_t>(triCount) * 3);
+
+	for (int t = 0; t < triCount; ++t) {
+		vertexList[t * 3 + 0] =
+			static_cast<uint32_t>(_cageMesh._faces(t, 0));
+		vertexList[t * 3 + 1] =
+			static_cast<uint32_t>(_cageMesh._faces(t, 1));
+		vertexList[t * 3 + 2] =
+			static_cast<uint32_t>(_cageMesh._faces(t, 2));
+	}
+
+	const size_t vertexListBytes =
+		vertexList.size() * sizeof(uint32_t);
+
+	// -------------------------------
+	// Upload vertex list (EXPLICIT memcpy)
+	// -------------------------------
+	auto vertexListStaging = _resourceManager->CreateBufferAndCopy(
+		std::span<const uint32_t>(vertexList.data(), vertexList.size()),
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+
+	std::memcpy(
+		vertexListStaging._mappedData,
+		vertexList.data(),
+		vertexListBytes
 	);
 
 	_vertexListBuffer = _resourceManager->AllocateDeviceBuffer(
-		vertexListSize,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		vertexListBytes,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
-	
 	CopyBuffer(
 		vertexListStaging._deviceBuffer,
 		_vertexListBuffer._deviceBuffer,
-		vertexListSize
+		vertexListBytes
 	);
 }
 
@@ -1126,7 +1162,7 @@ void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex)
 	// So we always use index 0 here.
 	//(void)cubeIndex; // cubeIndex only used to index CPU-side result arrays, not GPU resources
 
-	uint32_t numTriangles = static_cast<int>(_cageMesh._faces.size());
+	uint32_t numTriangles = static_cast<int>(_cageMesh._faces.rows());
 	LOG_DEBUG(numTriangles);
 	uint32_t numCageVertices = static_cast<int>(_cageMesh._vertices.rows());
 	LOG_DEBUG(numCageVertices);
@@ -1171,7 +1207,7 @@ void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex)
 	pc.uNumCageVertices = static_cast<int>(_cageMesh._vertices.rows());
 	pc.uFaceSize = glm::ivec2(512, 512);
 	pc.uFacesPerCubemap = 6;
-	pc.uNumTriangles = static_cast<int>(_cageMesh._faces.size() / 3);
+	pc.uNumTriangles = _cageMesh._faces.rows();
 
 	//LOG_DEBUG(static_cast<int>(_cageMesh._faces.size()) + _cageMesh._vertices.rows() + " triangles in cage mesh.\n");
 
@@ -1188,6 +1224,13 @@ void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex)
 	//uint32_t groupsY = (512 + 7) / 8;
 
 	//vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, 1);  // one cubemap
+		int indexCount = _cageMesh._faces.size();
+		LOG_DEBUG("index count : " + std::to_string(indexCount));
+		int triCount = _cageMesh._faces.rows(); //(and assert indexCount % 3 == 0)
+		LOG_DEBUG("triangle count : " + std::to_string(triCount));
+		LOG_DEBUG("lambda gpu size: " + std::to_string(_lambdaBuffer._allocatedSize));
+		LOG_DEBUG("wsum gpu size: " + std::to_string(_wsumBuffer._allocatedSize));
+
 	vkCmdDispatch(_computeCommandBuffer, 1, 1, 1);
 
 	vkEndCommandBuffer(_computeCommandBuffer);
@@ -1206,37 +1249,32 @@ void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex)
 
 void CubemapRenderer::ReadbackCompute(uint32_t cubeIndex)
 {
-    VkCommandBuffer cmd = BeginOneTimeCommands();
+	VkCommandBuffer cmd = BeginOneTimeCommands();
 
-    VkBufferCopy lambdaCopy{};
-    lambdaCopy.srcOffset = 0;
-    lambdaCopy.dstOffset = 0;
-    lambdaCopy.size = _cageMesh._vertices.rows() * sizeof(float) * 6;
+	const VkDeviceSize lambdaBytes = static_cast<VkDeviceSize>(_cageMesh._vertices.rows()) * sizeof(float);
+	const VkDeviceSize wsumBytes = sizeof(float);
 
-    vkCmdCopyBuffer(cmd, 
-        _lambdaBuffer._deviceBuffer,
-        _lambdaStagingBuffer._deviceBuffer,
-        1, &lambdaCopy);
+	VkBufferCopy lambdaCopy{ 0, 0, lambdaBytes };
+	vkCmdCopyBuffer(cmd,
+		_lambdaBuffer._deviceBuffer,
+		_lambdaStagingBuffer._deviceBuffer,
+		1, &lambdaCopy);
 
-    VkBufferCopy wsumCopy{};
-    wsumCopy.srcOffset = 0;
-    wsumCopy.dstOffset = 0;
-    wsumCopy.size = sizeof(float) * 6;
+	VkBufferCopy wsumCopy{ 0, 0, wsumBytes };
+	vkCmdCopyBuffer(cmd,
+		_wsumBuffer._deviceBuffer,
+		_wsumStagingBuffer._deviceBuffer,
+		1, &wsumCopy);
 
-    vkCmdCopyBuffer(cmd,
-        _wsumBuffer._deviceBuffer,
-        _wsumStagingBuffer._deviceBuffer,
-        1, &wsumCopy);
+	EndOneTimeCommands(cmd);
 
-    EndOneTimeCommands(cmd);
+	float* lambdaCPU = reinterpret_cast<float*>(_lambdaStagingBuffer._mappedData);
+	float* wsumCPU = reinterpret_cast<float*>(_wsumStagingBuffer._mappedData);
 
-    // --- Now CPU can read ---
-    float* lambdaCPU = reinterpret_cast<float*>(_lambdaStagingBuffer._mappedData);
-    float* wsumCPU   = reinterpret_cast<float*>(_wsumStagingBuffer._mappedData);
+	storeLambdaForVertex(cubeIndex, lambdaCPU);
 
-    // Store in your own arrays if needed:
-    storeLambdaForVertex(cubeIndex, lambdaCPU);
-    storeWsumForVertex(cubeIndex, wsumCPU);
+	// shader writes only wsum[0]
+	storeWsumForVertex(cubeIndex, wsumCPU);
 }
 
 // store lambda results read back from the GPU into CPU-side container
@@ -1260,6 +1298,7 @@ void CubemapRenderer::storeLambdaForVertex(uint32_t cubeIndex, const float* lamb
 	}
 }
 
+/*
 // store wsum (6 floats) for this cubemap / vertex
 void CubemapRenderer::storeWsumForVertex(uint32_t cubeIndex, const float* wsumCPU)
 {
@@ -1270,59 +1309,16 @@ void CubemapRenderer::storeWsumForVertex(uint32_t cubeIndex, const float* wsumCP
 
 	for (int f = 0; f < 6; ++f)
 		_wsumResults[cubeIndex] += wsumCPU[f];
-}
-
-/*
-void CubemapRenderer::ReadbackCompute(uint32_t cubeIndex)
-{
-	VkCommandBuffer cmd = BeginOneTimeCommands();
-
-	VkBufferCopy lambdaCopy{};
-	lambdaCopy.srcOffset = 0;
-	lambdaCopy.dstOffset = 0;
-	lambdaCopy.size = _cageMesh._vertices.rows() * sizeof(float);
-
-	vkCmdCopyBuffer(cmd,
-		_lambdaBuffer._deviceBuffer,
-		_lambdaStagingBuffer._deviceBuffer,
-		1, &lambdaCopy);
-
-	VkBufferCopy wsumCopy{};
-	wsumCopy.srcOffset = 0;
-	wsumCopy.dstOffset = 0;
-	wsumCopy.size = sizeof(float);
-
-	vkCmdCopyBuffer(cmd,
-		_wsumBuffer._deviceBuffer,
-		_wsumStagingBuffer._deviceBuffer,
-		1, &wsumCopy);
-
-	EndOneTimeCommands(cmd);
-
-	float* lambdaCPU = reinterpret_cast<float*>(_lambdaStagingBuffer._mappedData);
-	float* wsumCPU = reinterpret_cast<float*>(_wsumStagingBuffer._mappedData);
-
-	storeLambdaForVertex(cubeIndex, lambdaCPU);
-	storeWsumForVertex(cubeIndex, wsumCPU);
-}
-
-void CubemapRenderer::storeLambdaForVertex(uint32_t cubeIndex, const float* lambdaCPU)
-{
-	const size_t n = static_cast<size_t>(_cageMesh._vertices.rows());
-	if (!lambdaCPU || n == 0) return;
-
-	if (_lambdaResults.size() <= cubeIndex) _lambdaResults.resize(cubeIndex + 1);
-	_lambdaResults[cubeIndex].assign(lambdaCPU, lambdaCPU + n); // overwrite
-}
-
+}*/
 void CubemapRenderer::storeWsumForVertex(uint32_t cubeIndex, const float* wsumCPU)
 {
 	if (!wsumCPU) return;
 
-	if (_wsumResults.size() <= cubeIndex) _wsumResults.resize(cubeIndex + 1, 0.0f);
-	_wsumResults[cubeIndex] = wsumCPU[cubeIndex];
-}*/
+	if (_wsumResults.size() <= cubeIndex)
+		_wsumResults.resize(cubeIndex + 1, 0.0f);
 
+	_wsumResults[cubeIndex] = wsumCPU[0];
+}
 
 void CubemapRenderer::InsertImageMemoryBarrierToGeneral(
 	VkCommandBuffer cmd,
@@ -1462,20 +1458,22 @@ void CubemapRenderer::CreateCubemapImageViews() {
 void CubemapRenderer::WriteWeightsToFile(const std::string& filename)
 {
 	std::ofstream file(filename);
-	if (!file.is_open()) {
-		throw std::runtime_error("Failed to open weight write file!");
-	}
-	file << "===== LAMBDA BUFFER (" << _lambdaResults.size() * _lambdaResults[0].size() << " floats) =====\n";
-	for (size_t i = 0; i < _lambdaResults.size(); i++) {
-		for (size_t j = 0; j < _lambdaResults[i].size(); j++) {
-			file << "lambda[" << i << "] = " << std::to_string(_lambdaResults[i][j]) << "\n";
+	if (!file.is_open()) throw std::runtime_error("Failed to open weight write file!");
+
+	file << "===== LAMBDA BUFFER (cubemaps=" << _lambdaResults.size()
+		<< ", verts=" << (_lambdaResults.empty() ? 0 : _lambdaResults[0].size()) << ") =====\n";
+
+	for (size_t cub = 0; cub < _lambdaResults.size(); ++cub) {
+		for (size_t v = 0; v < _lambdaResults[cub].size(); ++v) {
+			file << "lambda[" << cub << "][" << v << "] = " << _lambdaResults[cub][v] << "\n";
 		}
 	}
-	file << "\n";
-	file << "===== WSUM BUFFER (" << _wsumResults.size() << " floats) =====\n";
-	for (size_t i = 0; i < _wsumResults.size(); i++) {
-			file << "wsum[" << i << "] = " << std::to_string(_wsumResults[i]) << "\n";
+
+	file << "\n===== WSUM BUFFER (" << _wsumResults.size() << " floats) =====\n";
+	for (size_t cub = 0; cub < _wsumResults.size(); ++cub) {
+		file << "wsum[" << cub << "] = " << _wsumResults[cub] << "\n";
 	}
+
 	file.close();
 	LOG_INFO("Weights written to " + filename);
 }

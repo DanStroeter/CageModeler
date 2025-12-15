@@ -65,6 +65,12 @@ public:
 		const VkBufferUsageFlags bufferUsage,
 		const VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) const;
 
+	template <typename T>
+	MemoryMappedBuffer CreateBufferAndCopy(
+		std::span<T> bufferData,
+		const VkBufferUsageFlags bufferUsage,
+		const VkMemoryPropertyFlags properties) const;
+
 	/**
 	 * Creates a new buffer and allocates memory on the GPU, then copies the contents of the buffer data into the buffer
 	 * memory. This will happen using an intermediate transfer buffer. The memory will be aligned to the GPU UBO alignment size.
@@ -140,6 +146,45 @@ MemoryMappedBuffer RenderResourceManager::CreateBufferAndMapMemory(std::span<T> 
 
 	// Map the actual memory block on to the GPU.
 	vkMapMemory(_device, result._deviceMemory, 0, result._allocatedSize, 0, &result._mappedData);
+
+	return result;
+}
+
+template <typename T>
+MemoryMappedBuffer RenderResourceManager::CreateBufferAndCopy(
+	std::span<T> bufferData,
+	const VkBufferUsageFlags bufferUsage,
+	const VkMemoryPropertyFlags properties) const
+{
+	CHECK_VK_HANDLE(_device);
+
+	const auto buffer = AllocateDeviceBuffer(
+		bufferData.size_bytes(),
+		bufferUsage,
+		properties
+	);
+
+	MemoryMappedBuffer result;
+	result.CopyFrom(buffer);
+
+	// Map memory
+	vkMapMemory(
+		_device,
+		result._deviceMemory,
+		0,
+		result._allocatedSize,
+		0,
+		&result._mappedData
+	);
+
+
+	if (!bufferData.empty()) {
+		std::memcpy(
+			result._mappedData,
+			bufferData.data(),
+			bufferData.size_bytes()
+		);
+	}
 
 	return result;
 }
