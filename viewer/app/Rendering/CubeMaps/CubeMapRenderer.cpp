@@ -1548,14 +1548,15 @@ void CubemapRenderer::WriteWeightsToFile(const std::string& filename)
 
 	file << "===== LAMBDA BUFFER (cubemaps=" << _lambdaResults.size()
 		<< ", verts=" << (_lambdaResults.empty() ? 0 : _lambdaResults[0].size()) << ") =====\n";
-
 	for (size_t cub = 0; cub < _lambdaResults.size(); ++cub) {
+		float sum = 0.0f;
 		for (size_t v = 0; v < _lambdaResults[cub].size(); ++v) {
 			file << "lambda[" << cub << "][" << v << "] = " << _lambdaResults[cub][v] << "\n";
+			sum += _lambdaResults[cub][v];
 		}
+		file << "Lambda sum: " << sum << "\n";
 	}
-
-	file << "\n===== WSUM BUFFER (" << _wsumResults.size() << " floats) =====\n";
+	file << "\n===== Pixels Processed per Cubemap(" << _wsumResults.size() << " floats) =====\n";
 	for (size_t cub = 0; cub < _wsumResults.size(); ++cub) {
 		file << "wsum[" << cub << "] = " << _wsumResults[cub] << "\n";
 	}

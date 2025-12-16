@@ -34,6 +34,7 @@ layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
     uint cubemapIdx = gl_GlobalInvocationID.x;
+wsum[cubemapIdx] = 0;
 	    
 if (cubemapIdx >= uint(params.uNumCubemaps)) return;
 
@@ -44,6 +45,7 @@ if (cubemapIdx >= uint(params.uNumCubemaps)) return;
         lambda[base + uint(i)] = 0.0;
 
     float wsum_local = 0.0;
+    int pixelsProcessed = 0;
 
     int width  = params.uFaceSize.x;
     int height = params.uFaceSize.y;
@@ -77,13 +79,13 @@ if (cubemapIdx >= uint(params.uNumCubemaps)) return;
                 lambda[base + i0] += b0 * w;
                 lambda[base + i1] += b1 * w;
                 lambda[base + i2] += b2 * w;
-
+		pixelsProcessed += 1;
                 wsum_local += w;
             }
         }
     }
 	
-    //wsum[cubemapIdx] = wsum_local;
+    wsum[cubemapIdx] += pixelsProcessed;
     if (wsum_local > 0.0) {
     float invW = 1.0 / wsum_local;
     for (int i = 0; i < params.uNumCageVertices; ++i) {
