@@ -18,6 +18,8 @@ layout(std430, binding = 3) buffer WSumOut {
     float wsum[];
 };
 
+layout(binding = 4) uniform sampler2DArray uSolidAngleTex;
+
 // Push constants for parameters
 layout(push_constant) uniform Params {
     int   uNumCubemaps;
@@ -65,7 +67,12 @@ if (cubemapIdx >= uint(params.uNumCubemaps)) return;
                 uint i1 = vertexList[tri * 3u + 1u];
                 uint i2 = vertexList[tri * 3u + 2u];
 
-                float w = 1.0;
+                //float w = 1.0;
+		float w = texelFetch(
+    		uSolidAngleTex,
+    		ivec3(x, y, face),
+    		0
+		).r;
 
                 lambda[base + i0] += b0 * w;
                 lambda[base + i1] += b1 * w;
@@ -75,6 +82,12 @@ if (cubemapIdx >= uint(params.uNumCubemaps)) return;
             }
         }
     }
-
-    wsum[cubemapIdx] = wsum_local;
+	
+    //wsum[cubemapIdx] = wsum_local;
+    if (wsum_local > 0.0) {
+    float invW = 1.0 / wsum_local;
+    for (int i = 0; i < params.uNumCageVertices; ++i) {
+        lambda[base + uint(i)] *= invW;
+    }
+}
 }

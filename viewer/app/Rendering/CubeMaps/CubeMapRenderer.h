@@ -60,6 +60,11 @@ public:
 		_deformableMesh = mesh;
 	}
 private:
+	VkImage        _solidAngleImage = VK_NULL_HANDLE;
+	VkDeviceMemory _solidAngleMemory = VK_NULL_HANDLE;
+	VkImageView    _solidAngleArrayView = VK_NULL_HANDLE;
+	VkSampler      _solidAngleSampler = VK_NULL_HANDLE;
+
 	//init functions
 	void CreateImageViews(uint32_t size, VkFormat format);
 	void CreateRenderPass(VkFormat format);
@@ -177,4 +182,7 @@ private:
 	void CartesianToSpherical(float x, float y, float z, float& theta, float& phi);
 	void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	void WriteWeightsToFile(const std::string& filename);
+
+	void SphereWeightInitialization(uint32_t size);
+	glm::vec3 CubeFaceDir(int face, float x, float y);
 };
