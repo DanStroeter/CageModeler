@@ -8,7 +8,7 @@
 #include <Input/InputSubsystem.h>
 #include <UI/WindowSubsystem.h>
 #include <Configuration.h>
-#include <Rendering/CubeMaps/CubeMapRenderer.h>
+#include <Rendering/PMVC/CubemapRenderUnit.h>
 
 #include "Core/RenderProxyCollector.h"
 

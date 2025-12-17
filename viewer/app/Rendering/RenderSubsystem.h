@@ -9,7 +9,7 @@
 #include <Rendering/Core/Swapchain.h>
 #include <Editor/Editor.h>
 #include <UI/UserInterfaceBackend.h>
-#include <Rendering/CubeMaps/CubeMapRenderer.h>
+#include <Rendering/PMVC/CubemapRenderUnit.h>
 
 class CameraSubsystem;
 class RenderCommandScheduler;

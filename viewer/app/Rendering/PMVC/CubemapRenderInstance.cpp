@@ -1,4 +1,4 @@
-﻿#include <Rendering/Cubemaps/CubemapRenderer.h>
+﻿#include <Rendering/PMVC/CubemapRenderInstance.h>
 #include <Rendering/Commands/RenderCommandScheduler.h>
 #include <Rendering/Core/RenderProxyCollector.h>
 #include <Rendering/Core/RenderResourceManager.h>
@@ -8,9 +8,300 @@
 #include <Editor/Light.h>
 #include <cstddef>
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "../../external/stb_image_write.h"
+//#define STB_IMAGE_WRITE_IMPLEMENTATION
+//#include "../../external/stb_image_write.h"
 
+CubemapRenderInstance::~CubemapRenderInstance() {
+	//TODO: cleanup
+}
+
+CubemapRenderInstance::CubemapRenderInstance(CubemapManager& cubemapManager)
+	: _cubemapManager(cubemapManager)
+{
+	_cubemapSize = 512;
+	_format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	_computeType = CPU;
+	Initalize();
+}
+
+CubemapRenderInstance::CubemapRenderInstance(CubemapManager& cubemapManager, int cubemapSize, VkFormat format, ComputeType computeType)
+	: _cubemapManager(cubemapManager),
+	_cubemapSize(cubemapSize),
+	_size(size),
+	_format(format),
+	_computeType(computeType)
+{
+	Initalize();
+}
+
+void CubemapRenderInstance::Initalize() {
+	switch (_computeType)
+	{
+	case CPU:		
+		computeStrategy = std::make_unique<CpuComputeStrategy>(); 
+		break;
+	case GPUATOMIC: 
+		computeStrategy = std::make_unique<GpuAtomicComputeStrategy>(); 
+		break;
+	case GPUSORT:   
+		computeStrategy = std::make_unique<GpuSortComputeStrategy>(); 
+		break;
+	}
+
+	uint32_t graphicsQueueFamilyIndex = _device->GetQueueFamilies()._graphics.value();
+	CreateCommandPool(graphicsQueueFamilyIndex);
+
+	_renderUnit = CreateCubemapRenderUnit();
+
+	const uint32_t targetCount = _computeStrategy->RequiredRenderTargetCount();
+
+	_renderUnit.targets.reserve(targetCount);
+	for (uint32_t i = 0; i < targetCount; ++i)
+	{
+		_renderUnit.targets.push_back(CreateCubemapRenderTarget());
+	}
+
+	UpdateMatricesDescriptorSet();
+	CreateSyncObjects();
+}
+
+CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
+{
+	CubemapRenderTarget target{};
+
+	// ---------------------------------------------------------------------
+	// Create cubemap color image
+	// ---------------------------------------------------------------------
+	VkImageCreateInfo imageInfo{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+	imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.format = _format;
+	imageInfo.extent = { _size, _size, 1 };
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 6;
+	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageInfo.usage =
+		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+		VK_IMAGE_USAGE_SAMPLED_BIT |
+		VK_IMAGE_USAGE_TRANSFER_SRC_BIT; //TODO: only added for debugging prints for image remove after done(needed for CPU compute?)
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	VK_CHECK(vkCreateImage(_device, &imageInfo, nullptr, &target.cubemapImage));
+
+	VkMemoryRequirements memReq{};
+	vkGetImageMemoryRequirements(_device, target.cubemapImage, &memReq);
+
+	VkMemoryAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+	allocInfo.allocationSize = memReq.size;
+	allocInfo.memoryTypeIndex =
+		_device->FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VK_CHECK(vkAllocateMemory(_device, &allocInfo, nullptr, &target.cubemapMemory));
+	VK_CHECK(vkBindImageMemory(_device, target.cubemapImage, target.cubemapMemory, 0));
+
+	// ---------------------------------------------------------------------
+	// Create per-face color views
+	// ---------------------------------------------------------------------
+	for (uint32_t face = 0; face < 6; ++face)
+	{
+		VkImageViewCreateInfo viewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+		viewInfo.image = target.cubemapImage;
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		viewInfo.format = _format;
+		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		viewInfo.subresourceRange.levelCount = 1;
+		viewInfo.subresourceRange.baseArrayLayer = face;
+		viewInfo.subresourceRange.layerCount = 1;
+
+		VK_CHECK(vkCreateImageView(_device, &viewInfo, nullptr, &target.faceViews[face]));
+	}
+
+	// ---------------------------------------------------------------------
+	// Create cubemap view (for sampling)
+	// ---------------------------------------------------------------------
+	VkImageViewCreateInfo cubeViewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+	cubeViewInfo.image = target.cubemapImage;
+	cubeViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+	cubeViewInfo.format = _format;
+	cubeViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	cubeViewInfo.subresourceRange.levelCount = 1;
+	cubeViewInfo.subresourceRange.layerCount = 6;
+
+	VK_CHECK(vkCreateImageView(_device, &cubeViewInfo, nullptr, &target.cubemapView));
+
+	// ---------------------------------------------------------------------
+	// Create depth image
+	// ---------------------------------------------------------------------
+	VkFormat depthFormat = _device->FindDepthFormat();
+
+	VkImageCreateInfo depthInfo{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+	depthInfo.imageType = VK_IMAGE_TYPE_2D;
+	depthInfo.format = depthFormat;
+	depthInfo.extent = { _size, _size, 1 };
+	depthInfo.mipLevels = 1;
+	depthInfo.arrayLayers = 6;
+	depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	VK_CHECK(vkCreateImage(_device, &depthInfo, nullptr, &target.depthImage));
+
+	vkGetImageMemoryRequirements(_device, target.depthImage, &memReq);
+
+	allocInfo.allocationSize = memReq.size;
+	allocInfo.memoryTypeIndex =
+		_device->FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VK_CHECK(vkAllocateMemory(_device, &allocInfo, nullptr, &target.depthMemory));
+	VK_CHECK(vkBindImageMemory(_device, target.depthImage, target.depthMemory, 0));
+
+	// ---------------------------------------------------------------------
+	// Create per-face depth views
+	// ---------------------------------------------------------------------
+	for (uint32_t face = 0; face < 6; ++face)
+	{
+		VkImageViewCreateInfo viewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+		viewInfo.image = target.depthImage;
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		viewInfo.format = depthFormat;
+		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		viewInfo.subresourceRange.levelCount = 1;
+		viewInfo.subresourceRange.baseArrayLayer = face;
+		viewInfo.subresourceRange.layerCount = 1;
+
+		VK_CHECK(vkCreateImageView(_device, &viewInfo, nullptr, &target.depthViews[face]));
+	}
+
+	// ---------------------------------------------------------------------
+	// Create framebuffers
+	// ---------------------------------------------------------------------
+	for (uint32_t face = 0; face < 6; ++face)
+	{
+		VkImageView attachments[2] = {
+			target.faceViews[face],
+			target.depthViews[face]
+		};
+
+		VkFramebufferCreateInfo fbInfo{ VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+		fbInfo.renderPass = _renderPass;
+		fbInfo.attachmentCount = 2;
+		fbInfo.pAttachments = attachments;
+		fbInfo.width = _size;
+		fbInfo.height = _size;
+		fbInfo.layers = 1;
+
+		VK_CHECK(vkCreateFramebuffer(_device, &fbInfo, nullptr, &target.framebuffers[face]));
+	}
+
+	return target;
+}
+
+CubemapRenderUnit CubemapRenderInstance::CreateCubemapRenderUnit() const
+{
+	VkDeviceSize matricesUBOSize = sizeof(CubemapMatricesUBO);
+	CubemapRenderUnit unit{};
+
+	// ------------------------------------------------------------
+	// Create uniform buffer
+	// ------------------------------------------------------------
+	std::span<std::byte> sizeSpan(
+		static_cast<std::byte*>(nullptr),
+		matricesUBOSize
+	);
+
+	unit.matricesUBO =
+		_resourceManager->CreateBufferAndMapMemory(
+			sizeSpan,
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+		);
+
+	// ------------------------------------------------------------
+	// Allocate descriptor set
+	// ------------------------------------------------------------
+	VkDescriptorSetLayout layout = _matricesLayout->GetReference();
+
+	VkDescriptorSetAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+	allocInfo.descriptorPool = _descriptorPool;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts = &layout;
+
+	VK_CHECK(vkAllocateDescriptorSets(
+		_device,
+		&allocInfo,
+		&unit.matricesDescriptorSet
+	));
+
+	// ------------------------------------------------------------
+	// Allocate command buffers (one per face)
+	// ------------------------------------------------------------
+	VkCommandBufferAllocateInfo cmdAllocInfo{
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO
+	};
+	cmdAllocInfo.commandPool = _graphicCommandPool;
+	cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	cmdAllocInfo.commandBufferCount = 6;
+
+	VK_CHECK(vkAllocateCommandBuffers(
+		_device,
+		&cmdAllocInfo,
+		unit.graphicsCmds.data()
+	));
+
+	return unit;
+}
+
+void CubemapRenderInstance::CreateCommandPool(uint32_t queueFamilyIndex) {
+	VkCommandPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo.queueFamilyIndex = queueFamilyIndex;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+	if (vkCreateCommandPool(_device, &poolInfo, nullptr, &_graphicCommandPool) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create command pool!");
+	}
+}
+
+void CubemapRenderInstance::UpdateMatricesDescriptorSet()
+{
+	VkDescriptorBufferInfo bufferInfo{};
+	bufferInfo.buffer = _renderUnit.matricesUBO._deviceBuffer;
+	bufferInfo.offset = 0;
+	bufferInfo.range = _renderUnit.matricesUBO._allocatedSize;
+
+	VkWriteDescriptorSet write{};
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet = _renderUnit._matricesDescriptorSet;
+	write.dstBinding = 0;
+	write.dstArrayElement = 0;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	write.descriptorCount = 1;
+	write.pBufferInfo = &bufferInfo;
+
+	vkUpdateDescriptorSets(_device, 1, &write, 0, nullptr);
+}
+
+void CubemapRenderInstance::CreateSyncObjects()
+{
+	//TODO create sync resources
+}
+
+void CubemapRenderInstance::ComputePMVC()
+{
+	// TODO: parameters how many cubemaps and which ones?
+
+	/*
+	uint32_t targetIndex = frameIndex % _renderUnit.targets.size();
+CubemapRenderTarget& target = _renderUnit.targets[targetIndex];
+modulo the count on dispatch
+*/
+
+}
+
+/*
 CubemapRenderer::CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
 	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance) : _renderPipelineManager(renderPipelineManager),
 	_resourceManager(resourceManager), _device(device), _instance(instance)
@@ -683,6 +974,7 @@ void CubemapRenderer::RenderCubemaps()
 		//ExportCubemapAsVerticalStrip("F:/Cubemaps/" + filename);
 		ComputeCoordinates(vertexIndex);
 		ReadbackCompute(vertexIndex);
+		//LOG_DEBUG("Cubemap rendered and readback completed for vertex " + std::to_string(vertexIndex));
 	}
 	WriteWeightsToFile("DebugWeights");
 }
@@ -932,54 +1224,6 @@ void CubemapRenderer::CartesianToSpherical(float x, float y, float z, float& the
 	phi = atan2f(y, x);     // azimuth [-pi, pi]
 }
 
-// Compute pixel solid angle weight for one cube map face
-/*float CubemapRenderer::ComputeSphereWeight(int px, int py, int faceSize)
-{
-	// Step 1: pixel coordinates in [-1,1]
-	float invSize = 1.0f / faceSize;
-	float x0 = 2.0f * px * invSize - 1.0f;
-	float y0 = 2.0f * py * invSize - 1.0f;
-	float x1 = 2.0f * (px + 1) * invSize - 1.0f;
-	float y1 = 2.0f * (py + 1) * invSize - 1.0f;
-
-	// Step 2: map corners to unit sphere
-	auto MapToSphere = [](float x, float y) -> std::array<float, 3> {
-		float z = 1.0f; // +Z face
-		float len = sqrtf(x * x + y * y + z * z);
-		return { x / len, y / len, z / len };
-	};
-
-	auto c00 = MapToSphere(x0, y0);
-	auto c01 = MapToSphere(x0, y1);
-	auto c10 = MapToSphere(x1, y0);
-	auto c11 = MapToSphere(x1, y1);
-
-	// Step 3: convert to spherical coordinates
-	float theta00, phi00, theta01, phi01, theta10, phi10, theta11, phi11;
-	CartesianToSpherical(c00[0], c00[1], c00[2], theta00, phi00);
-	CartesianToSpherical(c01[0], c01[1], c01[2], theta01, phi01);
-	CartesianToSpherical(c10[0], c10[1], c10[2], theta10, phi10);
-	CartesianToSpherical(c11[0], c11[1], c11[2], theta11, phi11);
-
-	// Step 4-5: Integrate solid angle over pixel
-	float dPhi = std::max({ phi00, phi01, phi10, phi11 }) - std::min({ phi00, phi01, phi10, phi11 });
-	float dTheta = std::max({ theta00, theta01, theta10, theta11 }) - std::min({ theta00, theta01, theta10, theta11 });
-
-	// Inner integral: sin(theta) dTheta
-	float thetaMin = std::min({ theta00, theta01, theta10, theta11 });
-	float thetaMax = std::max({ theta00, theta01, theta10, theta11 });
-	float innerIntegral = cosf(thetaMin) - cosf(thetaMax);
-
-	// Outer integral: dPhi * innerIntegral
-	float weight = dPhi * innerIntegral;
-
-	// Step 6: normalize by pixel area in cube map (optional)
-	// float cubePixelArea = (2.0f / faceSize) * (2.0f / faceSize);
-	// weight /= cubePixelArea;
-
-	return weight;
-}
-*/
 /*float CubemapRenderer::ComputeSphereWeight(
 	int px,
 	int py,
@@ -1042,7 +1286,7 @@ void CubemapRenderer::CartesianToSpherical(float x, float y, float z, float& the
 	float weight = (phiMax - phiMin) * innerIntegral;
 
 	return weight;
-}*/
+}*//*
 
 static inline float SolidAngle(float x, float y)
 {
@@ -1261,9 +1505,9 @@ void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex)
 	//(void)cubeIndex; // cubeIndex only used to index CPU-side result arrays, not GPU resources
 
 	uint32_t numTriangles = static_cast<int>(_cageMesh._faces.rows());
-	LOG_DEBUG(numTriangles);
+	//LOG_DEBUG(numTriangles);
 	uint32_t numCageVertices = static_cast<int>(_cageMesh._vertices.rows());
-	LOG_DEBUG(numCageVertices);
+	//LOG_DEBUG(numCageVertices);
 
 	_baryTexImageView = _baryTexImageViews[0];
 	UpdateComputeDescriptorSet();
@@ -1318,18 +1562,19 @@ void CubemapRenderer::ComputeCoordinates(uint32_t cubeIndex)
 		&pc
 	);
 
-	//uint32_t groupsX = (512 + 7) / 8;
-	//uint32_t groupsY = (512 + 7) / 8;
+	uint32_t groupsX = (512 + 7) / 8;
+	uint32_t groupsY = (512 + 7) / 8;
 
 	//vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, 1);  // one cubemap
 		int indexCount = _cageMesh._faces.size();
-		LOG_DEBUG("index count : " + std::to_string(indexCount));
+		//LOG_DEBUG("index count : " + std::to_string(indexCount));
 		int triCount = _cageMesh._faces.rows(); //(and assert indexCount % 3 == 0)
-		LOG_DEBUG("triangle count : " + std::to_string(triCount));
-		LOG_DEBUG("lambda gpu size: " + std::to_string(_lambdaBuffer._allocatedSize));
-		LOG_DEBUG("wsum gpu size: " + std::to_string(_wsumBuffer._allocatedSize));
+		//LOG_DEBUG("triangle count : " + std::to_string(triCount));
+		//LOG_DEBUG("lambda gpu size: " + std::to_string(_lambdaBuffer._allocatedSize));
+		//LOG_DEBUG("wsum gpu size: " + std::to_string(_wsumBuffer._allocatedSize));
 
-	vkCmdDispatch(_computeCommandBuffer, 1, 1, 1);
+	//vkCmdDispatch(_computeCommandBuffer, 1, 1, 1);
+		vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, static_cast<int>(_cageMesh._vertices.rows() * 6));
 
 	vkEndCommandBuffer(_computeCommandBuffer);
 
@@ -1577,6 +1822,21 @@ glm::vec3 CubemapRenderer::CubeFaceDir(int face, float x, float y)
 	}
 }
 
+struct Params {
+	int uNumCubemaps;
+	int uNumCageVertices;
+	int uFaceSizeX;
+	int uFaceSizeY;
+	int uFacesPerCubemap;
+	int uNumTriangles;
+};
+struct Vec4 { float r, g, b, a; };
+std::vector<Vec4> baryTex;        // size = W * H * layers
+std::vector<float> solidAngleTex;
+std::vector<uint32_t> vertexList; // size = uNumTriangles * 3
+std::vector<float> lambda;        // size = uNumCubemaps * uNumCageVertices
+std::vector<float> wsum;
+
 void CubemapRenderer::SphereWeightInitialization(uint32_t size) {
 		const uint32_t faceSize = size;
 		const uint32_t faceCount = 6;
@@ -1740,23 +2000,56 @@ void CubemapRenderer::SphereWeightInitialization(uint32_t size) {
 		vkCreateSampler(_device, &samp, nullptr, &_solidAngleSampler);
 		double sum = 0.0;
 		for (float w : weights) sum += w;
-		LOG_DEBUG("Total solid angle = " + std::to_string(sum));
+		//LOG_DEBUG("Total solid angle = " + std::to_string(sum));
 	}
-	/*
+
+	void runCpuEquivalent(
+		const Params& params,
+		const std::vector<Vec4>& baryTex,
+		const std::vector<float>& solidAngleTex,
+		const std::vector<uint32_t>& vertexList,
+		std::vector<float>& lambda,
+		std::vector<float>& wsum
+	) {
+		const int W = params.uFaceSizeX;
+		const int H = params.uFaceSizeY;
+		const int layers = params.uNumCubemaps * params.uFacesPerCubemap;
+
+		for (int layer = 0; layer < layers; ++layer) {
+			int cubemapIdx = layer / params.uFacesPerCubemap;
+			int face = layer % params.uFacesPerCubemap;
+
+			if (cubemapIdx >= params.uNumCubemaps)
+				continue;
+
+			for (int y = 0; y < H; ++y) {
+				for (int x = 0; x < W; ++x) {
+
+					int baryIdx = x + y * W + layer * W * H;
+					const Vec4& tex = baryTex[baryIdx];
+
+					uint32_t tri = static_cast<uint32_t>(
+						tex.a * float(params.uNumTriangles) + 0.5f
+						);
+
+					if (tri >= static_cast<uint32_t>(params.uNumTriangles))
+						continue;
+
+					int saIdx = x + y * W + face * W * H;
+					float w = solidAngleTex[saIdx];
+
+					uint32_t base = cubemapIdx * params.uNumCageVertices;
+
+					uint32_t i0 = vertexList[tri * 3 + 0];
+					uint32_t i1 = vertexList[tri * 3 + 1];
+					uint32_t i2 = vertexList[tri * 3 + 2];
+
+					lambda[base + i0] += tex.r * w;
+					lambda[base + i1] += tex.g * w;
+					lambda[base + i2] += tex.b * w;
+					wsum[cubemapIdx] += w;
+				}
+			}
+		}
 	}
-	/*on upload
-	VkBufferImageCopy region{};
-region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-region.imageSubresource.mipLevel = 0;
-region.imageSubresource.baseArrayLayer = 0;
-region.imageSubresource.layerCount = 6;
-region.imageExtent = { faceSize, faceSize, 1 };
-
-binding
-// binding = 4 (example)
-{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
-shader
-// binding = 4 (example)
-{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
-*/
-
+	*/

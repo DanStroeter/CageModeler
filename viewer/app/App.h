@@ -3,7 +3,7 @@
 #include <memory>
 
 #include <Core/Subsystem.h>
-#include <Rendering/CubeMaps/CubemapRenderer.h>
+#include <Rendering/PMVC/CubemapRenderUnit.h>
 
 class Editor;
 union SDL_Event;

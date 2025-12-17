@@ -1,48 +1,86 @@
 #pragma once
+#include <Rendering/PMVC/CubemapManager.h>
 
-#include <Rendering/Core/RenderProxy.h>
-#include <Rendering/Core/Device.h>
-#include <Rendering/Core/DescriptorPool.h>
-#include <Rendering/Core/Buffer.h>
-#include <Rendering/Core/AlignedVector.h>
-#include <Rendering/RenderPipelineManager.h>
-#include <Rendering/Scene/SceneData.h>
-#include <Mesh/GeometryUtils.h>
-#include <Editor/Light.h>
-#include <Core/Subsystem.h>
-#include <Rendering/RenderSubsystem.h>
-#include <Eigen/Core>
+class CubemapRenderInstance {
+	CubemapRenderInstance() = delete;
+	CubemapRenderInstance(CubemapManager& cubemapManager);
+	CubemapRenderInstance(CubemapManager& cubemapManager, int cubemapSize, VkFormat format, ComputeType computeType);
+	~CubemapRenderInstance();
 
+	void ComputePMVC();
 
-class RenderSubsystem;
+private:
+	Enum ComputeType{
+	CPU,
+	GPUATMOIC,
+	GPUSORT,
+	//GPUSERIAL not feasible 
+	// TODO: implement if time leftover
+	};
+	
+	CubemapRenderInstance& _cubemapManager;
 
-struct ComputePushConstants
-{
-	int   uNumCubemaps;
-	int   uNumCageVertices;
-	glm::ivec2 uFaceSize;
-	int   uFacesPerCubemap;
-	int uNumTriangles;
+	std::unique_ptr<ICubemapComputeStrategy> _computeStage;
+	
+	//parameters 
+	int _cubemapSize;
+	VkFormat _format;
+	ComputeType _computeType;
+
+	//init functions
+	void Initalize();
+	CubemapRenderTarget CreateCubemapRenderTarget() const;
+	void CreateCommandPool(uint32_t queueFamilyIndex);
+	void CreateUniformBuffer(VkDeviceSize bufferSize);
+	void AllocateMatricesDescriptorSet();
+	void UpdateMatricesDescriptorSet();
+	void CreateCommandBuffer();
+	void CreateSyncObjects();
+
+	//render resources
+	struct CubemapRenderTarget
+	{
+		VkImage        cubemapImage;
+		VkDeviceMemory cubemapMemory;
+		VkImageView    cubemapView;
+		std::array<VkImageView, 6> faceViews;
+
+		VkImage        depthImage;
+		VkDeviceMemory depthMemory;
+		std::array<VkImageView, 6> depthViews;
+
+		std::array<VkFramebuffer, 6> framebuffers;
+	};
+
+	struct CubemapRenderUnit
+	{
+		std::vector<CubemapRenderTarget> targets;
+
+		std::array<VkCommandBuffer, 6> graphicsCmd;
+
+		MemoryMappedBuffer matricesUBO;
+		VkDescriptorSet    matricesDescriptorSet;
+	};
+
+	struct CubemapMatricesUBO
+	{
+		glm::mat4 proj;
+		glm::mat4 view;
+		float invNumTriangles;
+		float _pad[3];
+	};
+
+	CubemapRenderUnit _cubemapRenderUnit;
+	VkCommandPool _graphicCommandPool;
+
+	//sync objects
+	//TODO
 };
 
-
-struct CubemapMatricesUBO
-{
-	glm::mat4 proj;       // Projection matrix
-	glm::mat4 view;   // View matrices for each cubemap face
-	float invNumTriangles;
-	float _pad[3];
-};
-
-struct CubemapVertex
-{
-	glm::vec3 _position;  // Vertex position
-	uint32_t _triangleID; // Triangle index
-	uint32_t _vertexIndex; // 0,1,2 per triangle
-};
-
+/*
 class CubemapRenderer
 {
+	/*
 public:
 	CubemapRenderer() = delete;
 	CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
@@ -60,11 +98,6 @@ public:
 		_deformableMesh = mesh;
 	}
 private:
-	VkImage        _solidAngleImage = VK_NULL_HANDLE;
-	VkDeviceMemory _solidAngleMemory = VK_NULL_HANDLE;
-	VkImageView    _solidAngleArrayView = VK_NULL_HANDLE;
-	VkSampler      _solidAngleSampler = VK_NULL_HANDLE;
-
 	//init functions
 	void CreateImageViews(uint32_t size, VkFormat format);
 	void CreateRenderPass(VkFormat format);
@@ -73,14 +106,11 @@ private:
 	void CreateDepthImage(uint32_t size);
 	void CreateFramebuffer(uint32_t size);
 	void CreateCommandPool(uint32_t queueFamilyIndex);
-	
 	void CreateVertexBufferFromMesh();
 	void CreateIndexBufferFromMesh();
 	void CreateUniformBuffer(VkDeviceSize bufferSize);
-
 	void AllocateMatricesDescriptorSet();
 	void UpdateMatricesDescriptorSet();
-
 	void CreateCommandBuffer();
 	void CreateSyncObjects();
 
@@ -89,7 +119,7 @@ private:
 	float ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
 	glm::mat4 ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos);
 	std::vector<CubemapVertex> CreateCubemapVertexBuffer(const PolygonMesh& mesh);
-
+	
 	//resources
 	RenderResourceRef<Device> _device;
 	RenderResourceRef<Instance> _instance;
@@ -105,6 +135,7 @@ private:
 	VkCommandPool _graphicCommandPool = VK_NULL_HANDLE;
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
 	PipelineHandle _cubemapPipelineHandle;
+	
 
 	//images
 	std::vector<VkImage> _cubemapImages = {};
@@ -118,6 +149,7 @@ private:
 		VkDeviceMemory _depthImageMemory = VK_NULL_HANDLE;
 		VkImage _depthImage	= VK_NULL_HANDLE;
 	
+	
 	//descriptors
 	RenderResourceRef<DescriptorPool> _descriptorPool;
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
@@ -125,16 +157,16 @@ private:
 	MemoryMappedBuffer _matricesUniformBuffer;
 
 	//buffers
-	MemoryMappedBuffer _indexBuffer;
-	MemoryMappedBuffer _vertexBuffer;
-	std::vector<VkCommandBuffer> _commandBuffers;
+	//MemoryMappedBuffer _indexBuffer;
+	//MemoryMappedBuffer _vertexBuffer;
+	//std::vector<VkCommandBuffer> _commandBuffers;
 	
 	//sync
-	VkFence _renderFence;
-
+	//VkFence _renderFence;
+	*/
 
 	//---------------------Debugging print(Keep to map approach by lipman to original method)
-	
+	/*
 	VkCommandBuffer BeginOneTimeCommands();
 	void ExportCubemapAsVerticalStrip(const std::string& filename);
 	void TransitionImageToTransferSrc(VkCommandBuffer cmd, VkImage image);
@@ -185,4 +217,9 @@ private:
 
 	void SphereWeightInitialization(uint32_t size);
 	glm::vec3 CubeFaceDir(int face, float x, float y);
-};
+
+	VkImage        _solidAngleImage = VK_NULL_HANDLE;
+	VkDeviceMemory _solidAngleMemory = VK_NULL_HANDLE;
+	VkImageView    _solidAngleArrayView = VK_NULL_HANDLE;
+	VkSampler      _solidAngleSampler = VK_NULL_HANDLE;
+};*/

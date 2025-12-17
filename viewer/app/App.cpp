@@ -3,7 +3,7 @@
 #include <Navigation/CameraSubsystem.h>
 #include <Rendering/RenderSubsystem.h>
 #include <UI/WindowSubsystem.h>
-#include <Rendering/CubeMaps/CubeMapRenderer.h>
+#include <Rendering//PMVC/CubemapRenderUnit.h>
 
 void App::Initialize()
 {

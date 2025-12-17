@@ -9,7 +9,7 @@
 #include <Mesh/MeshTransformation.h>
 #include <Thread/ThreadPool.h>
 #include <Tools/Tool.h>
-#include <Rendering/CubeMaps/CubeMapRenderer.h>
+#include <Rendering//PMVC/CubemapRenderUnit.h>
 
 class ProjectSettingsPanel;
 class ProjectOptionsPanel;

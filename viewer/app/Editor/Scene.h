@@ -7,7 +7,7 @@
 #include <Mesh/PolygonMesh.h>
 #include <Mesh/BVH.h>
 #include <Core/Subsystem.h>
-#include <Rendering/CubeMaps/CubeMapRenderer.h>
+#include <Rendering/PMVC/CubemapRenderUnit.h>
 
 #include <cagedeformations/Parametrization.h>
 
