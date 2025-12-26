@@ -8,7 +8,7 @@
 #include <Input/InputSubsystem.h>
 #include <UI/WindowSubsystem.h>
 #include <Configuration.h>
-#include <Rendering/PMVC/CubemapRenderUnit.h>
+#include <Rendering/PMVC/CubemapRenderInstance.h>
 
 #include "Core/RenderProxyCollector.h"
 
@@ -105,7 +105,7 @@ void RenderSubsystem::InitializeEditor(const std::shared_ptr<Editor>& editor)
 		_renderResourceManager,
 		_renderPass);
 
-	_cubemapRenderer = std::make_shared<CubemapRenderer>(_renderPipelineManager, _renderResourceManager, _device, _instance);
+	_cubemapRenderer = std::make_shared<CubemapManager>(_renderPipelineManager, _renderResourceManager, _device, _instance);
 
 	_editor = editor;
 	_editor->Initialize(_sceneRenderer, _cubemapRenderer);

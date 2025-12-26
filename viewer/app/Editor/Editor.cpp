@@ -103,7 +103,7 @@ Editor::Editor(const SubsystemPtr<InputSubsystem>& inputSubsystem,
 		}});
 }
 
-void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, const std::shared_ptr<CubemapRenderer>& cubemapRenderer)
+void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, const std::shared_ptr<CubemapManager>& cubemapRenderer)
 {
 	_scene = std::make_unique<Scene>(sceneRenderer);
 	_cubemapRenderer = cubemapRenderer;
@@ -662,11 +662,11 @@ void Editor::OnNewProjectCreated()
 
 			_deformedCageHandle = _scene->AddCage(_projectData->_deformedCage._vertices, _projectData->_deformedCage._faces);
 
-
-			_cubemapRenderer->SetCage(_projectData->_cage);
-			_cubemapRenderer->SetMesh(_projectData->_mesh);
-			_cubemapRenderer->Initialize();
-			_cubemapRenderer->RenderCubemaps();
+			//TODO init new class
+			//_cubemapRenderer->SetCage(_projectData->_cage);
+			//_cubemapRenderer->SetMesh(_projectData->_mesh);
+			//_cubemapRenderer->Initialize();
+			//_cubemapRenderer->RenderCubemaps();
 
 			const auto cageMesh = _scene->GetMesh(_deformedCageHandle);
 			cageMesh->SetModelMatrix(newModelMatrix);

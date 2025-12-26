@@ -1,80 +1,103 @@
 #pragma once
+#define VK_NO_PROTOTYPES
 #include <Rendering/PMVC/CubemapManager.h>
+#include <Rendering/PMVC/IComputeStrategy.h>
+#include <Rendering/PMVC/CubemapRenderInstance.h>
+#include <Rendering/Core/RenderResourceManager.h>
+#include <Rendering/Core/Buffer.h>
+#include <vulkan/vulkan.h>
+
+#include <glm/glm.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
+
+
+class CubemapManager;
+struct CubemapWorkRange;
+
+struct CubemapRenderTarget
+{
+	VkImage        cubemapImage;
+	VkDeviceMemory cubemapMemory;
+	VkImageView    cubemapView;
+	std::array<VkImageView, 6> faceViews;
+
+	VkImage        depthImage;
+	VkDeviceMemory depthMemory;
+	std::array<VkImageView, 6> depthViews;
+
+	std::array<VkFramebuffer, 6> framebuffers;
+};
+
+struct CubemapRenderUnit
+{
+	std::vector<CubemapRenderTarget> targets;
+
+	std::array<VkCommandBuffer, 6> graphicsCmd;
+
+	MemoryMappedBuffer matricesUBO;
+	VkDescriptorSet    matricesDescriptorSet;
+};
+
+enum class ComputeType {
+	CPU,
+	GPUATOMIC,
+	GPUSORT,
+	DEBUGCUBEMAPS, // for debugging writes cupemaps to disk no compute
+	//GPUSERIAL not feasible 
+	// TODO: implement if time leftover
+};
+
+
+struct CubemapMatricesUBO
+{
+	glm::mat4 proj;
+	glm::mat4 view;
+	float invNumTriangles;
+	float _pad[3];
+};
+
 
 class CubemapRenderInstance {
+public:
 	CubemapRenderInstance() = delete;
 	CubemapRenderInstance(CubemapManager& cubemapManager);
 	CubemapRenderInstance(CubemapManager& cubemapManager, int cubemapSize, VkFormat format, ComputeType computeType);
 	~CubemapRenderInstance();
 
-	void ComputePMVC();
+	void ComputePMVC(const CubemapWorkRange& range);
 
 private:
-	Enum ComputeType{
-	CPU,
-	GPUATMOIC,
-	GPUSORT,
-	//GPUSERIAL not feasible 
-	// TODO: implement if time leftover
-	};
-	
-	CubemapRenderInstance& _cubemapManager;
+	CubemapManager& _cubemapManager;
 
 	std::unique_ptr<ICubemapComputeStrategy> _computeStage;
 	
 	//parameters 
-	int _cubemapSize;
+	unsigned int _cubemapSize;
 	VkFormat _format;
 	ComputeType _computeType;
 
 	//init functions
 	void Initalize();
 	CubemapRenderTarget CreateCubemapRenderTarget() const;
+	CubemapRenderUnit CreateCubemapRenderUnit() const;
+
 	void CreateCommandPool(uint32_t queueFamilyIndex);
-	void CreateUniformBuffer(VkDeviceSize bufferSize);
-	void AllocateMatricesDescriptorSet();
 	void UpdateMatricesDescriptorSet();
-	void CreateCommandBuffer();
 	void CreateSyncObjects();
 
+	void RecordAndSubmitCubemapRender(uint32_t cubemapIdx, const glm::vec3& camPos, 
+		CubemapRenderTarget& target, uint64_t signalValue); //TODO submit cubemap at once not in 6 parts
+	std::vector<glm::vec3> BuildDeformableVertexPositions() const;
+
 	//render resources
-	struct CubemapRenderTarget
-	{
-		VkImage        cubemapImage;
-		VkDeviceMemory cubemapMemory;
-		VkImageView    cubemapView;
-		std::array<VkImageView, 6> faceViews;
-
-		VkImage        depthImage;
-		VkDeviceMemory depthMemory;
-		std::array<VkImageView, 6> depthViews;
-
-		std::array<VkFramebuffer, 6> framebuffers;
-	};
-
-	struct CubemapRenderUnit
-	{
-		std::vector<CubemapRenderTarget> targets;
-
-		std::array<VkCommandBuffer, 6> graphicsCmd;
-
-		MemoryMappedBuffer matricesUBO;
-		VkDescriptorSet    matricesDescriptorSet;
-	};
-
-	struct CubemapMatricesUBO
-	{
-		glm::mat4 proj;
-		glm::mat4 view;
-		float invNumTriangles;
-		float _pad[3];
-	};
-
 	CubemapRenderUnit _cubemapRenderUnit;
 	VkCommandPool _graphicCommandPool;
 
 	//sync objects
-	//TODO
+	std::vector<uint64_t> _slotDoneValue;
+	uint64_t _timelineValue = 0;
+	VkSemaphore _timeline;
 };
 
 /*

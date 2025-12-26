@@ -9,14 +9,14 @@
 #include <Rendering/Core/Swapchain.h>
 #include <Editor/Editor.h>
 #include <UI/UserInterfaceBackend.h>
-#include <Rendering/PMVC/CubemapRenderUnit.h>
+#include <Rendering/PMVC/CubemapManager.h>
 
 class CameraSubsystem;
 class RenderCommandScheduler;
 class WindowSubsystem;
 class ResourceManager;
 class RenderPipelineManager;
-class CubemapRenderer;
+class CubemapManager;
 class Editor;
 
 class RenderSubsystem final : public Subsystem
@@ -68,7 +68,7 @@ private:
 	std::unique_ptr<UserInterfaceBackend> _uiBackend = nullptr;
 	std::shared_ptr<Editor> _editor = nullptr;
 	std::shared_ptr<SceneRenderer> _sceneRenderer = nullptr;
-	std::shared_ptr<CubemapRenderer> _cubemapRenderer = nullptr;
+	std::shared_ptr<CubemapManager> _cubemapRenderer = nullptr;
 
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
 	std::vector<VkFramebuffer> _framebuffers;

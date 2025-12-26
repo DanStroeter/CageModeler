@@ -1,5 +1,5 @@
 #pragma once
-#include <Rendering/PMVC/CubemapRenderUnit.h>
+#include <Rendering/PMVC/CubemapRenderInstance.h>
 #include <Rendering/Core/RenderProxy.h>
 #include <Rendering/Core/Device.h>
 #include <Rendering/Core/DescriptorPool.h>
@@ -26,6 +26,12 @@ struct ComputePushConstants
 };
 */
 
+struct CubemapWorkRange
+{
+	uint32_t first;   // start index in vertices list
+	uint32_t count;   // how many cubemaps
+};
+
 struct CubemapVertex
 {
 	glm::vec3 _position;
@@ -50,6 +56,11 @@ private:
 	void CreateCubemapRenderPipeline();
 	void CreateVertexBufferFromMesh();
 	void CreateIndexBufferFromMesh();
+	void SphereWeightInitialization(uint32_t size);
+	float ComputeSphereWeight(int px, int py, int faceSize, int face);
+	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
+	VkCommandBuffer BeginOneTimeCommands();
+	void EndOneTimeCommands(VkCommandBuffer cmd);
 
 	//helper functions:
 	float ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
@@ -80,4 +91,11 @@ private:
 	//descriptors
 	RenderResourceRef<DescriptorPool> _descriptorPool;
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
+
+	friend class CubemapRenderInstance;
+
+	VkImage        _solidAngleImage = VK_NULL_HANDLE;
+	VkDeviceMemory _solidAngleMemory = VK_NULL_HANDLE;
+	VkImageView    _solidAngleArrayView = VK_NULL_HANDLE;
+	VkSampler      _solidAngleSampler = VK_NULL_HANDLE;
 };
