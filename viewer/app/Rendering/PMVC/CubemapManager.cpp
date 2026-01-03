@@ -23,6 +23,8 @@ CubemapManager::~CubemapManager()
 
 void CubemapManager::Initialize()
 {
+	_descriptorPool = CreateRenderResource<DescriptorPool>(_device);
+	CreateCommandPool(_device->GetQueueFamilies()._graphics.value());
 	CreateRenderPass(VK_FORMAT_R32G32B32A32_SFLOAT);
 	CreateDescriptorSetLayouts();
 	CreateCubemapRenderPipeline();
@@ -169,6 +171,11 @@ void CubemapManager::CreateCubemapRenderPipeline()
 	scissor.offset = { 0, 0 };
 	scissor.extent = { 512, 512 };
 
+
+	VkPushConstantRange pushConstantRange{};
+	pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	pushConstantRange.offset = 0;
+	pushConstantRange.size = sizeof(CubemapMatricesUBO);
 	// Build the pipeline
 	_cubemapPipelineHandle = _renderPipelineManager->BeginPipeline()
 		.SetRenderPass(_renderPass)
@@ -575,4 +582,36 @@ void CubemapManager::EndOneTimeCommands(VkCommandBuffer cmd) {
 	vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
 	vkQueueWaitIdle(graphicsQueue);
 	vkFreeCommandBuffers(_device, _graphicCommandPool, 1, &cmd);
+}
+
+void CubemapManager::DebugRenderCubemaps(
+	uint32_t cubemapSize,
+	VkFormat format)
+{
+	// 1. Create render instance in DEBUG mode
+	CubemapRenderInstance instance(
+		*this,
+		cubemapSize,
+		format,
+		ComputeType::DEBUGCUBEMAPS
+	);
+
+	// 3. Build work range
+	CubemapWorkRange range{};
+	range.first = 0;
+	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
+
+	// 4. Execute
+	instance.ComputePMVC(range);
+}
+
+void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
+	VkCommandPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo.queueFamilyIndex = queueFamilyIndex;
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+	if (vkCreateCommandPool(_device, &poolInfo, nullptr, &_graphicCommandPool) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create command pool!");
+	}
 }

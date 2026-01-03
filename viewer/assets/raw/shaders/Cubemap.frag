@@ -8,8 +8,8 @@ layout(location = 0) out vec4 FragColor;
 void main()
 {
     // Triangle ID in alpha channel
-    //float id = float(TriangleID);
+    float id = float(TriangleID);
 
     // RGB comes from interpolated vertex colors
-    FragColor = vec4(OutColor, TriangleID);
+    FragColor = vec4(OutColor, id);
 }

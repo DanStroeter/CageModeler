@@ -17,6 +17,7 @@ public:
         uint32_t targetIndex,
         VkSemaphore timeline,
         uint64_t renderDoneValue,
+        uint64_t copyDoneValue,
         const CubemapRenderTarget& target) override;
 
     uint64_t GetSlotCompletionValue(uint32_t targetIndex) const override;

@@ -1,15 +1,10 @@
 #version 450
 
-struct PerFrameData {
-    mat4 Projection;
-    mat4 View;
-};
-
-layout(set = 0, binding = 0) uniform FrameDataBlock
-{
-    PerFrameData FrameData;
+layout(push_constant) uniform PushConstants {
+    mat4 view;
+    mat4 proj;
     float invNumTriangles;
-};
+} pc;
 
 // Vertex attributes
 layout(location = 0) in vec3 InPosition;
@@ -29,7 +24,7 @@ void main()
     else color = vec3(0.0, 0.0, 1.0); // blue
 
     OutColor = color;
-    TriangleID = float(InTriangleID) * invNumTriangles;
+    TriangleID = float(InTriangleID) * pc.invNumTriangles;
 
-    gl_Position = FrameData.Projection * FrameData.View * vec4(InPosition, 1.0);
+    gl_Position = pc.proj * pc.view * vec4(InPosition, 1.0);
 }

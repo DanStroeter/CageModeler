@@ -663,10 +663,10 @@ void Editor::OnNewProjectCreated()
 			_deformedCageHandle = _scene->AddCage(_projectData->_deformedCage._vertices, _projectData->_deformedCage._faces);
 
 			//TODO init new class
-			//_cubemapRenderer->SetCage(_projectData->_cage);
-			//_cubemapRenderer->SetMesh(_projectData->_mesh);
-			//_cubemapRenderer->Initialize();
-			//_cubemapRenderer->RenderCubemaps();
+			_cubemapRenderer->SetCage(_projectData->_cage);
+			_cubemapRenderer->SetMesh(_projectData->_mesh);
+			_cubemapRenderer->Initialize();
+			_cubemapRenderer->DebugRenderCubemaps(512, VK_FORMAT_R32G32B32A32_SFLOAT);
 
 			const auto cageMesh = _scene->GetMesh(_deformedCageHandle);
 			cageMesh->SetModelMatrix(newModelMatrix);

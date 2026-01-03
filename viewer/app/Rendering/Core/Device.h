@@ -147,6 +147,8 @@ private:
 	struct SupportedPhysicalDeviceFeatures
 	{
 		bool _barycentricCoordinates = false;
+		bool _timelineSemaphore = false;
+		bool _synchronization2 = false;
 	};
 
 	struct PhysicalDeviceQueryResult

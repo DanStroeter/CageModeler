@@ -22,7 +22,7 @@ public:
     virtual void DispatchAfterRender(uint32_t cubemapIdx,
         uint32_t targetIndex,
         VkSemaphore timeline,
-        uint64_t renderDoneValue,
+        uint64_t renderDoneValue, uint64_t copyDoneValue,
         const CubemapRenderTarget& target) = 0;
 
     virtual uint64_t GetSlotCompletionValue(uint32_t targetIndex) const = 0;

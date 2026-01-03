@@ -1,5 +1,4 @@
 #pragma once
-#define VK_NO_PROTOTYPES
 #include <Rendering/PMVC/CubemapManager.h>
 #include <Rendering/PMVC/IComputeStrategy.h>
 #include <Rendering/PMVC/CubemapRenderInstance.h>

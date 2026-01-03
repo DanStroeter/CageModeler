@@ -51,6 +51,9 @@ void DebugCubemapComputeStrategy::Initialize(uint32_t targetCount)
         VK_CHECK(vkAllocateMemory(_device, &alloc, nullptr, &_slots[i].memory));
         VK_CHECK(vkBindBufferMemory(_device, _slots[i].buffer, _slots[i].memory, 0));
     }
+    for (int i = 0; i < _slotCopyDoneValue.size(); i++) {
+		_slotCopyDoneValue[i] = 0;
+    }
 }
 
 void DebugCubemapComputeStrategy::WaitForTargetReuse(
@@ -74,6 +77,7 @@ void DebugCubemapComputeStrategy::DispatchAfterRender(
     uint32_t targetIndex,
     VkSemaphore timeline,
     uint64_t renderDoneValue,
+    uint64_t copyDoneValue,
     const CubemapRenderTarget& target)
 {
     const Slot& slot = _slots[targetIndex];
@@ -83,6 +87,16 @@ void DebugCubemapComputeStrategy::DispatchAfterRender(
     const VkDeviceSize totalSize = imageSizePerFace * 6;
 
     VkCommandBuffer cmd = slot.cmd;
+    // Wait for prior usage of this command buffer to finish (using timeline semaphore)
+    if (_slotCopyDoneValue[targetIndex] > 0)
+    {
+        VkSemaphoreWaitInfo waitInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
+        waitInfo.semaphoreCount = 1;
+        waitInfo.pSemaphores = &timeline;
+        waitInfo.pValues = &_slotCopyDoneValue[targetIndex];
+
+        VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
+    }
 
     VK_CHECK(vkResetCommandBuffer(cmd, 0));
 
@@ -140,7 +154,7 @@ void DebugCubemapComputeStrategy::DispatchAfterRender(
     VK_CHECK(vkEndCommandBuffer(cmd));
 
     // Timeline: wait on renderDoneValue, signal copyDoneValue
-    const uint64_t copyDoneValue = renderDoneValue + 1; // simple scheme; you can also use a global counter
+    //const uint64_t copyDoneValue = renderDoneValue + 1; // simple scheme; you can also use a global counter
 
     VkSemaphoreSubmitInfo waitInfo{ VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
     waitInfo.semaphore = timeline;
@@ -210,6 +224,8 @@ void DebugCubemapComputeStrategy::Readback(uint32_t cubemapIdx, uint32_t targetI
         strip.data(),
         (int)(faceSize * 4)
     );
+    std::string c = "DebugCubemap: Saved cubemap " + cubemapIdx + filename;
+    LOG_DEBUG(c);
 }
 
 void DebugCubemapComputeStrategy::WaitAll(VkSemaphore timeline)

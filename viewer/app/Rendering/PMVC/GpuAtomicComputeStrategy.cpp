@@ -21,6 +21,7 @@ void GpuAtomicComputeStrategy::DispatchAfterRender(
     uint32_t,
     VkSemaphore,
     uint64_t,
+    uint64_t,
     const CubemapRenderTarget&)
 {
 }

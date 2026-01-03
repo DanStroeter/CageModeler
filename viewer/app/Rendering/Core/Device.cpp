@@ -117,10 +117,22 @@ Device::PhysicalDeviceQueryResult Device::QueryPhysicalDevice() const
 	const VkPhysicalDevice foundPhysicalDevice = *found;
 	CHECK_VK_HANDLE(foundPhysicalDevice);
 
-	// Require that our device supports barycentric coordinate sampling, otherwise we cannot draw wireframes.
-	VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR barycentricFeatures { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_KHR };
-	VkPhysicalDeviceFeatures2 physicalFeatures { };
-	physicalFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	// Sync2 feature
+	VkPhysicalDeviceSynchronization2Features sync2Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES };
+	sync2Features.synchronization2 = VK_TRUE;
+
+	// Timeline semaphore
+	VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES };
+	timelineFeatures.timelineSemaphore = VK_TRUE;
+	timelineFeatures.pNext = &sync2Features;
+
+	// Barycentric features
+	VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR barycentricFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_KHR };
+	barycentricFeatures.fragmentShaderBarycentric = VK_TRUE;
+	barycentricFeatures.pNext = &timelineFeatures;
+
+	// Physical device features chain head
+	VkPhysicalDeviceFeatures2 physicalFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
 	physicalFeatures.pNext = &barycentricFeatures;
 
 	vkGetPhysicalDeviceFeatures2(foundPhysicalDevice, &physicalFeatures);
@@ -128,6 +140,8 @@ Device::PhysicalDeviceQueryResult Device::QueryPhysicalDevice() const
 	PhysicalDeviceQueryResult result;
 	result._device = foundPhysicalDevice;
 	result._supportedFeatures._barycentricCoordinates = (barycentricFeatures.fragmentShaderBarycentric == VK_TRUE);
+	result._supportedFeatures._timelineSemaphore = (timelineFeatures.timelineSemaphore == VK_TRUE);
+	result._supportedFeatures._synchronization2 = (sync2Features.synchronization2 == VK_TRUE);
 
 	return result;
 }
@@ -166,6 +180,19 @@ VkDevice Device::CreateLogicalDevice(const SupportedPhysicalDeviceFeatures& feat
 		PushFeaturePointerToChainNext(&deviceFeatures, &barycentricFeatures);
 
 		enabledExtensions.push_back(VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME);
+	}
+	VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES };
+	if (features._timelineSemaphore) {
+		timelineFeatures.timelineSemaphore = VK_TRUE;
+		PushFeaturePointerToChainNext(&deviceFeatures, &timelineFeatures);
+
+		enabledExtensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
+	}
+	VkPhysicalDeviceSynchronization2Features sync2Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES };
+	if (features._synchronization2) {
+		sync2Features.synchronization2 = VK_TRUE;
+		PushFeaturePointerToChainNext(&deviceFeatures, &sync2Features);
+		enabledExtensions.push_back(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
 	}
 
 	VkDeviceCreateInfo createInfo { };

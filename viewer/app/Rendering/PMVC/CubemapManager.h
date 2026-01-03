@@ -25,6 +25,11 @@ struct ComputePushConstants
 	int uNumTriangles;
 };
 */
+struct CubemapPushConstants {
+	glm::mat4 proj;
+	glm::mat4 view;
+	float invNumTriangles;
+};
 
 struct CubemapWorkRange
 {
@@ -46,12 +51,15 @@ public:
 	~CubemapManager();
 	void Initialize();
 
+	void DebugRenderCubemaps(uint32_t cubemapSize, VkFormat format);
+
 	void SetCage(const EigenMesh& mesh) { _cageMesh = mesh; }
 	void SetMesh(const EigenMesh& mesh) { _deformableMesh = mesh; }
 
 private: 
 	//init functions:
 	void CreateRenderPass(VkFormat format);
+	void CreateCommandPool(uint32_t queueFamilyIndex);
 	void CreateDescriptorSetLayouts();
 	void CreateCubemapRenderPipeline();
 	void CreateVertexBufferFromMesh();

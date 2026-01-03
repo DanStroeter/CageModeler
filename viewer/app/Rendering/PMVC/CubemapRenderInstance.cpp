@@ -11,6 +11,7 @@
 #include <Rendering/PMVC/GpuAtomicComputeStrategy.h>
 #include <Rendering/PMVC/GpuSortComputeStrategy.h>
 #include <Rendering/PMVC/CubemapManager.h>
+#include <Rendering/PMVC/DebugCubemapComputeStrategy.h>
 
 //#define STB_IMAGE_WRITE_IMPLEMENTATION
 //#include "../../external/stb_image_write.h"
@@ -49,6 +50,21 @@ void CubemapRenderInstance::Initalize() {
 	case ComputeType::GPUSORT:   
 		_computeStage = std::make_unique<GpuSortComputeStrategy>();
 		break;
+	case ComputeType::DEBUGCUBEMAPS :
+		VkQueue transferQueue;
+		vkGetDeviceQueue(
+			_cubemapManager._device,
+			_cubemapManager._device->GetQueueFamilies()._graphics.value(), 
+			0,
+			&transferQueue);
+		_computeStage = std::make_unique<DebugCubemapComputeStrategy>(
+			_cubemapManager._device,
+			_cubemapManager._device->GetPhysicalDeviceHandle(),
+			transferQueue,
+			_cubemapManager._device->GetQueueFamilies()._graphics.value(),
+			_cubemapSize,
+			_format);
+		break;
 	}
 
 	uint32_t graphicsQueueFamilyIndex = _cubemapManager._device->GetQueueFamilies()._graphics.value();
@@ -57,6 +73,7 @@ void CubemapRenderInstance::Initalize() {
 	_cubemapRenderUnit = CreateCubemapRenderUnit();
 
 	const uint32_t targetCount = _computeStage->RequiredRenderTargetCount();
+	_computeStage->Initialize(_computeStage->RequiredRenderTargetCount());
 
 	_cubemapRenderUnit.targets.reserve(targetCount);
 	for (uint32_t i = 0; i < targetCount; ++i)
@@ -294,20 +311,22 @@ void CubemapRenderInstance::ComputePMVC(const CubemapWorkRange& range)
 
 	for (uint32_t cubemapIdx = range.first; cubemapIdx < end; ++cubemapIdx)
 	{
+		LOG_DEBUG(cubemapIdx);
 		const uint32_t frameIndex = cubemapIdx - range.first;
 		const uint32_t targetIndex = frameIndex % (uint32_t)_cubemapRenderUnit.targets.size();
 		CubemapRenderTarget& target = _cubemapRenderUnit.targets[targetIndex];
-
-		// Ensure this target slot is safe to reuse (depends on compute strategy)
 		// Ensure this target slot is safe to reuse (depends on compute strategy)
 		_computeStage->WaitForTargetReuse(targetIndex, _timeline, _computeStage->GetSlotCompletionValue(targetIndex));
-
 		// Render one cubemap into target
 		const uint64_t renderDoneValue = ++_timelineValue;
 		RecordAndSubmitCubemapRender(cubemapIdx, vertices[cubemapIdx], target, renderDoneValue);
-
+		const uint64_t copyDoneValue = ++_timelineValue;
 		// Kick compute after render completes (max parallelism)
-		_computeStage->DispatchAfterRender(cubemapIdx, targetIndex, _timeline, renderDoneValue, target);
+		_computeStage->DispatchAfterRender(cubemapIdx, targetIndex, _timeline, renderDoneValue, copyDoneValue, target);
+		_computeStage->WaitForTargetReuse(targetIndex, _timeline, _computeStage->GetSlotCompletionValue(targetIndex));
+		// Now it’s safe to read from buffer on CPU
+		std::string filename = "F:\\Cubemaps\\Cubemap" + std::to_string(cubemapIdx) + ".png";
+		_computeStage->Readback(cubemapIdx, targetIndex, filename);
 
 		// Mark slot as “owned” until compute/readback finishes
 		_slotDoneValue[targetIndex] = _computeStage->GetSlotCompletionValue(targetIndex);
@@ -329,6 +348,9 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 
 	const PipelineObject& pipelineObj = _cubemapManager._renderPipelineManager->GetPipelineObject(_cubemapManager._cubemapPipelineHandle);
 
+	const uint32_t numTriangles =
+		static_cast<uint32_t>(_cubemapManager._cageMesh._faces.size() / 3);
+	const float invNumTriangles = 1.0f / static_cast<float>(numTriangles);
 	// Record 6 command buffers, one per face
 	for (uint32_t face = 0; face < 6; ++face)
 	{
@@ -337,7 +359,7 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 		faceUBO.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 1000.0f);
 		faceUBO.proj[1][1] *= -1.0f;
 		faceUBO.view = _cubemapManager.ComputeCubemapViewMatrix(face, camPos);
-		// faceUBO.invNumTriangles = ...
+		faceUBO.invNumTriangles = invNumTriangles;
 
 		std::memcpy(_cubemapRenderUnit.matricesUBO._mappedData, &faceUBO, sizeof(faceUBO));
 
@@ -444,6 +466,7 @@ std::vector<glm::vec3> CubemapRenderInstance::BuildDeformableVertexPositions() c
 
 	return vertices;
 }
+
 
 /*
 CubemapRenderer::CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,

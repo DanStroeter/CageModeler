@@ -22,6 +22,7 @@ void CpuComputeStrategy::DispatchAfterRender(uint32_t,
     uint32_t,
     VkSemaphore,
     uint64_t,
+    uint64_t,
     const CubemapRenderTarget&)
 {
     // CPU path: no GPU compute dispatch
