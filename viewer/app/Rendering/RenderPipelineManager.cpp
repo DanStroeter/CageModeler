@@ -208,8 +208,14 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	pipelineLayoutInfo.pNext = nullptr;
 	pipelineLayoutInfo.setLayoutCount = objectProxy._descriptorSetLayouts.size();
 	pipelineLayoutInfo.pSetLayouts = objectProxy._descriptorSetLayouts.data();
-	pipelineLayoutInfo.pushConstantRangeCount = 0;
-	pipelineLayoutInfo.pPushConstantRanges = nullptr;
+	if (objectProxy._pushConstantRanges.empty()) {
+		pipelineLayoutInfo.pushConstantRangeCount = 0;
+		pipelineLayoutInfo.pPushConstantRanges = nullptr;
+	}
+	else {
+		pipelineLayoutInfo.pushConstantRangeCount = static_cast<uint32_t>(objectProxy._pushConstantRanges.size());
+		pipelineLayoutInfo.pPushConstantRanges = objectProxy._pushConstantRanges.data();
+	}
 
 	VkPipelineLayout pipelineLayout;
 	VK_CHECK(vkCreatePipelineLayout(_device, &pipelineLayoutInfo, nullptr, &pipelineLayout));

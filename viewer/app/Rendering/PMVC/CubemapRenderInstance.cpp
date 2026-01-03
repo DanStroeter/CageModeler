@@ -351,21 +351,35 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 	const uint32_t numTriangles =
 		static_cast<uint32_t>(_cubemapManager._cageMesh._faces.size() / 3);
 	const float invNumTriangles = 1.0f / static_cast<float>(numTriangles);
+	CubemapMatricesUBO uBO{};
+	uBO.invNumTriangles = invNumTriangles;
+	std::memcpy(_cubemapRenderUnit.matricesUBO._mappedData, &uBO, sizeof(uBO));//TODO move somewhere else
+
 	// Record 6 command buffers, one per face
 	for (uint32_t face = 0; face < 6; ++face)
 	{
-		// Update per-face matrices UBO
-		CubemapMatricesUBO faceUBO{};
-		faceUBO.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 1000.0f);
-		faceUBO.proj[1][1] *= -1.0f;
-		faceUBO.view = _cubemapManager.ComputeCubemapViewMatrix(face, camPos);
-		faceUBO.invNumTriangles = invNumTriangles;
 
-		std::memcpy(_cubemapRenderUnit.matricesUBO._mappedData, &faceUBO, sizeof(faceUBO));
+		/*faceUBO.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 1000.0f);
+		faceUBO.proj[1][1] *= -1.0f;
+		faceUBO.view = _cubemapManager.ComputeCubemapViewMatrix(face, camPos);*/
 
 		VkCommandBuffer cmd = _cubemapRenderUnit.graphicsCmd[face];
 		VK_CHECK(vkResetCommandBuffer(cmd, 0));
 		VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
+
+		CubemapPushConstants facePush{};
+		facePush.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 1000.0f);
+		facePush.proj[1][1] *= -1.0f;
+		facePush.view = _cubemapManager.ComputeCubemapViewMatrix(face, camPos);
+
+		vkCmdPushConstants(
+			cmd,
+			pipelineObj._pipelineLayout,
+			VK_SHADER_STAGE_VERTEX_BIT,
+			0,
+			sizeof(CubemapPushConstants),
+			&facePush
+		);
 
 		VkRenderPassBeginInfo rpInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
 		rpInfo.renderPass = _cubemapManager._renderPass;

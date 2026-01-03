@@ -108,6 +108,12 @@ public:
 		return *this;
 	}
 
+	GraphicsPipelineObjectProxy& AddPushConstantRange(const VkPushConstantRange& pushConstantRange)
+	{
+		_pushConstantRanges.push_back(pushConstantRange);
+		return *this;
+	}
+
 	GraphicsPipelineObjectProxy& ResetMultisampleState()
 	{
 		_multisampleStateSet = false;
@@ -146,6 +152,7 @@ private:
 	VkViewport _viewport = {};
 	VkRect2D _scissor = {};
 	bool _viewportStateSet = false;
+	std::vector<VkPushConstantRange> _pushConstantRanges = {};
 };
 
 /**

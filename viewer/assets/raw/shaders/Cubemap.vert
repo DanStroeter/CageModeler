@@ -3,7 +3,6 @@
 layout(push_constant) uniform PushConstants {
     mat4 view;
     mat4 proj;
-    float invNumTriangles;
 } pc;
 
 // Vertex attributes
@@ -15,6 +14,11 @@ layout(location = 2) in uint InVertexIndex; // 0,1,2 per triangle
 layout(location = 0) out vec3 OutColor;
 layout(location = 1) flat out float TriangleID;
 
+layout(set = 0, binding = 0) uniform FrameDataBlock
+{
+    float invNumTriangles;
+} ubo;
+
 void main()
 {
     // Assign color based on vertex index
@@ -24,7 +28,7 @@ void main()
     else color = vec3(0.0, 0.0, 1.0); // blue
 
     OutColor = color;
-    TriangleID = float(InTriangleID) * pc.invNumTriangles;
+    TriangleID = float(InTriangleID) * ubo.invNumTriangles;
 
     gl_Position = pc.proj * pc.view * vec4(InPosition, 1.0);
 }

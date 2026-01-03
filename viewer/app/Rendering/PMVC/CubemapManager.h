@@ -26,9 +26,8 @@ struct ComputePushConstants
 };
 */
 struct CubemapPushConstants {
-	glm::mat4 proj;
 	glm::mat4 view;
-	float invNumTriangles;
+	glm::mat4 proj;
 };
 
 struct CubemapWorkRange

@@ -171,11 +171,11 @@ void CubemapManager::CreateCubemapRenderPipeline()
 	scissor.offset = { 0, 0 };
 	scissor.extent = { 512, 512 };
 
-
 	VkPushConstantRange pushConstantRange{};
 	pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 	pushConstantRange.offset = 0;
-	pushConstantRange.size = sizeof(CubemapMatricesUBO);
+	pushConstantRange.size = sizeof(CubemapPushConstants);
+
 	// Build the pipeline
 	_cubemapPipelineHandle = _renderPipelineManager->BeginPipeline()
 		.SetRenderPass(_renderPass)
@@ -185,6 +185,7 @@ void CubemapManager::CreateCubemapRenderPipeline()
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Cubemap.vert.spv")
 		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Cubemap.frag.spv")
+		.AddPushConstantRange(pushConstantRange)
 		.SetMultisampleState(msaa)
 		.SetViewportAndScissor(viewport, scissor)
 		.SetVertexInputBindingDescriptions(std::span(&bindingDesc, 1))

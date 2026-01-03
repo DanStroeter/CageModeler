@@ -50,8 +50,6 @@ enum class ComputeType {
 
 struct CubemapMatricesUBO
 {
-	glm::mat4 proj;
-	glm::mat4 view;
 	float invNumTriangles;
 	float _pad[3];
 };
