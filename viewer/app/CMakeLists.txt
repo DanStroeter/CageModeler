@@ -77,7 +77,7 @@ add_executable(${PROJECT_NAME}
     Rendering/PMVC/CpuComputeStrategy.cpp
     Rendering/PMVC/GpuSortComputeStrategy.cpp
     Rendering/PMVC/GpuAtomicComputeStrategy.cpp
-    ${IMGUI_BINDINGS} "Rendering/PMVC/DebugCubemapComputeStrategy.h" "Rendering/PMVC/DebugCubemapComputeStrategy.cpp")
+    ${IMGUI_BINDINGS} "Rendering/PMVC/DebugCubemapComputeStrategy.h" "Rendering/PMVC/DebugCubemapComputeStrategy.cpp" "Rendering/PMVC/GpuSerialComputeStrategy.h")
 
 
 target_compile_definitions(

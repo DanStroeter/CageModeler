@@ -27,7 +27,7 @@ public:
     uint32_t RequiredRenderTargetCount() const override
     {
         // Triple-buffering is sensible for CPU readback to overlap render/copy/map.
-        return 3;
+        return 8;
     }
 
     void Initialize(uint32_t targetCount) override;
