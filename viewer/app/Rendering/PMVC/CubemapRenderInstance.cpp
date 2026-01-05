@@ -729,19 +729,36 @@ void SphereWeightCalculator::SphereWeightInitialization(uint32_t size, RenderRes
 	VkPhysicalDeviceMemoryProperties memProperties;
 	vkGetPhysicalDeviceMemoryProperties(device->GetPhysicalDeviceHandle(), &memProperties);
 
-	uint32_t memtype = 0;
+	std::optional<uint32_t> memtype;
+
 	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-		if ((memReq.memoryTypeBits & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
-			memtype = i;
-			break;
+		if (memReq.memoryTypeBits & (1 << i)) {
+			if (memProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+				memtype = i;
+				break;
+			}
 		}
 	}
-	throw std::runtime_error("Failed to find suitable memory type!");
+
+	// Fallback: accept any compatible memory
+	if (!memtype.has_value()) {
+		for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+			if (memReq.memoryTypeBits & (1 << i)) {
+				memtype = i;
+				break;
+			}
+		}
+	}
+
+	if (!memtype.has_value()) {
+		throw std::runtime_error("Failed to find ANY compatible memory type for solid angle image!");
+	}
+
 
 	VkMemoryAllocateInfo alloc{};
 	alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	alloc.allocationSize = memReq.size;
-	alloc.memoryTypeIndex = memtype;
+	alloc.memoryTypeIndex = memtype.value();
 
 	vkAllocateMemory(device, &alloc, nullptr, &_solidAngleMemory);
 	vkBindImageMemory(device, _solidAngleImage, _solidAngleMemory, 0);

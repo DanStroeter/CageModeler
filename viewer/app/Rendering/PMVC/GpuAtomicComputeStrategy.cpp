@@ -42,6 +42,7 @@ void GpuAtomicComputeStrategy::Initialize(uint32_t targetCount)
 		_resourceManager,
 		_computeCommandPool
 	);
+	CreateSampler();
 }
 
 void GpuAtomicComputeStrategy::WaitForTargetReuse(
@@ -130,7 +131,6 @@ uint64_t GpuAtomicComputeStrategy::GetSlotCompletionValue(uint32_t targetIndex) 
 
 void GpuAtomicComputeStrategy::Readback(uint32_t cubemapIdx, uint32_t targetIndex, const std::string&)
 {
-
 	ScopedCmdBuffer scoped(_device, _computeCommandPool);
 	VkCommandBuffer cmd = scoped.Get();
 
@@ -188,7 +188,7 @@ void GpuAtomicComputeStrategy::CreatePipelineAndLayouts() {
 
 	ComputePipelineObjectProxy proxy;
 	proxy._renderPipelineManager = _renderPipelineManager;
-	proxy._shaderModule = "assets/shaders/PMVCComputeAtomic.comp.spv";
+	proxy._shaderModule = "assets/shaders/PMVCComputeAtmoic.comp.spv";
 	proxy._descriptorSetLayouts = { _computeLayout };
 
 	VkPushConstantRange range{};

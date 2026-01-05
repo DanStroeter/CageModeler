@@ -1,10 +1,11 @@
 #pragma once
 
+#include <Rendering/Core/Device.h>
 #include <vulkan/vulkan.h>
 
 class ScopedCmdBuffer {
 public:
-    ScopedCmdBuffer(VkDevice device, VkCommandPool pool);
+    ScopedCmdBuffer(RenderResourceRef<Device> device, VkCommandPool pool);
     ~ScopedCmdBuffer();
 
     VkCommandBuffer Get() const { return _cmd; }

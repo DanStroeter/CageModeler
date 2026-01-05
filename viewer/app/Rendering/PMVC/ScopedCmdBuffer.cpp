@@ -1,6 +1,6 @@
 #include<Rendering/PMVC/ScopedCmdBuffer.h>
 
-ScopedCmdBuffer::ScopedCmdBuffer(VkDevice device, VkCommandPool pool)
+ScopedCmdBuffer::ScopedCmdBuffer(RenderResourceRef<Device> device, VkCommandPool pool)
     : _device(device), _pool(pool), _cmd(VK_NULL_HANDLE)
 {
     VkCommandBufferAllocateInfo allocInfo{};

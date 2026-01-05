@@ -19,7 +19,11 @@ VkShaderModule RenderPipelineManager::CreateShaderModule(const std::vector<char>
 {
 	CHECK_VK_HANDLE(_device);
 
-	VkShaderModuleCreateInfo createInfo { };
+	if (shaderCode.empty()) {
+		throw std::runtime_error("Shader code is empty. Failed to load SPIR-V.");
+	}
+
+	VkShaderModuleCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	createInfo.codeSize = shaderCode.size();
 	createInfo.pCode = reinterpret_cast<const uint32_t*>(shaderCode.data());

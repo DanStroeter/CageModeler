@@ -135,13 +135,24 @@ Device::PhysicalDeviceQueryResult Device::QueryPhysicalDevice() const
 	VkPhysicalDeviceFeatures2 physicalFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
 	physicalFeatures.pNext = &barycentricFeatures;
 
+	// Atomic float features
+	VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomicFloatFeatures{
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT
+	};
+
+	// Chain into feature query
+	atomicFloatFeatures.pNext = physicalFeatures.pNext;
+	physicalFeatures.pNext = &atomicFloatFeatures;
+
 	vkGetPhysicalDeviceFeatures2(foundPhysicalDevice, &physicalFeatures);
+	//vkGetPhysicalDeviceFeatures2(foundPhysicalDevice, &physicalFeatures);
 
 	PhysicalDeviceQueryResult result;
 	result._device = foundPhysicalDevice;
 	result._supportedFeatures._barycentricCoordinates = (barycentricFeatures.fragmentShaderBarycentric == VK_TRUE);
 	result._supportedFeatures._timelineSemaphore = (timelineFeatures.timelineSemaphore == VK_TRUE);
 	result._supportedFeatures._synchronization2 = (sync2Features.synchronization2 == VK_TRUE);
+	result._supportedFeatures._shaderAtomicFloat = atomicFloatFeatures.shaderBufferFloat32AtomicAdd == VK_TRUE;
 
 	return result;
 }
@@ -193,6 +204,17 @@ VkDevice Device::CreateLogicalDevice(const SupportedPhysicalDeviceFeatures& feat
 		sync2Features.synchronization2 = VK_TRUE;
 		PushFeaturePointerToChainNext(&deviceFeatures, &sync2Features);
 		enabledExtensions.push_back(VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME);
+	}
+	VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomicFloatFeatures{
+	VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT
+	};
+	if (features._shaderAtomicFloat)
+	{
+		atomicFloatFeatures.shaderBufferFloat32Atomics = VK_TRUE;
+		atomicFloatFeatures.shaderBufferFloat32AtomicAdd = VK_TRUE;
+
+		PushFeaturePointerToChainNext(&deviceFeatures, &atomicFloatFeatures);
+		enabledExtensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
 	}
 
 	VkDeviceCreateInfo createInfo { };
