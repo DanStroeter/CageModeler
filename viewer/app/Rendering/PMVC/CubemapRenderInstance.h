@@ -43,7 +43,7 @@ enum class ComputeType {
 	GPUATOMIC,
 	GPUSORT,
 	DEBUGCUBEMAPS, // for debugging writes cupemaps to disk no compute
-	//GPUSERIAL not feasible 
+	GPUSERIAL 
 	// TODO: implement if time leftover
 };
 
@@ -57,12 +57,16 @@ struct CubemapMatricesUBO
 
 class CubemapRenderInstance {
 public:
-	CubemapRenderInstance() = delete;
+	//CubemapRenderInstance() = delete;
+
 	CubemapRenderInstance(CubemapManager& cubemapManager);
 	CubemapRenderInstance(CubemapManager& cubemapManager, int cubemapSize, VkFormat format, ComputeType computeType);
 	~CubemapRenderInstance();
+	//CubemapRenderInstance(CubemapRenderInstance&) = default;
+	//CubemapRenderInstance& operator=(CubemapRenderInstance&) = default;
 
-	void ComputePMVC(const CubemapWorkRange& range);
+	void DebugCubemaps(const CubemapWorkRange& range);
+	void DebugPMVC(const CubemapWorkRange& range);
 
 private:
 	CubemapManager& _cubemapManager;
@@ -95,6 +99,8 @@ private:
 	std::vector<uint64_t> _slotDoneValue;
 	uint64_t _timelineValue = 0;
 	VkSemaphore _timeline;
+
+	friend class GpuSerialComputeStrategy;
 };
 
 /*

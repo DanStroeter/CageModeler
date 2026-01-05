@@ -12,6 +12,7 @@
 #include <Rendering/PMVC/GpuSortComputeStrategy.h>
 #include <Rendering/PMVC/CubemapManager.h>
 #include <Rendering/PMVC/DebugCubemapComputeStrategy.h>
+#include <Rendering/PMVC/GpuSerialComputeStrategy.h>
 
 //#define STB_IMAGE_WRITE_IMPLEMENTATION
 //#include "../../external/stb_image_write.h"
@@ -50,7 +51,7 @@ void CubemapRenderInstance::Initalize() {
 	case ComputeType::GPUSORT:   
 		_computeStage = std::make_unique<GpuSortComputeStrategy>();
 		break;
-	case ComputeType::DEBUGCUBEMAPS :
+	case ComputeType::DEBUGCUBEMAPS:
 		VkQueue transferQueue;
 		vkGetDeviceQueue(
 			_cubemapManager._device,
@@ -64,6 +65,17 @@ void CubemapRenderInstance::Initalize() {
 			_cubemapManager._device->GetQueueFamilies()._graphics.value(),
 			_cubemapSize,
 			_format);
+		break;
+	case ComputeType::GPUSERIAL:
+		_computeStage = std::make_unique<GpuSerialComputeStrategy>(
+			_cubemapManager._device,
+			_cubemapManager._device->GetPhysicalDeviceHandle(),
+			transferQueue,
+			_cubemapManager._device->GetQueueFamilies()._graphics.value(),
+			_cubemapSize,
+			_format,
+			*this
+		);
 		break;
 	}
 
@@ -303,7 +315,33 @@ void CubemapRenderInstance::UpdateMatricesDescriptorSet()
 	vkUpdateDescriptorSets(_cubemapManager._device, 1, &write, 0, nullptr);
 }
 
-void CubemapRenderInstance::ComputePMVC(const CubemapWorkRange& range)
+void CubemapRenderInstance::DebugPMVC(const CubemapWorkRange& range) {
+	const auto vertices = BuildDeformableVertexPositions(); // your current conversion to std::vector<glm::vec3>
+
+	const uint32_t end = std::min<uint32_t>(range.first + range.count, (uint32_t)vertices.size());
+	for (uint32_t cubemapIdx = range.first; cubemapIdx < end; ++cubemapIdx)
+	{
+		const uint32_t frameIndex = cubemapIdx - range.first;
+		const uint32_t targetIndex = frameIndex % _cubemapRenderUnit.targets.size();
+		CubemapRenderTarget& target = _cubemapRenderUnit.targets[targetIndex];
+
+		_computeStage->WaitForTargetReuse(targetIndex, _timeline, _computeStage->GetSlotCompletionValue(targetIndex));
+
+		const uint64_t renderDoneValue = ++_timelineValue;
+		RecordAndSubmitCubemapRender(cubemapIdx, vertices[cubemapIdx], target, renderDoneValue);
+
+		const uint64_t copyDoneValue = ++_timelineValue;
+		_computeStage->DispatchAfterRender(cubemapIdx, targetIndex, _timeline, renderDoneValue, copyDoneValue, target);
+
+		_slotDoneValue[targetIndex] = _computeStage->GetSlotCompletionValue(targetIndex);
+	}
+
+	// Final GPU -> CPU readback of weights
+	_computeStage->WaitAll(_timeline);  // If async timeline used
+	_computeStage->Readback(0,0,"F:/Cubemaps/DebugWeights.txt");
+}
+
+void CubemapRenderInstance::DebugCubemaps(const CubemapWorkRange& range)
 {
 	const auto vertices = BuildDeformableVertexPositions(); // your current conversion to std::vector<glm::vec3>
 

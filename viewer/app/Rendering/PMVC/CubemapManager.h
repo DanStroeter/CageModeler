@@ -51,6 +51,7 @@ public:
 	void Initialize();
 
 	void DebugRenderCubemaps(uint32_t cubemapSize, VkFormat format);
+	void DebugComputeCoordinates(uint32_t cubemapSize, VkFormat format);
 
 	void SetCage(const EigenMesh& mesh) { _cageMesh = mesh; }
 	void SetMesh(const EigenMesh& mesh) { _deformableMesh = mesh; }
@@ -100,6 +101,7 @@ private:
 	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
 
 	friend class CubemapRenderInstance;
+	friend class GpuSerialComputeStrategy;
 
 	VkImage        _solidAngleImage = VK_NULL_HANDLE;
 	VkDeviceMemory _solidAngleMemory = VK_NULL_HANDLE;

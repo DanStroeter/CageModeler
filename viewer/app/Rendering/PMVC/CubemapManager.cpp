@@ -603,7 +603,28 @@ void CubemapManager::DebugRenderCubemaps(
 	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
 
 	// 4. Execute
-	instance.ComputePMVC(range);
+	instance.DebugCubemaps(range);
+}
+
+void CubemapManager::DebugComputeCoordinates(
+	uint32_t cubemapSize,
+	VkFormat format)
+{
+	// 1. Create render instance in DEBUG mode
+	CubemapRenderInstance instance(
+		*this,
+		cubemapSize,
+		format,
+		ComputeType::GPUSERIAL
+	);
+
+	// 3. Build work range
+	CubemapWorkRange range{};
+	range.first = 0;
+	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
+
+	// 4. Execute
+	instance.DebugPMVC(range);
 }
 
 void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
