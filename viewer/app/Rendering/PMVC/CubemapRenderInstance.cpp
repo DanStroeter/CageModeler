@@ -13,6 +13,7 @@
 #include <Rendering/PMVC/CubemapManager.h>
 #include <Rendering/PMVC/DebugCubemapComputeStrategy.h>
 #include <Rendering/PMVC/GpuSerialComputeStrategy.h>
+#include <Rendering/PMVC/ScopedCmdBuffer.h>
 
 //#define STB_IMAGE_WRITE_IMPLEMENTATION
 //#include "../../external/stb_image_write.h"
@@ -46,7 +47,17 @@ void CubemapRenderInstance::Initalize() {
 		_computeStage = std::make_unique<CpuComputeStrategy>();
 		break;
 	case ComputeType::GPUATOMIC:
-		_computeStage = std::make_unique<GpuAtomicComputeStrategy>();
+		_computeStage = std::make_unique<GpuAtomicComputeStrategy>(
+			_cubemapManager._device,
+			_cubemapManager._device->GetQueueFamilies()._graphics.value(),
+			_cubemapSize,
+			_format,
+			_cubemapManager._descriptorPool,
+			_cubemapManager._resourceManager,
+			_cubemapManager._renderPipelineManager,
+			_cubemapManager._cageMesh,
+			_cubemapManager._deformableMesh
+		);
 		break;
 	case ComputeType::GPUSORT:   
 		_computeStage = std::make_unique<GpuSortComputeStrategy>();
@@ -315,7 +326,7 @@ void CubemapRenderInstance::UpdateMatricesDescriptorSet()
 	vkUpdateDescriptorSets(_cubemapManager._device, 1, &write, 0, nullptr);
 }
 
-void CubemapRenderInstance::DebugPMVC(const CubemapWorkRange& range) {
+/*void CubemapRenderInstance::DebugPMVC(const CubemapWorkRange& range) {
 	const auto vertices = BuildDeformableVertexPositions(); // your current conversion to std::vector<glm::vec3>
 
 	const uint32_t end = std::min<uint32_t>(range.first + range.count, (uint32_t)vertices.size());
@@ -339,6 +350,50 @@ void CubemapRenderInstance::DebugPMVC(const CubemapWorkRange& range) {
 	// Final GPU -> CPU readback of weights
 	_computeStage->WaitAll(_timeline);  // If async timeline used
 	_computeStage->Readback(0,0,"F:/Cubemaps/DebugWeights.txt");
+}*/
+void CubemapRenderInstance::DebugPMVC(const CubemapWorkRange& range)
+{
+	const auto vertices = BuildDeformableVertexPositions();
+
+	const uint32_t end =
+		std::min<uint32_t>(
+			range.first + range.count,
+			static_cast<uint32_t>(vertices.size())
+		);
+
+	for (uint32_t cubemapIdx = range.first; cubemapIdx < end; ++cubemapIdx)
+	{
+		const uint32_t frameIndex = cubemapIdx - range.first;
+		const uint32_t targetIndex =
+			frameIndex % _cubemapRenderUnit.targets.size();
+
+		CubemapRenderTarget& target =
+			_cubemapRenderUnit.targets[targetIndex];
+
+		// --- Render cubemap ---
+		RecordAndSubmitCubemapRender(
+			cubemapIdx,
+			vertices[cubemapIdx],
+			target,
+			0 /* unused */
+		);
+
+		// --- Compute (SERIAL + SAFE) ---
+		_computeStage->DispatchAfterRender(
+			cubemapIdx,
+			targetIndex,
+			VK_NULL_HANDLE,
+			0, 0,
+			target
+		);
+	}
+
+	// ---- Final readback ----
+	_computeStage->Readback(
+		0,
+		0,
+		"F:/Cubemaps/DebugWeights.txt"
+	);
 }
 
 void CubemapRenderInstance::DebugCubemaps(const CubemapWorkRange& range)
@@ -369,6 +424,117 @@ void CubemapRenderInstance::DebugCubemaps(const CubemapWorkRange& range)
 		// Mark slot as “owned” until compute/readback finishes
 		_slotDoneValue[targetIndex] = _computeStage->GetSlotCompletionValue(targetIndex);
 	}
+}
+
+/*void CubemapRenderInstance::ComputeCoordinates(const CubemapWorkRange& range)
+{
+	const auto vertices = BuildDeformableVertexPositions();
+
+	const uint32_t numTargets = static_cast<uint32_t>(_cubemapRenderUnit.targets.size());
+	const uint32_t end = std::min<uint32_t>(
+		range.first + range.count,
+		static_cast<uint32_t>(vertices.size())
+	);
+
+	for (uint32_t cubemapIdx = range.first; cubemapIdx < end; ++cubemapIdx)
+	{
+		LOG_DEBUG(cubemapIdx);
+
+		const uint32_t frameIndex = cubemapIdx - range.first;
+		const uint32_t targetIndex = frameIndex % numTargets;
+
+		CubemapRenderTarget& target = _cubemapRenderUnit.targets[targetIndex];
+
+		// Wait for compute to be done before reusing this slot
+		_computeStage->WaitForTargetReuse(
+			targetIndex,
+			_timeline,
+			_computeStage->GetSlotCompletionValue(targetIndex)
+		);
+
+		// Submit render for current cubemap
+		const uint64_t renderDoneValue = ++_timelineValue;
+		RecordAndSubmitCubemapRender(
+			cubemapIdx,
+			vertices[cubemapIdx],
+			target,
+			renderDoneValue
+		);
+
+		// Submit compute dispatch after render finishes
+		const uint64_t copyDoneValue = ++_timelineValue;
+		_computeStage->DispatchAfterRender(
+			cubemapIdx,
+			targetIndex,
+			_timeline,
+			renderDoneValue,
+			copyDoneValue,
+			target
+		);
+
+		// Track when this slot can be reused next
+		_slotDoneValue[targetIndex] = _computeStage->GetSlotCompletionValue(targetIndex);
+	}
+
+	// Wait for all GPU work to complete before reading back
+	_computeStage->WaitAll(_timeline);
+
+	// Read final accumulated buffer results (lambda/wsum) once
+	_computeStage->Readback(0, 0, "F:/Cubemaps/FinalWeights.txt");
+
+}*/
+
+void CubemapRenderInstance::ComputeCoordinates(const CubemapWorkRange& range)
+{
+	const auto vertices = BuildDeformableVertexPositions();
+
+	const uint32_t numTargets = static_cast<uint32_t>(_cubemapRenderUnit.targets.size());
+	const uint32_t end = std::min<uint32_t>(
+		range.first + range.count,
+		static_cast<uint32_t>(vertices.size())
+	);
+
+	for (uint32_t cubemapIdx = range.first; cubemapIdx < end; ++cubemapIdx)
+	{
+		LOG_DEBUG(cubemapIdx);
+
+		const uint32_t frameIndex = cubemapIdx - range.first;
+		const uint32_t targetIndex = frameIndex % numTargets;
+		CubemapRenderTarget& target = _cubemapRenderUnit.targets[targetIndex];
+
+		// --- Wait for previous compute using this slot to finish (tracked via timeline) ---
+		const uint64_t lastComputeValue = _slotDoneValue[targetIndex];
+		_computeStage->WaitForTargetReuse(targetIndex, _timeline, lastComputeValue);
+
+		// --- Submit cubemap render for this frame ---
+		const uint64_t renderDoneValue = ++_timelineValue;
+		RecordAndSubmitCubemapRender(
+			cubemapIdx,
+			vertices[cubemapIdx],
+			target,
+			renderDoneValue
+		);
+
+		// --- Submit compute dispatch after render (optionally sync via renderDoneValue) ---
+		const uint64_t copyDoneValue = ++_timelineValue;
+		_computeStage->DispatchAfterRender(
+			cubemapIdx,
+			targetIndex,
+			_timeline,
+			renderDoneValue,
+			copyDoneValue,
+			target
+		);
+
+		// --- Store the compute completion value for this slot (already done inside Dispatch) ---
+		// _slotDoneValue[targetIndex] = ... (already updated inside DispatchAfterRender)
+	}
+
+	// --- Wait for all GPU compute work to finish before reading back final results ---
+	_computeStage->WaitAll(_timeline);
+
+	// --- Single readback at the end (aggregates all cubemap results) ---
+	_computeStage->Readback(0, 0, "F:/Cubemaps/FinalWeights.txt");
 }
 
 void CubemapRenderInstance::RecordAndSubmitCubemapRender(
@@ -519,6 +685,247 @@ std::vector<glm::vec3> CubemapRenderInstance::BuildDeformableVertexPositions() c
 	return vertices;
 }
 
+void SphereWeightCalculator::SphereWeightInitialization(uint32_t size, RenderResourceRef<Device> device, std::shared_ptr<RenderResourceManager> resourceManager, VkCommandPool commandPool) {
+	const uint32_t faceSize = size;
+	const uint32_t faceCount = 6;
+
+	// ------------------------------------------------------------
+	// 1) CPU: precompute solid-angle weights (ONCE)
+	// ------------------------------------------------------------
+	std::vector<float> weights(faceCount * faceSize * faceSize);
+
+	for (uint32_t face = 0; face < faceCount; ++face) {
+		for (uint32_t y = 0; y < faceSize; ++y) {
+			for (uint32_t x = 0; x < faceSize; ++x) {
+				weights[
+					face * faceSize * faceSize +
+						y * faceSize + x
+				] = ComputeSphereWeight(x, y, faceSize, face);
+			}
+		}
+	}
+
+	// ------------------------------------------------------------
+	// 2) Create GPU image (R32_SFLOAT, 6 layers)
+	// ------------------------------------------------------------
+	VkImageCreateInfo img{};
+	img.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	img.imageType = VK_IMAGE_TYPE_2D;
+	img.format = VK_FORMAT_R32_SFLOAT;
+	img.extent = { faceSize, faceSize, 1 };
+	img.mipLevels = 1;
+	img.arrayLayers = 6;
+	img.samples = VK_SAMPLE_COUNT_1_BIT;
+	img.tiling = VK_IMAGE_TILING_OPTIMAL;
+	img.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+	img.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	img.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+	vkCreateImage(device, &img, nullptr, &_solidAngleImage);
+
+	VkMemoryRequirements memReq{};
+	vkGetImageMemoryRequirements(device, _solidAngleImage, &memReq);
+
+	VkPhysicalDeviceMemoryProperties memProperties;
+	vkGetPhysicalDeviceMemoryProperties(device->GetPhysicalDeviceHandle(), &memProperties);
+
+	uint32_t memtype = 0;
+	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+		if ((memReq.memoryTypeBits & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+			memtype = i;
+			break;
+		}
+	}
+	throw std::runtime_error("Failed to find suitable memory type!");
+
+	VkMemoryAllocateInfo alloc{};
+	alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc.allocationSize = memReq.size;
+	alloc.memoryTypeIndex = memtype;
+
+	vkAllocateMemory(device, &alloc, nullptr, &_solidAngleMemory);
+	vkBindImageMemory(device, _solidAngleImage, _solidAngleMemory, 0);
+
+	// ------------------------------------------------------------
+	// 3) Upload via staging buffer
+	// ------------------------------------------------------------
+	const VkDeviceSize uploadBytes = weights.size() * sizeof(float);
+
+	auto staging = resourceManager->CreateBufferAndCopy(
+		std::span<const float>(weights.data(), weights.size()),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+
+	ScopedCmdBuffer scoped(device, commandPool);
+	VkCommandBuffer cmd = scoped.Get();
+
+	VkImageSubresourceRange range{};
+	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	range.baseMipLevel = 0;
+	range.levelCount = 1;
+	range.baseArrayLayer = 0;
+	range.layerCount = 6;
+
+	VkImageMemoryBarrier barrier1{};
+	barrier1.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier1.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier1.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier1.srcAccessMask = 0;
+	barrier1.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier1.image = _solidAngleImage;
+	barrier1.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier1.subresourceRange.baseMipLevel = 0;
+	barrier1.subresourceRange.levelCount = 1;
+	barrier1.subresourceRange.baseArrayLayer = 0;
+	barrier1.subresourceRange.layerCount = 6;
+
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier1
+	);
+
+	VkBufferImageCopy copy{};
+	copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	copy.imageSubresource.mipLevel = 0;
+	copy.imageSubresource.baseArrayLayer = 0;
+	copy.imageSubresource.layerCount = 6;
+	copy.imageExtent = { faceSize, faceSize, 1 };
+
+	vkCmdCopyBufferToImage(
+		cmd,
+		staging._deviceBuffer,
+		_solidAngleImage,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+		1,
+		&copy
+	);
+
+	VkImageMemoryBarrier barrier2{};
+	barrier2.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier2.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier2.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	barrier2.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier2.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	barrier2.image = _solidAngleImage;
+	barrier2.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier2.subresourceRange.baseMipLevel = 0;
+	barrier2.subresourceRange.levelCount = 1;
+	barrier2.subresourceRange.baseArrayLayer = 0;
+	barrier2.subresourceRange.layerCount = 6;
+
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier2
+	);
+
+	//EndOneTimeCommands(cmd);
+
+	// ------------------------------------------------------------
+	// 4) Create 2D-array image view (for compute)
+	// ------------------------------------------------------------
+	VkImageViewCreateInfo view{};
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = _solidAngleImage;
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+	view.format = VK_FORMAT_R32_SFLOAT;
+	view.subresourceRange = range;
+
+	vkCreateImageView(device, &view, nullptr, &_solidAngleArrayView);
+
+	// ------------------------------------------------------------
+	// 5) Create sampler (NEAREST)
+	// ------------------------------------------------------------
+	VkSamplerCreateInfo samp{};
+	samp.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	samp.magFilter = VK_FILTER_NEAREST;
+	samp.minFilter = VK_FILTER_NEAREST;
+	samp.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	samp.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samp.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samp.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+	vkCreateSampler(device, &samp, nullptr, &_solidAngleSampler);
+	double sum = 0.0;
+	for (float w : weights) sum += w;
+	//LOG_DEBUG("Total solid angle = " + std::to_string(sum));
+}
+
+float SphereWeightCalculator::ComputeSphereWeight(
+	int px,
+	int py,
+	int faceSize,
+	int face)
+{
+	// Step 1: pixel coordinates in [-1,1]
+	float invSize = 1.0f / faceSize;
+
+	float x0 = 2.0f * (px + 0) * invSize - 1.0f;
+	float y0 = 2.0f * (py + 0) * invSize - 1.0f;
+	float x1 = 2.0f * (px + 1) * invSize - 1.0f;
+	float y1 = 2.0f * (py + 1) * invSize - 1.0f;
+
+	// Step 2: map cube face to sphere (face-aware)
+	auto MapToSphere = [&](float x, float y) -> std::array<float, 3>
+	{
+		float vx, vy, vz;
+
+		switch (face) {
+		case 0: vx = 1; vy = -y; vz = -x; break; // +X
+		case 1: vx = -1; vy = -y; vz = x; break; // -X
+		case 2: vx = x; vy = 1; vz = y; break; // +Y
+		case 3: vx = x; vy = -1; vz = -y; break; // -Y
+		case 4: vx = x; vy = -y; vz = 1; break; // +Z
+		case 5: vx = -x; vy = -y; vz = -1; break; // -Z
+		default: vx = vy = vz = 0; break;
+		}
+
+		float len = std::sqrt(vx * vx + vy * vy + vz * vz);
+		return { vx / len, vy / len, vz / len };
+	};
+
+	auto c00 = MapToSphere(x0, y0);
+	auto c01 = MapToSphere(x0, y1);
+	auto c10 = MapToSphere(x1, y0);
+	auto c11 = MapToSphere(x1, y1);
+
+	// Step 3: convert to spherical coordinates
+	auto Theta = [](const std::array<float, 3>& v) {
+		return std::acos(std::clamp(v[2], -1.0f, 1.0f));
+	};
+	auto Phi = [](const std::array<float, 3>& v) {
+		return std::atan2(v[1], v[0]);
+	};
+
+	float theta00 = Theta(c00), phi00 = Phi(c00);
+	float theta01 = Theta(c01), phi01 = Phi(c01);
+	float theta10 = Theta(c10), phi10 = Phi(c10);
+	float theta11 = Theta(c11), phi11 = Phi(c11);
+
+	// Step 4–5: integrate solid angle
+	float thetaMin = std::min({ theta00, theta01, theta10, theta11 });
+	float thetaMax = std::max({ theta00, theta01, theta10, theta11 });
+
+	float phiMin = std::min({ phi00, phi01, phi10, phi11 });
+	float phiMax = std::max({ phi00, phi01, phi10, phi11 });
+
+	float innerIntegral = std::cos(thetaMin) - std::cos(thetaMax);
+	float weight = (phiMax - phiMin) * innerIntegral;
+
+	return weight;
+}
 
 /*
 CubemapRenderer::CubemapRenderer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,

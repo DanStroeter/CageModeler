@@ -149,6 +149,7 @@ private:
 		bool _barycentricCoordinates = false;
 		bool _timelineSemaphore = false;
 		bool _synchronization2 = false;
+		bool _shaderAtomicFloat = false;
 	};
 
 	struct PhysicalDeviceQueryResult

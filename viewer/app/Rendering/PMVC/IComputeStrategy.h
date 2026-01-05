@@ -3,8 +3,17 @@
 #include <cstdint>    
 #include <string>   
 #include <vulkan/vulkan.h> 
+#include <glm/ext/vector_int2.hpp>
 
 struct CubemapRenderTarget;
+
+struct ComputePushConstants {
+    int uNumCubemaps;
+    int uNumCageVertices;
+    glm::ivec2 uFaceSize;
+    int uFacesPerCubemap;
+    int uNumTriangles;
+};
 
 class ICubemapComputeStrategy
 {

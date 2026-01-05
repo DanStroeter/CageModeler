@@ -2,15 +2,8 @@
 
 #include <Rendering/PMVC/IComputeStrategy.h>
 #include <Rendering/Core/Buffer.h>
-#include <Rendering/PMVC/CubemapRenderInstance.h>
 
-struct ComputePushConstants {
-	int uNumCubemaps;
-	int uNumCageVertices;
-	glm::ivec2 uFaceSize;
-	int uFacesPerCubemap;
-	int uNumTriangles;
-};
+#include <Rendering/PMVC/CubemapRenderInstance.h>
 
 class GpuSerialComputeStrategy final : public ICubemapComputeStrategy
 {
@@ -68,6 +61,7 @@ private:
     void WriteWeightsToFile(const std::string& filename);
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
     void InsertImageMemoryBarrierToGeneral(VkCommandBuffer cmd, VkImage image, VkImageSubresourceRange subresourceRange);
+    void CreateSampler();
 
     CubemapRenderInstance& _cubemapRenderInstance;
     Buffer _lambdaBuffer;
@@ -92,4 +86,5 @@ private:
 	uint32_t _transferQueueFamily = 0;
 	uint32_t _faceSize = 512;
 	VkFormat _format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    VkFence _computeFence = VK_NULL_HANDLE;
 };

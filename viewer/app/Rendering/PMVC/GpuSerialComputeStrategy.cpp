@@ -14,11 +14,15 @@ void GpuSerialComputeStrategy::Initialize(uint32_t) {
 	CreateComputePipeline();
 	CreateComputeCommandBuffer();
 	//UpdateComputeDescriptorSet();
-	//SphereWeightInitialization(512);	
+	//SphereWeightInitialization(512);	#
+	CreateSampler();
+	VkFenceCreateInfo fenceInfo{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // first use is safe
+	vkCreateFence(_device, &fenceInfo, nullptr, &_computeFence);
 }
 void GpuSerialComputeStrategy::WaitForTargetReuse(uint32_t, VkSemaphore, uint64_t) {}
 
-void GpuSerialComputeStrategy::DispatchAfterRender(uint32_t cubemapIdx,
+/*void GpuSerialComputeStrategy::DispatchAfterRender(uint32_t cubemapIdx,
 	uint32_t targetIndex,
 	VkSemaphore timeline,
 	uint64_t renderDoneValue,
@@ -72,7 +76,107 @@ void GpuSerialComputeStrategy::DispatchAfterRender(uint32_t cubemapIdx,
 	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
 	vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
 	vkQueueWaitIdle(queue); // Serial: wait immediately
+}*/
+
+void GpuSerialComputeStrategy::DispatchAfterRender(
+	uint32_t cubemapIdx,
+	uint32_t targetIndex,
+	VkSemaphore,
+	uint64_t,
+	uint64_t,
+	const CubemapRenderTarget& target)
+{
+	// ---- 1. Wait until previous compute finished ----
+	vkWaitForFences(_device, 1, &_computeFence, VK_TRUE, UINT64_MAX);
+	vkResetFences(_device, 1, &_computeFence);
+
+	// ---- 2. Update descriptors ----
+	_baryTexImageView = target.cubemapView;
+	UpdateComputeDescriptorSet();
+
+	// ---- 3. Reset + record command buffer ----
+	vkResetCommandBuffer(_computeCommandBuffer, 0);
+
+	VkCommandBufferBeginInfo begin{};
+	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	vkBeginCommandBuffer(_computeCommandBuffer, &begin);
+
+	// Transition cubemap to GENERAL
+	VkImageSubresourceRange range{
+		VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6
+	};
+	InsertImageMemoryBarrierToGeneral(
+		_computeCommandBuffer,
+		target.cubemapImage,
+		range
+	);
+
+	const auto& obj =
+		_cubemapRenderInstance
+		._cubemapManager
+		._renderPipelineManager
+		->GetPipelineObject(_computePipelineHandle);
+
+	vkCmdBindPipeline(
+		_computeCommandBuffer,
+		VK_PIPELINE_BIND_POINT_COMPUTE,
+		obj._handle
+	);
+
+	vkCmdBindDescriptorSets(
+		_computeCommandBuffer,
+		VK_PIPELINE_BIND_POINT_COMPUTE,
+		obj._pipelineLayout,
+		0, 1,
+		&_computeDescriptorSet,
+		0, nullptr
+	);
+
+	ComputePushConstants pc{};
+	pc.uNumCubemaps = 1;
+	pc.uNumCageVertices = static_cast<int>(
+		_cubemapRenderInstance
+		._cubemapManager
+		._cageMesh
+		._vertices.rows()
+		);
+	pc.uFaceSize = { 512, 512 };
+	pc.uFacesPerCubemap = 6;
+	pc.uNumTriangles =
+		_cubemapRenderInstance
+		._cubemapManager
+		._cageMesh
+		._faces.rows();
+
+	vkCmdPushConstants(
+		_computeCommandBuffer,
+		obj._pipelineLayout,
+		VK_SHADER_STAGE_COMPUTE_BIT,
+		0,
+		sizeof(pc),
+		&pc
+	);
+
+	const uint32_t groupsX = (512 + 7) / 8;
+	const uint32_t groupsY = (512 + 7) / 8;
+	const uint32_t groupsZ = 6;
+
+	vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, groupsZ);
+
+	vkEndCommandBuffer(_computeCommandBuffer);
+
+	// ---- 4. Submit with fence ----
+	VkSubmitInfo submit{};
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &_computeCommandBuffer;
+
+	VkQueue queue;
+	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
+	vkQueueSubmit(queue, 1, &submit, _computeFence);
 }
+
+
 
 uint64_t GpuSerialComputeStrategy::GetSlotCompletionValue(uint32_t) const { return 0; }
 
@@ -85,22 +189,22 @@ void GpuSerialComputeStrategy::Readback(uint32_t cubemapIdx,
 	const VkDeviceSize wsumBytes = numCubemaps * sizeof(float);
 
 	// Copy from GPU device to host-visible staging buffers
-	VkCommandBuffer cmd = _cubemapRenderInstance._cubemapManager.BeginOneTimeCommands();
+	//VkCommandBuffer cmd = _cubemapRenderInstance._cubemapManager.BeginOneTimeCommands();
 
 	VkBufferCopy lambdaCopy{ 0, 0, lambdaBytes };
 	VkBufferCopy wsumCopy{ 0, 0, wsumBytes };
 
-	vkCmdCopyBuffer(cmd,
-		_lambdaBuffer._deviceBuffer,
-		_lambdaStagingBuffer._deviceBuffer,
-		1, &lambdaCopy);
+	//vkCmdCopyBuffer(cmd,
+		//_lambdaBuffer._deviceBuffer,
+		//_lambdaStagingBuffer._deviceBuffer,
+		//1, &lambdaCopy);
 
-	vkCmdCopyBuffer(cmd,
-		_wsumBuffer._deviceBuffer,
-		_wsumStagingBuffer._deviceBuffer,
-		1, &wsumCopy);
+	//vkCmdCopyBuffer(cmd,
+		//_wsumBuffer._deviceBuffer,
+		//_wsumStagingBuffer._deviceBuffer,
+		//1, &wsumCopy);
 
-	_cubemapRenderInstance._cubemapManager.EndOneTimeCommands(cmd);
+	//_cubemapRenderInstance._cubemapManager.EndOneTimeCommands(cmd);
 
 	// Map and read from staging buffer
 	const float* lambdaCPU = reinterpret_cast<float*>(_lambdaStagingBuffer._mappedData);
@@ -280,8 +384,8 @@ void GpuSerialComputeStrategy::UpdateComputeDescriptorSet() {
 
 	VkDescriptorImageInfo weightInfo{};
 	weightInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	weightInfo.imageView = _cubemapRenderInstance._cubemapManager._solidAngleArrayView;
-	weightInfo.sampler = _cubemapRenderInstance._cubemapManager._solidAngleSampler;
+	//weightInfo.imageView = _cubemapRenderInstance._cubemapManager._solidAngleArrayView;
+	//weightInfo.sampler = _cubemapRenderInstance._cubemapManager._solidAngleSampler;
 
 	std::array<VkWriteDescriptorSet, 5> writes{};
 
@@ -295,8 +399,7 @@ void GpuSerialComputeStrategy::UpdateComputeDescriptorSet() {
 				  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &wsumInfo, nullptr };
 	writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 4, 0,	1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &weightInfo, nullptr, nullptr };
 
-		vkUpdateDescriptorSets(_device, writes.size(), writes.data(), 0, nullptr);
-
+	vkUpdateDescriptorSets(_device, writes.size(), writes.data(), 0, nullptr);
 }
 
 void GpuSerialComputeStrategy::CreateComputePipeline() {
@@ -418,24 +521,24 @@ void GpuSerialComputeStrategy::ComputeCoordinates(uint32_t cubeIndex)
 
 void GpuSerialComputeStrategy::ReadbackCompute(uint32_t cubeIndex)
 {
-	VkCommandBuffer cmd = _cubemapRenderInstance._cubemapManager.BeginOneTimeCommands();
+	//VkCommandBuffer cmd = _cubemapRenderInstance._cubemapManager.BeginOneTimeCommands();
 
 	const VkDeviceSize lambdaBytes = static_cast<VkDeviceSize>(_cubemapRenderInstance._cubemapManager._cageMesh._vertices.rows()) * sizeof(float);
 	const VkDeviceSize wsumBytes = sizeof(float);
 
 	VkBufferCopy lambdaCopy{ 0, 0, lambdaBytes };
-	vkCmdCopyBuffer(cmd,
-		_lambdaBuffer._deviceBuffer,
-		_lambdaStagingBuffer._deviceBuffer,
-		1, &lambdaCopy);
+	//vkCmdCopyBuffer(cmd,
+		//_lambdaBuffer._deviceBuffer,
+		//_lambdaStagingBuffer._deviceBuffer,
+		//1, &lambdaCopy);
 
 	VkBufferCopy wsumCopy{ 0, 0, wsumBytes };
-	vkCmdCopyBuffer(cmd,
-		_wsumBuffer._deviceBuffer,
-		_wsumStagingBuffer._deviceBuffer,
-		1, &wsumCopy);
+	//vkCmdCopyBuffer(cmd,
+		//_wsumBuffer._deviceBuffer,
+		//_wsumStagingBuffer._deviceBuffer,
+		//1, &wsumCopy);
 
-	_cubemapRenderInstance._cubemapManager.EndOneTimeCommands(cmd);
+	//_cubemapRenderInstance._cubemapManager.EndOneTimeCommands(cmd);
 
 	float* lambdaCPU = reinterpret_cast<float*>(_lambdaStagingBuffer._mappedData);
 	float* wsumCPU = reinterpret_cast<float*>(_wsumStagingBuffer._mappedData);
@@ -577,4 +680,36 @@ void GpuSerialComputeStrategy::InsertImageMemoryBarrierToGeneral(
 		0, nullptr,
 		1, &barrier
 	);
+}
+
+void GpuSerialComputeStrategy::CreateSampler() {
+	VkSamplerCreateInfo s{};
+	s.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	s.pNext = nullptr;
+	s.flags = 0;
+
+	s.magFilter = VK_FILTER_NEAREST;
+	s.minFilter = VK_FILTER_NEAREST;
+	s.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+
+	s.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	s.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	s.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+	s.mipLodBias = 0.0f;
+	s.minLod = 0.0f;
+	s.maxLod = 0.0f;
+
+	s.anisotropyEnable = VK_FALSE;
+	s.maxAnisotropy = 1.0f;
+
+	s.compareEnable = VK_FALSE;
+	s.compareOp = VK_COMPARE_OP_ALWAYS;
+
+	s.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	s.unnormalizedCoordinates = VK_FALSE;
+
+	if (vkCreateSampler(_device, &s, nullptr, &_sampler) != VK_SUCCESS) {
+		throw std::runtime_error("Failed to create sampler for compute image!");
+	}
 }

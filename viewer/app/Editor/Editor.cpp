@@ -138,10 +138,10 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCreated(); });
 
 	_projectModel->_deformationType = DeformationType::MVC; 
-	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
-	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
-	_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
-	_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
+	_projectModel->_meshFilepath = "assets/meshes/tri.obj";
+	_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
+	//_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
+	//_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
 	_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated.msh";
 	_projectModel->_deformedCageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
 	_newProjectPanel->SetModel(_projectModel);
@@ -662,11 +662,10 @@ void Editor::OnNewProjectCreated()
 
 			_deformedCageHandle = _scene->AddCage(_projectData->_deformedCage._vertices, _projectData->_deformedCage._faces);
 
-			//TODO init new class
 			_cubemapRenderer->SetCage(_projectData->_cage);
 			_cubemapRenderer->SetMesh(_projectData->_mesh);
 			_cubemapRenderer->Initialize();
-			_cubemapRenderer->DebugComputeCoordinates(512, VK_FORMAT_R32G32B32A32_SFLOAT);
+			_cubemapRenderer->ComputeCoordinates(512, VK_FORMAT_R32G32B32A32_SFLOAT);
 
 			const auto cageMesh = _scene->GetMesh(_deformedCageHandle);
 			cageMesh->SetModelMatrix(newModelMatrix);

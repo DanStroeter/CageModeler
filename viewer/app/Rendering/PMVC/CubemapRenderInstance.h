@@ -67,6 +67,7 @@ public:
 
 	void DebugCubemaps(const CubemapWorkRange& range);
 	void DebugPMVC(const CubemapWorkRange& range);
+	void ComputeCoordinates(const CubemapWorkRange& range);
 
 private:
 	CubemapManager& _cubemapManager;
@@ -101,6 +102,17 @@ private:
 	VkSemaphore _timeline;
 
 	friend class GpuSerialComputeStrategy;
+};
+
+class SphereWeightCalculator {
+public:
+	VkImage        _solidAngleImage = VK_NULL_HANDLE;
+	VkDeviceMemory _solidAngleMemory = VK_NULL_HANDLE;
+	VkImageView    _solidAngleArrayView = VK_NULL_HANDLE;
+	VkSampler      _solidAngleSampler = VK_NULL_HANDLE;
+
+	void SphereWeightInitialization(uint32_t size, RenderResourceRef<Device> device, std::shared_ptr<RenderResourceManager> resourceManager, VkCommandPool commandPool);
+	float ComputeSphereWeight(int px, int py, int faceSize, int face);
 };
 
 /*
