@@ -665,7 +665,7 @@ void Editor::OnNewProjectCreated()
 			_cubemapRenderer->SetCage(_projectData->_cage);
 			_cubemapRenderer->SetMesh(_projectData->_mesh);
 			_cubemapRenderer->Initialize();
-			_cubemapRenderer->DebugRenderCubemaps(512, VK_FORMAT_R32G32B32A32_SFLOAT);
+			_cubemapRenderer->ComputeCoordinates(512, VK_FORMAT_R32G32B32A32_SFLOAT);
 
 			const auto cageMesh = _scene->GetMesh(_deformedCageHandle);
 			cageMesh->SetModelMatrix(newModelMatrix);

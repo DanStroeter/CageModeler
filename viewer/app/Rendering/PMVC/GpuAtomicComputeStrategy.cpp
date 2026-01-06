@@ -71,7 +71,7 @@ void GpuAtomicComputeStrategy::DispatchAfterRender(uint32_t cubemapIdx,
 
 	// Update per-target image view
 	_baryTexImageView = target.cubemapView;
-	UpdateComputeDescriptorSet();
+	UpdateComputeDescriptorSet(targetIndex);
 
 	VkCommandBuffer cmd = _computeCommandBuffers[targetIndex];
 
@@ -86,7 +86,7 @@ void GpuAtomicComputeStrategy::DispatchAfterRender(uint32_t cubemapIdx,
 	const auto& pipeObj = _renderPipelineManager.get()->GetPipelineObject(_computePipeline);
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeObj._handle);
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-		pipeObj._pipelineLayout, 0, 1, &_computeDescriptorSet, 0, nullptr);
+		pipeObj._pipelineLayout, 0, 1, &_computeDescriptorSets[targetIndex], 0, nullptr);
 
 	ComputePushConstants pc{};
 	pc.uNumCubemaps = 1;
@@ -203,15 +203,18 @@ void GpuAtomicComputeStrategy::CreatePipelineAndLayouts() {
 }
 
 void GpuAtomicComputeStrategy::AllocateResources(){
-	VkDescriptorSetLayout layout = _computeLayout->GetReference();
+	_computeDescriptorSets.resize(_slotDoneValue.size());
 
-	VkDescriptorSetAllocateInfo alloc{};
-	alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	alloc.descriptorPool = _descriptorPool;
-	alloc.descriptorSetCount = 1;
-	alloc.pSetLayouts = &layout;
+	for (uint32_t i = 0; i < _computeDescriptorSets.size(); ++i) {
+		VkDescriptorSetAllocateInfo alloc{};
+		alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		alloc.descriptorPool = _descriptorPool;
+		alloc.descriptorSetCount = 1;
+		VkDescriptorSetLayout layout = _computeLayout->GetReference();
+		alloc.pSetLayouts = &layout;
 
-	vkAllocateDescriptorSets(_device, &alloc, &_computeDescriptorSet);
+		VK_CHECK(vkAllocateDescriptorSets(_device, &alloc, &_computeDescriptorSets[i]));
+	}
 
 	// -------------------------------
 	// Lambda / wsum buffers (ONE cubemap per dispatch)
@@ -311,7 +314,7 @@ void GpuAtomicComputeStrategy::AllocateResources(){
 	vkAllocateCommandBuffers(_device, &alloc2, &_computeCommandBuffer);
 }
 
-void GpuAtomicComputeStrategy::UpdateComputeDescriptorSet() {
+void GpuAtomicComputeStrategy::UpdateComputeDescriptorSet(uint32_t targetIndex) {
 
 	VkDescriptorImageInfo imageInfo{};
 	imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -329,15 +332,15 @@ void GpuAtomicComputeStrategy::UpdateComputeDescriptorSet() {
 	weightInfo.sampler = _sphereWeightCalculator._solidAngleSampler;
 
 	std::array<VkWriteDescriptorSet, 5> writes{};
-	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 0, 0, 1,
+	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSets[targetIndex], 0, 0, 1,
 				  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &imageInfo, nullptr, nullptr };
-	writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 1, 0, 1,
+	writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSets[targetIndex], 1, 0, 1,
 				  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vertexListInfo, nullptr };
-	writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 2, 0, 1,
+	writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSets[targetIndex], 2, 0, 1,
 				  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &lambdaInfo, nullptr };
-	writes[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 3, 0, 1,
+	writes[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSets[targetIndex], 3, 0, 1,
 				  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &wsumInfo, nullptr };
-	writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 4, 0, 1,
+	writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSets[targetIndex], 4, 0, 1,
 				  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &weightInfo, nullptr, nullptr };
 
 	vkUpdateDescriptorSets(_device, writes.size(), writes.data(), 0, nullptr);
@@ -465,7 +468,6 @@ void GpuAtomicComputeStrategy::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSi
 	copyRegion.dstOffset = 0;
 	copyRegion.size = size;
 	vkCmdCopyBuffer(cmd, src, dst, 1, &copyRegion);
-
 	vkEndCommandBuffer(cmd);
 
 	// Submit and wait

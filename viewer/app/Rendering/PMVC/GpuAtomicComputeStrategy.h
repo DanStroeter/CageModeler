@@ -75,7 +75,7 @@ private:
     // Compute pipeline and descriptors
     PipelineHandle _computePipeline;
     RenderResourceRef<DescriptorSetLayout> _computeLayout;
-    VkDescriptorSet _computeDescriptorSet = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> _computeDescriptorSets = {};
 
     // Command resources
     VkCommandPool _computeCommandPool = VK_NULL_HANDLE;
@@ -111,7 +111,7 @@ private:
 
     void storeLambdaForVertex(uint32_t cubeIndex, const float* lambdaCPU);
     void storeWsumForVertex(uint32_t cubeIndex, const float* wsumCPU);
-    void UpdateComputeDescriptorSet();
+    void UpdateComputeDescriptorSet(uint32_t targetIndex);
 
 	SphereWeightCalculator _sphereWeightCalculator;
 

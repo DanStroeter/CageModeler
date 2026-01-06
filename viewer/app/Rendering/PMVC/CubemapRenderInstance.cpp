@@ -162,12 +162,23 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	// ---------------------------------------------------------------------
 	// Create cubemap view (for sampling)
 	// ---------------------------------------------------------------------
-	VkImageViewCreateInfo cubeViewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+	/*VkImageViewCreateInfo cubeViewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
 	cubeViewInfo.image = target.cubemapImage;
 	cubeViewInfo.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 	cubeViewInfo.format = _format;
 	cubeViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	cubeViewInfo.subresourceRange.levelCount = 1;
+	cubeViewInfo.subresourceRange.layerCount = 6;
+
+	VK_CHECK(vkCreateImageView(_cubemapManager._device, &cubeViewInfo, nullptr, &target.cubemapView));*/
+	VkImageViewCreateInfo cubeViewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+	cubeViewInfo.image = target.cubemapImage;
+	cubeViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+	cubeViewInfo.format = _format;
+	cubeViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	cubeViewInfo.subresourceRange.baseMipLevel = 0;
+	cubeViewInfo.subresourceRange.levelCount = 1;
+	cubeViewInfo.subresourceRange.baseArrayLayer = 0;
 	cubeViewInfo.subresourceRange.layerCount = 6;
 
 	VK_CHECK(vkCreateImageView(_cubemapManager._device, &cubeViewInfo, nullptr, &target.cubemapView));

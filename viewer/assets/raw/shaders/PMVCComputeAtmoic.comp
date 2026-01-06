@@ -1,7 +1,7 @@
 #version 450
 #extension GL_EXT_shader_atomic_float : require
 // barycentric + tri-index texture
-layout(binding = 0) uniform sampler2DArray uBaryTex;
+layout(binding = 0, rgba32f) uniform image2DArray uBaryTex;
 
 // Triangle vertex index list
 layout(std430, binding = 1) buffer VertexList {
@@ -44,7 +44,7 @@ void main()
     uint face = layer % params.uFacesPerCubemap;
     if (cubemapIdx >= uint(params.uNumCubemaps)) return;
 
-    vec4 tex = texelFetch(uBaryTex, ivec3(x, y, layer), 0);
+    vec4 tex = imageLoad(uBaryTex, ivec3(x, y, layer));
 
     uint tri = uint(tex.a * float(params.uNumTriangles) + 0.5);
     if (tri >= uint(params.uNumTriangles)) return;
