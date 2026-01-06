@@ -4,7 +4,7 @@
 
 uint32_t GpuAtomicComputeStrategy::RequiredRenderTargetCount() const
 {
-    return 1;
+    return 2;
 }
 
 void GpuAtomicComputeStrategy::Initialize(uint32_t targetCount)
@@ -50,13 +50,19 @@ void GpuAtomicComputeStrategy::WaitForTargetReuse(
 {
 	if (slotDoneValue == 0) return;
 
-	VkSemaphoreWaitInfo waitInfo{};
-	waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-	waitInfo.semaphoreCount = 1;
-	waitInfo.pSemaphores = &timeline;
-	waitInfo.pValues = &slotDoneValue;
+	uint64_t currentValue = 0;
+	vkGetSemaphoreCounterValue(_device, timeline, &currentValue);
 
-	vkWaitSemaphores(_device, &waitInfo, UINT64_MAX);
+	if (slotDoneValue > currentValue)
+	{
+		VkSemaphoreWaitInfo waitInfo{};
+		waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+		waitInfo.semaphoreCount = 1;
+		waitInfo.pSemaphores = &timeline;
+		waitInfo.pValues = &slotDoneValue;
+
+		vkWaitSemaphores(_device, &waitInfo, UINT64_MAX);
+	}
 }
 
 void GpuAtomicComputeStrategy::DispatchAfterRender(uint32_t cubemapIdx,
@@ -67,10 +73,17 @@ void GpuAtomicComputeStrategy::DispatchAfterRender(uint32_t cubemapIdx,
 	const CubemapRenderTarget& target)
 {
 	// Signal value for this slot
-	uint64_t signalValue = ++_timelineValue;
+	uint64_t currentValue = 0;
+	vkGetSemaphoreCounterValue(_device, timeline, &currentValue);
+
+	if (_timelineValue <= currentValue)
+		_timelineValue = currentValue + 1;
+
+	uint64_t signalValue = _timelineValue++;
 
 	// Update per-target image view
 	_baryTexImageView = target.cubemapView;
+	WaitForTargetReuse(targetIndex, timeline, renderDoneValue);
 	UpdateComputeDescriptorSet(targetIndex);
 
 	VkCommandBuffer cmd = _computeCommandBuffers[targetIndex];
@@ -122,6 +135,20 @@ void GpuAtomicComputeStrategy::DispatchAfterRender(uint32_t cubemapIdx,
 	vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
 
 	_slotDoneValue[targetIndex] = signalValue;
+
+	//DEBUG
+	uint64_t debug = 0;
+	vkGetSemaphoreCounterValue(_device, timeline, &debug);
+
+	for (uint32_t i = 0; i < _slotDoneValue.size(); ++i)
+	{
+		if (_slotDoneValue[i] > 0 && _slotDoneValue[i] <= debug)
+		{
+			std::string d = "[Debug] Slot " + std::to_string(i) +
+				" at value " + std::to_string(_slotDoneValue[i]);
+			LOG_DEBUG(d);
+		}
+	}
 }
 
 uint64_t GpuAtomicComputeStrategy::GetSlotCompletionValue(uint32_t targetIndex) const
@@ -173,7 +200,7 @@ void GpuAtomicComputeStrategy::CreatePipelineAndLayouts() {
 
 	std::vector<VkDescriptorSetLayoutBinding> bindings{
 		// Image
-		{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
+		{0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT},
 		// Vertex index list
 		{1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
 		// lambda output
@@ -316,10 +343,11 @@ void GpuAtomicComputeStrategy::AllocateResources(){
 
 void GpuAtomicComputeStrategy::UpdateComputeDescriptorSet(uint32_t targetIndex) {
 
+
 	VkDescriptorImageInfo imageInfo{};
 	imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 	imageInfo.imageView = _baryTexImageView;
-	imageInfo.sampler = _sampler;
+	imageInfo.sampler = VK_NULL_HANDLE;
 
 	VkDescriptorBufferInfo vertexListInfo{ _vertexListBuffer._deviceBuffer, 0, VK_WHOLE_SIZE };
 	VkDescriptorBufferInfo lambdaInfo{ _lambdaBuffer._deviceBuffer, 0, VK_WHOLE_SIZE };
@@ -333,7 +361,7 @@ void GpuAtomicComputeStrategy::UpdateComputeDescriptorSet(uint32_t targetIndex) 
 
 	std::array<VkWriteDescriptorSet, 5> writes{};
 	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSets[targetIndex], 0, 0, 1,
-				  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &imageInfo, nullptr, nullptr };
+				  VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &imageInfo, nullptr, nullptr };
 	writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSets[targetIndex], 1, 0, 1,
 				  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vertexListInfo, nullptr };
 	writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSets[targetIndex], 2, 0, 1,

@@ -127,6 +127,7 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	imageInfo.usage =
 		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
 		VK_IMAGE_USAGE_SAMPLED_BIT |
+		VK_IMAGE_USAGE_STORAGE_BIT |
 		VK_IMAGE_USAGE_TRANSFER_SRC_BIT; //TODO: only added for debugging prints for image remove after done(needed for CPU compute?)
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 

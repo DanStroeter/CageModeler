@@ -138,10 +138,10 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCreated(); });
 
 	_projectModel->_deformationType = DeformationType::MVC; 
-	_projectModel->_meshFilepath = "assets/meshes/tri.obj";
-	_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
-	//_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
-	//_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
+	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
+	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
+	_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
+	_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
 	_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated.msh";
 	_projectModel->_deformedCageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
 	_newProjectPanel->SetModel(_projectModel);
