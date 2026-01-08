@@ -42,11 +42,10 @@ public:
         VkSemaphore timeline,
         uint64_t slotDoneValue) override;
 
-    void DispatchAfterRender(uint32_t cubemapIdx,
-        uint32_t targetIndex,
+    void DispatchAfterRender(
+        uint32_t deformableIndex,
+        uint32_t slot,
         VkSemaphore timeline,
-        uint64_t renderDoneValue,
-        uint64_t copyDoneValue,
         const CubemapRenderTarget& target) override;
 
     uint64_t GetSlotCompletionValue(uint32_t targetIndex) const override;
@@ -57,8 +56,20 @@ public:
 
     void WaitAll(VkSemaphore timeline) override;
 
+    void ConsumeSlot(
+        uint32_t deformableIndex,
+        uint32_t slot,
+        VkSemaphore timeline) override;
+
+    void SubmitReadbackCopy(
+        uint32_t slot,
+        VkSemaphore timeline) override;
+
     std::vector<VkCommandBuffer> _computeCommandBuffers;
 
+    uint64_t NextTimelineValue() {
+        return ++_timelineValue;
+    }
 private:
     void CreatePipelineAndLayouts();
     void AllocateResources();
@@ -87,13 +98,30 @@ private:
     std::vector<VkImageView> _baryTexImageViews;
 
     // Buffers
-    Buffer _lambdaBuffer;
-    Buffer _wsumBuffer;
+    //Buffer _lambdaBuffer;
+    //Buffer _wsumBuffer;
     Buffer _vertexListBuffer;
 
     // Staging buffers (CPU-visible)
-    MemoryMappedBuffer _lambdaStagingBuffer;
-    MemoryMappedBuffer _wsumStagingBuffer;
+    //MemoryMappedBuffer _lambdaStagingBuffer;
+    //MemoryMappedBuffer _wsumStagingBuffer;
+
+    struct SlotBuffers
+    {
+        Buffer lambda;
+        Buffer wsum;
+        MemoryMappedBuffer lambdaStaging;
+        MemoryMappedBuffer wsumStaging;
+    };
+
+    std::vector<SlotBuffers> _slots;
+
+    struct SlotSync {
+        uint64_t renderDone = 0;
+        uint64_t computeDone = 0;
+        uint64_t copyDone = 0;
+    };
+    std::vector<SlotSync> _slotSync;
 
     // CPU-side result storage
     std::vector<std::vector<float>> _lambdaResults;
@@ -109,8 +137,8 @@ private:
     uint64_t _timelineValue = 0;
     std::vector<uint64_t> _slotDoneValue;
 
-    void storeLambdaForVertex(uint32_t cubeIndex, const float* lambdaCPU);
-    void storeWsumForVertex(uint32_t cubeIndex, const float* wsumCPU);
+    void storeLambdaForVertex(const float* lambdaCPU);
+    void storeWsumForVertex(const float* wsumCPU);
     void UpdateComputeDescriptorSet(uint32_t targetIndex);
 
 	SphereWeightCalculator _sphereWeightCalculator;
@@ -121,5 +149,5 @@ private:
         VkImageSubresourceRange subresourceRange);
     void CreateSampler();
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
-
+    void WriteWeightsToFile(const std::string& filename); 
 };

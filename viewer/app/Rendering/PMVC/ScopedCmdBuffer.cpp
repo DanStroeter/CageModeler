@@ -1,6 +1,6 @@
 #include<Rendering/PMVC/ScopedCmdBuffer.h>
 
-ScopedCmdBuffer::ScopedCmdBuffer(RenderResourceRef<Device> device, VkCommandPool pool)
+/*ScopedCmdBuffer::ScopedCmdBuffer(RenderResourceRef<Device> device, VkCommandPool pool)
     : _device(device), _pool(pool), _cmd(VK_NULL_HANDLE)
 {
     VkCommandBufferAllocateInfo allocInfo{};
@@ -30,11 +30,11 @@ ScopedCmdBuffer::~ScopedCmdBuffer()
 
         VkQueue graphicsQueue;
         // NOTE: this assumes queue index 0 and graphics family is known — adjust if needed
-        vkGetDeviceQueue(_device, 0 /* graphics family index */, 0, &graphicsQueue);
+        vkGetDeviceQueue(_device, 0 /* graphics family index , 0, &graphicsQueue);
         vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
         vkQueueWaitIdle(graphicsQueue);
 
         vkFreeCommandBuffers(_device, _pool, 1, &_cmd);
     }
-}
+}*/
 

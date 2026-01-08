@@ -33,12 +33,17 @@ public:
         VkSemaphore timeline,
         uint64_t slotDoneValue) override;
 
-    void DispatchAfterRender(uint32_t cubemapIdx,
-        uint32_t targetIndex,
+    void DispatchAfterRender(
+        uint32_t deformableIndex,
+        uint32_t slot,
         VkSemaphore timeline,
-        uint64_t renderDoneValue,
-        uint64_t copyDoneValue,
-        const CubemapRenderTarget& target) override;
+		const CubemapRenderTarget& target) override;
+
+    void ConsumeSlot(
+        uint32_t deformableIndex,
+        uint32_t slot,
+        VkSemaphore timeline) override {
+    }
 
     uint64_t GetSlotCompletionValue(uint32_t targetIndex) const override;
     void Readback(uint32_t cubemapIdx,

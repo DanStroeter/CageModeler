@@ -28,10 +28,10 @@ public:
         VkSemaphore timeline,
         uint64_t slotDoneValue) = 0;
 
-    virtual void DispatchAfterRender(uint32_t cubemapIdx,
-        uint32_t targetIndex,
+    virtual void DispatchAfterRender(
+        uint32_t deformableIndex,
+        uint32_t slot,
         VkSemaphore timeline,
-        uint64_t renderDoneValue, uint64_t copyDoneValue,
         const CubemapRenderTarget& target) = 0;
 
     virtual uint64_t GetSlotCompletionValue(uint32_t targetIndex) const = 0;
@@ -39,4 +39,14 @@ public:
     virtual void Readback(uint32_t cubemapIdx, uint32_t targetIndex, const std::string& filename) = 0;
 
     virtual void WaitAll(VkSemaphore timeline) = 0;
+
+    virtual void ConsumeSlot(
+        uint32_t deformableIndex,
+        uint32_t slot,
+        VkSemaphore timeline) = 0;
+
+    virtual void SubmitReadbackCopy(
+        uint32_t slot,
+        VkSemaphore timeline) {
+    };
 };

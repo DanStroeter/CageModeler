@@ -18,12 +18,11 @@ void CpuComputeStrategy::WaitForTargetReuse(uint32_t,
     // CPU path: nothing to wait on
 }
 
-void CpuComputeStrategy::DispatchAfterRender(uint32_t,
-    uint32_t,
-    VkSemaphore,
-    uint64_t,
-    uint64_t,
-    const CubemapRenderTarget&)
+void CpuComputeStrategy::DispatchAfterRender(
+    uint32_t deformableIndex,
+    uint32_t slot,
+    VkSemaphore timeline,
+    const CubemapRenderTarget& target)
 {
     // CPU path: no GPU compute dispatch
     // Rendering completion implicitly means data is ready

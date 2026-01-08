@@ -25,7 +25,7 @@ CubemapRenderInstance::~CubemapRenderInstance() {
 CubemapRenderInstance::CubemapRenderInstance(CubemapManager& cubemapManager)
 	: _cubemapManager(cubemapManager)
 {
-	_cubemapSize = 512;
+	_cubemapSize = 32;
 	_format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	_computeType = ComputeType::CPU;
 	Initalize();
@@ -363,7 +363,7 @@ void CubemapRenderInstance::UpdateMatricesDescriptorSet()
 	_computeStage->WaitAll(_timeline);  // If async timeline used
 	_computeStage->Readback(0,0,"F:/Cubemaps/DebugWeights.txt");
 }*/
-void CubemapRenderInstance::DebugPMVC(const CubemapWorkRange& range)
+/*void CubemapRenderInstance::DebugPMVC(const CubemapWorkRange& range)
 {
 	const auto vertices = BuildDeformableVertexPositions();
 
@@ -387,7 +387,7 @@ void CubemapRenderInstance::DebugPMVC(const CubemapWorkRange& range)
 			cubemapIdx,
 			vertices[cubemapIdx],
 			target,
-			0 /* unused */
+			0  unused 
 		);
 
 		// --- Compute (SERIAL + SAFE) ---
@@ -408,7 +408,7 @@ void CubemapRenderInstance::DebugPMVC(const CubemapWorkRange& range)
 	);
 }
 
-void CubemapRenderInstance::DebugCubemaps(const CubemapWorkRange& range)
+/*void CubemapRenderInstance::DebugCubemaps(const CubemapWorkRange& range)
 {
 	const auto vertices = BuildDeformableVertexPositions(); // your current conversion to std::vector<glm::vec3>
 
@@ -436,7 +436,7 @@ void CubemapRenderInstance::DebugCubemaps(const CubemapWorkRange& range)
 		// Mark slot as “owned” until compute/readback finishes
 		_slotDoneValue[targetIndex] = _computeStage->GetSlotCompletionValue(targetIndex);
 	}
-}
+}*/
 
 /*void CubemapRenderInstance::ComputeCoordinates(const CubemapWorkRange& range)
 {
@@ -500,53 +500,77 @@ void CubemapRenderInstance::ComputeCoordinates(const CubemapWorkRange& range)
 {
 	const auto vertices = BuildDeformableVertexPositions();
 
-	const uint32_t numTargets = static_cast<uint32_t>(_cubemapRenderUnit.targets.size());
+	const uint32_t numTargets =
+		static_cast<uint32_t>(_cubemapRenderUnit.targets.size());
+
 	const uint32_t end = std::min<uint32_t>(
 		range.first + range.count,
 		static_cast<uint32_t>(vertices.size())
 	);
 
+	// ------------------------------------------------------------
+	// Submit work + consume before slot reuse
+	// ------------------------------------------------------------
 	for (uint32_t cubemapIdx = range.first; cubemapIdx < end; ++cubemapIdx)
 	{
-		LOG_DEBUG(cubemapIdx);
-
 		const uint32_t frameIndex = cubemapIdx - range.first;
-		const uint32_t targetIndex = frameIndex % numTargets;
-		CubemapRenderTarget& target = _cubemapRenderUnit.targets[targetIndex];
+		const uint32_t slot = frameIndex % numTargets;
+		CubemapRenderTarget& target =
+			_cubemapRenderUnit.targets[slot];
 
-		// --- Wait for previous compute using this slot to finish (tracked via timeline) ---
-		const uint64_t lastComputeValue = _slotDoneValue[targetIndex];
-		_computeStage->WaitForTargetReuse(targetIndex, _timeline, lastComputeValue);
+		// If this slot was previously used, consume its old result first
+		if (frameIndex >= numTargets)
+		{
+			const uint32_t prevCubemapIdx =
+				range.first + frameIndex - numTargets;
 
-		// --- Submit cubemap render for this frame ---
-		const uint64_t renderDoneValue = ++_timelineValue;
+			_computeStage->ConsumeSlot(
+				prevCubemapIdx,
+				slot,
+				_timeline
+			);
+		}
+
+		// ---------------- Render ----------------
+		const uint64_t renderDone = ++_timelineValue;
+
 		RecordAndSubmitCubemapRender(
 			cubemapIdx,
 			vertices[cubemapIdx],
 			target,
-			renderDoneValue
+			renderDone
 		);
-
-		// --- Submit compute dispatch after render (optionally sync via renderDoneValue) ---
-		const uint64_t copyDoneValue = ++_timelineValue;
+		// ---------------- Compute ----------------
 		_computeStage->DispatchAfterRender(
-			cubemapIdx,
-			targetIndex,
+			cubemapIdx,      // deformable vertex index
+			slot,
 			_timeline,
-			renderDoneValue,
-			copyDoneValue,
 			target
 		);
 
-		// --- Store the compute completion value for this slot (already done inside Dispatch) ---
-		// _slotDoneValue[targetIndex] = ... (already updated inside DispatchAfterRender)
+		// ---------------- Copy ----------------
+		_computeStage->SubmitReadbackCopy(slot, _timeline);
 	}
 
-	// --- Wait for all GPU compute work to finish before reading back final results ---
-	_computeStage->WaitAll(_timeline);
+	// ------------------------------------------------------------
+	// Consume remaining slots (tail)
+	// ------------------------------------------------------------
+	const uint32_t tailBegin =
+		(end - range.first > numTargets)
+		? end - numTargets
+		: range.first;
 
-	// --- Single readback at the end (aggregates all cubemap results) ---
-	_computeStage->Readback(0, 0, "F:/Cubemaps/FinalWeights.txt");
+	for (uint32_t cubemapIdx = tailBegin; cubemapIdx < end; ++cubemapIdx)
+	{
+		const uint32_t frameIndex = cubemapIdx - range.first;
+		const uint32_t slot = frameIndex % numTargets;
+
+		_computeStage->ConsumeSlot(
+			cubemapIdx,
+			slot,
+			_timeline
+		);
+	}
 }
 
 void CubemapRenderInstance::RecordAndSubmitCubemapRender(

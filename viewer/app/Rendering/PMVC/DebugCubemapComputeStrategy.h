@@ -32,12 +32,11 @@ public:
 
     void Initialize(uint32_t targetCount) override;
     void WaitForTargetReuse(uint32_t targetIndex, VkSemaphore timeline, uint64_t slotDoneValue) override;
-    void DispatchAfterRender(uint32_t cubemapIdx,
-        uint32_t targetIndex,
+    void DispatchAfterRender(
+        uint32_t deformableIndex,
+        uint32_t slot,
         VkSemaphore timeline,
-        uint64_t renderDoneValue,
-        uint64_t copyDoneValue,
-        const CubemapRenderTarget& target) override;
+		const CubemapRenderTarget& target) override;
 
     uint64_t GetSlotCompletionValue(uint32_t targetIndex) const override
     {
@@ -47,6 +46,11 @@ public:
     void Readback(uint32_t cubemapIdx, uint32_t targetIndex, const std::string& filename) override;
     void WaitAll(VkSemaphore timeline) override;
 
+    void ConsumeSlot(
+        uint32_t deformableIndex,
+        uint32_t slot,
+        VkSemaphore timeline) override {
+    }
     //void Destroy();
 
 private:

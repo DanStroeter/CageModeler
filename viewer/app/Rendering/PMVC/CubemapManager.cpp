@@ -12,8 +12,8 @@
 
 
 CubemapManager::CubemapManager(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
-	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance) : _renderPipelineManager(renderPipelineManager),
-	_resourceManager(resourceManager), _device(device), _instance(instance)
+	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance, uint32_t cubemapSize, VkFormat format) : _renderPipelineManager(renderPipelineManager),
+	_resourceManager(resourceManager), _device(device), _instance(instance), _cubemapSize(cubemapSize), _format(format)
 { }
 
 CubemapManager::~CubemapManager()
@@ -25,7 +25,7 @@ void CubemapManager::Initialize()
 {
 	_descriptorPool = CreateRenderResource<DescriptorPool>(_device);
 	CreateCommandPool(_device->GetQueueFamilies()._graphics.value());
-	CreateRenderPass(VK_FORMAT_R32G32B32A32_SFLOAT);
+	CreateRenderPass(_format);
 	CreateDescriptorSetLayouts();
 	CreateCubemapRenderPipeline();
 	CreateVertexBufferFromMesh();
@@ -162,14 +162,14 @@ void CubemapManager::CreateCubemapRenderPipeline()
 	VkViewport viewport{};
 	viewport.x = 0.0f;
 	viewport.y = 0.0f;
-	viewport.width = (float)512;
-	viewport.height = (float)512;
+	viewport.width = (float)_cubemapSize;
+	viewport.height = (float)_cubemapSize;
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
 
 	VkRect2D scissor{};
 	scissor.offset = { 0, 0 };
-	scissor.extent = { 512, 512 };
+	scissor.extent = { _cubemapSize, _cubemapSize };
 
 	VkPushConstantRange pushConstantRange{};
 	pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -356,15 +356,13 @@ void CubemapManager::EndOneTimeCommands(VkCommandBuffer cmd) {
 }
 */
 
-void CubemapManager::DebugRenderCubemaps(
-	uint32_t cubemapSize,
-	VkFormat format)
+void CubemapManager::DebugRenderCubemaps()
 {
 	// 1. Create render instance in DEBUG mode
 	CubemapRenderInstance instance(
 		*this,
-		cubemapSize,
-		format,
+		_cubemapSize,
+		_format,
 		ComputeType::DEBUGCUBEMAPS
 	);
 
@@ -374,18 +372,16 @@ void CubemapManager::DebugRenderCubemaps(
 	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
 
 	// 4. Execute
-	instance.DebugCubemaps(range);
+	//instance.DebugCubemaps(range);
 }
 
-void CubemapManager::DebugComputeCoordinates(
-	uint32_t cubemapSize,
-	VkFormat format)
+void CubemapManager::DebugComputeCoordinates()
 {
 	// 1. Create render instance in DEBUG mode
 	CubemapRenderInstance instance(
 		*this,
-		cubemapSize,
-		format,
+		_cubemapSize,
+		_format,
 		ComputeType::GPUSERIAL
 	);
 
@@ -395,7 +391,7 @@ void CubemapManager::DebugComputeCoordinates(
 	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
 
 	// 4. Execute
-	instance.DebugPMVC(range);
+	//instance.DebugPMVC(range);
 }
 
 void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
@@ -409,8 +405,8 @@ void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
 	}
 }
 
-void CubemapManager::ComputeCoordinates(uint32_t cubemapSize, VkFormat format) {
-	CubemapRenderInstance instance(*this, cubemapSize, format, ComputeType::GPUATOMIC);
+void CubemapManager::ComputeCoordinates() {
+	CubemapRenderInstance instance(*this, _cubemapSize, _format, ComputeType::GPUATOMIC);
 	
 	CubemapWorkRange range{};
 	range.first = 0;

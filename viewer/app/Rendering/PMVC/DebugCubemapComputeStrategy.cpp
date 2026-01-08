@@ -73,14 +73,12 @@ void DebugCubemapComputeStrategy::WaitForTargetReuse(
 }
 
 void DebugCubemapComputeStrategy::DispatchAfterRender(
-    uint32_t cubemapIdx,
-    uint32_t targetIndex,
+    uint32_t deformableIndex,
+    uint32_t slot,
     VkSemaphore timeline,
-    uint64_t renderDoneValue,
-    uint64_t copyDoneValue,
     const CubemapRenderTarget& target)
 {
-    const Slot& slot = _slots[targetIndex];
+  /*  const Slot& slot = _slots[targetIndex];
 
     const VkDeviceSize bpt = BytesPerTexel(_format);
     const VkDeviceSize imageSizePerFace = VkDeviceSize(_faceSize) * _faceSize * bpt;
@@ -179,7 +177,7 @@ void DebugCubemapComputeStrategy::DispatchAfterRender(
 
     VK_CHECK(vkQueueSubmit2(_transferQueue, 1, &submit, VK_NULL_HANDLE));
 
-    _slotCopyDoneValue[targetIndex] = copyDoneValue;
+    _slotCopyDoneValue[targetIndex] = copyDoneValue;*/
 }
 
 void DebugCubemapComputeStrategy::Readback(uint32_t cubemapIdx, uint32_t targetIndex, const std::string& filename)

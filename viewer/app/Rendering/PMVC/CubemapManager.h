@@ -46,13 +46,13 @@ struct CubemapVertex
 class CubemapManager {
 public:
 	CubemapManager(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
-		const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance);
+		const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance, uint32_t cubemapSize, VkFormat format);
 	~CubemapManager();
 	void Initialize();
 
-	void ComputeCoordinates(uint32_t cubemapSize, VkFormat format);
-	void DebugRenderCubemaps(uint32_t cubemapSize, VkFormat format);
-	void DebugComputeCoordinates(uint32_t cubemapSize, VkFormat format);
+	void ComputeCoordinates();
+	void DebugRenderCubemaps();
+	void DebugComputeCoordinates();
 
 	void SetCage(const EigenMesh& mesh) { _cageMesh = mesh; }
 	void SetMesh(const EigenMesh& mesh) { _deformableMesh = mesh; }
@@ -103,6 +103,9 @@ private:
 
 	friend class CubemapRenderInstance; //TODO remove and fix dependencies!
 	friend class GpuSerialComputeStrategy;
+
+	uint32_t _cubemapSize;
+	VkFormat _format;
 
 	//VkImage        _solidAngleImage = VK_NULL_HANDLE;
 	//VkDeviceMemory _solidAngleMemory = VK_NULL_HANDLE;

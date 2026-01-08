@@ -79,11 +79,9 @@ void GpuSerialComputeStrategy::WaitForTargetReuse(uint32_t, VkSemaphore, uint64_
 }*/
 
 void GpuSerialComputeStrategy::DispatchAfterRender(
-	uint32_t cubemapIdx,
-	uint32_t targetIndex,
-	VkSemaphore,
-	uint64_t,
-	uint64_t,
+	uint32_t deformableIndex,
+	uint32_t slot,
+	VkSemaphore timeline,
 	const CubemapRenderTarget& target)
 {
 	// ---- 1. Wait until previous compute finished ----
