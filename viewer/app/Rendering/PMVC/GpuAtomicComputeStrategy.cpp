@@ -139,7 +139,7 @@ void GpuAtomicComputeStrategy::DispatchAfterRender(
 
 	vkCmdDispatch(cmd, groupsX, groupsY, 6);
 
-	// Barrier: compute ? transfer (for copy)
+	// Barrier: compute transfer (for copy)
 	VkBufferMemoryBarrier postBarrier[2]{};
 	for (int i = 0; i < 2; ++i) {
 		postBarrier[i] = clearBarrier[i];
