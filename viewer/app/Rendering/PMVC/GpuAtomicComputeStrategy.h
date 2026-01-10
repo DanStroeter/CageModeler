@@ -36,34 +36,24 @@ public:
 
     uint32_t RequiredRenderTargetCount() const override;
 
-    void Initialize(uint32_t targetCount) override;
-
-    void WaitForTargetReuse(uint32_t targetIndex,
-        VkSemaphore timeline,
-        uint64_t slotDoneValue) override;
+    void Initialize() override;
 
     void DispatchAfterRender(
         uint32_t deformableIndex,
         uint32_t slot,
         VkSemaphore timeline,
-        const CubemapRenderTarget& target) override;
+        const CubemapRenderTarget& target);
 
-    uint64_t GetSlotCompletionValue(uint32_t targetIndex) const override;
-
-    void Readback(uint32_t cubemapIdx,
-        uint32_t targetIndex,
-        const std::string& filename) override;
-
-    void WaitAll(VkSemaphore timeline) override;
+    void Readback();
 
     void ConsumeSlot(
         uint32_t deformableIndex,
         uint32_t slot,
-        VkSemaphore timeline) override;
+        VkSemaphore timeline);
 
     void SubmitReadbackCopy(
         uint32_t slot,
-        VkSemaphore timeline) override;
+        VkSemaphore timeline);
 
     std::vector<VkCommandBuffer> _computeCommandBuffers;
 
@@ -71,11 +61,12 @@ public:
         return ++_timelineValue;
     }
 private:
+    void WaitForTargetReuse(VkSemaphore timeline,
+        uint64_t slotDoneValue);
+
     void CreatePipelineAndLayouts();
     void AllocateResources();
 
-    const uint32_t kCubemapFaceCount = 6;
-    const uint32_t kFaceSize = 512;
     const uint32_t kDispatchGroupSize = 8;
 
     RenderResourceRef<Device> _device;
@@ -92,19 +83,7 @@ private:
     VkCommandPool _computeCommandPool = VK_NULL_HANDLE;
     VkCommandBuffer _computeCommandBuffer = VK_NULL_HANDLE;
 
-    // Sampler and textures
-    VkSampler _sampler = VK_NULL_HANDLE;
-    VkImageView _baryTexImageView = VK_NULL_HANDLE;
-    std::vector<VkImageView> _baryTexImageViews;
-
-    // Buffers
-    //Buffer _lambdaBuffer;
-    //Buffer _wsumBuffer;
     Buffer _vertexListBuffer;
-
-    // Staging buffers (CPU-visible)
-    //MemoryMappedBuffer _lambdaStagingBuffer;
-    //MemoryMappedBuffer _wsumStagingBuffer;
 
     struct SlotBuffers
     {
@@ -137,17 +116,15 @@ private:
     uint64_t _timelineValue = 0;
     std::vector<uint64_t> _slotDoneValue;
 
-    void storeLambdaForVertex(const float* lambdaCPU);
-    void storeWsumForVertex(const float* wsumCPU);
-    void UpdateComputeDescriptorSet(uint32_t targetIndex);
+    void UpdateComputeDescriptorSet(uint32_t targetIndex, const CubemapRenderTarget& target);
 
 	SphereWeightCalculator _sphereWeightCalculator;
 
-    void InsertImageMemoryBarrierToGeneral(
-        VkCommandBuffer cmd,
-        VkImage image,
-        VkImageSubresourceRange subresourceRange);
     void CreateSampler();
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
     void WriteWeightsToFile(const std::string& filename); 
+
+    int _targetCount = 2;
+
+    VkSampler _barySampler;
 };

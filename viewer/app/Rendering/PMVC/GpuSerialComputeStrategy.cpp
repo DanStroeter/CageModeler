@@ -1,246 +1,338 @@
 #include <Rendering/PMVC/GpuSerialComputeStrategy.h>
+#include <Rendering/PMVC/ScopedCmdBuffer.h>
+#include <Rendering/PMVC/CubemapRenderInstance.h>
 
 uint32_t GpuSerialComputeStrategy::RequiredRenderTargetCount() const
 {
-    return 2;
+	return _targetCount;
 }
 
-void GpuSerialComputeStrategy::Initialize(uint32_t) {
-	uint32_t graphicsQueueFamilyIndex = _transferQueueFamily;
-	CreateComputeCommandPool(graphicsQueueFamilyIndex);
-	CreateComputeDescriptorSetLayout();
-	CreateComputeBuffers();
-	AllocateComputeDescriptorSet();
-	CreateComputePipeline();
-	CreateComputeCommandBuffer();
-	//UpdateComputeDescriptorSet();
-	//SphereWeightInitialization(512);	#
+void GpuSerialComputeStrategy::Initialize()
+{
+	//_slotSync.resize(_targetCount);
+	// Prepare slots
+	//_slotDoneValue.resize(_targetCount, 0ull);
+	_computeCommandBuffers.resize(1);
+	_copyCommandBuffers.resize(1);
+	_slots.resize(1);
+	// Pipeline + layouts
+	CreatePipelineAndLayouts();
+
+	// Allocate all buffers / descriptor sets
+	AllocateResources();
+
+	// Create per-target command buffers
+	VkCommandBufferAllocateInfo allocInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+	allocInfo.commandPool = _computeCommandPool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = static_cast<uint32_t>(_computeCommandBuffers.size());
+
+	if (vkAllocateCommandBuffers(_device, &allocInfo, _computeCommandBuffers.data()) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate compute command buffers!");
+
+	VkCommandBufferAllocateInfo allocInfo2{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+	allocInfo.commandPool = _computeCommandPool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = static_cast<uint32_t>(_copyCommandBuffers.size());
+
+	if (vkAllocateCommandBuffers(_device, &allocInfo, _copyCommandBuffers.data()) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate compute command buffers!");
+
+	_sphereWeightCalculator = SphereWeightCalculator();
+	_sphereWeightCalculator.SphereWeightInitialization(
+		_faceSize,
+		_device,
+		_resourceManager,
+		_computeCommandPool
+	);
 	CreateSampler();
-	VkFenceCreateInfo fenceInfo{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // first use is safe
-	vkCreateFence(_device, &fenceInfo, nullptr, &_computeFence);
 }
-void GpuSerialComputeStrategy::WaitForTargetReuse(uint32_t, VkSemaphore, uint64_t) {}
 
-/*void GpuSerialComputeStrategy::DispatchAfterRender(uint32_t cubemapIdx,
-	uint32_t targetIndex,
-	VkSemaphore timeline,
-	uint64_t renderDoneValue,
-	uint64_t copyDoneValue,
-	const CubemapRenderTarget& target) {
-	_baryTexImageView = target.cubemapView;
-	UpdateComputeDescriptorSet();
+//TODO maybe needs to be checked
+/*void GpuSerialComputeStrategy::WaitForTargetReuse(VkSemaphore timeline, uint64_t slotDoneValue)
+{
+	if (slotDoneValue == 0) return;
 
-	vkResetCommandBuffer(_computeCommandBuffer, 0);
+	uint64_t currentValue = 0;
+	vkGetSemaphoreCounterValue(_device, timeline, &currentValue);
 
-	VkCommandBufferBeginInfo begin{};
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	vkBeginCommandBuffer(_computeCommandBuffer, &begin);
+	if (slotDoneValue > currentValue)
+	{
+		VkSemaphoreWaitInfo waitInfo{};
+		waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+		waitInfo.semaphoreCount = 1;
+		waitInfo.pSemaphores = &timeline;
+		waitInfo.pValues = &slotDoneValue;
 
-	// Transition image to GENERAL layout
-	VkImageSubresourceRange range = {
-		VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6
-	};
-	InsertImageMemoryBarrierToGeneral(_computeCommandBuffer, target.cubemapImage, range);
-
-	const auto& obj = _cubemapRenderInstance._cubemapManager._renderPipelineManager->GetPipelineObject(_computePipelineHandle);
-
-	vkCmdBindPipeline(_computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, obj._handle);
-	vkCmdBindDescriptorSets(_computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, obj._pipelineLayout,
-		0, 1, &_computeDescriptorSet, 0, nullptr);
-
-	ComputePushConstants pc{};
-	pc.uNumCubemaps = 1;
-	pc.uNumCageVertices = static_cast<int>(_cubemapRenderInstance._cubemapManager._cageMesh._vertices.rows());
-	pc.uFaceSize = glm::ivec2(512, 512);
-	pc.uFacesPerCubemap = 6;
-	pc.uNumTriangles = _cubemapRenderInstance._cubemapManager._cageMesh._faces.rows();
-
-	vkCmdPushConstants(_computeCommandBuffer, obj._pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
-		0, sizeof(pc), &pc);
-
-	uint32_t groupsX = (512 + 7) / 8;
-	uint32_t groupsY = (512 + 7) / 8;
-	uint32_t groupsZ = pc.uFacesPerCubemap; // 6
-
-	vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, groupsZ);
-
-	vkEndCommandBuffer(_computeCommandBuffer);
-
-	VkSubmitInfo submit{};
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit.commandBufferCount = 1;
-	submit.pCommandBuffers = &_computeCommandBuffer;
-
-	VkQueue queue;
-	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
-	vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
-	vkQueueWaitIdle(queue); // Serial: wait immediately
+		vkWaitSemaphores(_device, &waitInfo, UINT64_MAX);
+	}
 }*/
 
 void GpuSerialComputeStrategy::DispatchAfterRender(
 	uint32_t deformableIndex,
 	uint32_t slot,
 	VkSemaphore timeline,
+	uint64_t waitValue,
+	uint64_t signalValue,
 	const CubemapRenderTarget& target)
 {
-	// ---- 1. Wait until previous compute finished ----
-	vkWaitForFences(_device, 1, &_computeFence, VK_TRUE, UINT64_MAX);
-	vkResetFences(_device, 1, &_computeFence);
+	// ------------------------------------------------------------
+	// 2) Reset & record command buffer
+	// ------------------------------------------------------------
+	VkCommandBuffer cmd = _computeCommandBuffers[slot];
+	VK_CHECK(vkResetCommandBuffer(cmd, 0));
 
-	// ---- 2. Update descriptors ----
-	_baryTexImageView = target.cubemapView;
-	UpdateComputeDescriptorSet();
-
-	// ---- 3. Reset + record command buffer ----
-	vkResetCommandBuffer(_computeCommandBuffer, 0);
-
-	VkCommandBufferBeginInfo begin{};
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	vkBeginCommandBuffer(_computeCommandBuffer, &begin);
-
-	// Transition cubemap to GENERAL
-	VkImageSubresourceRange range{
-		VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6
+	VkCommandBufferBeginInfo begin{
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
 	};
-	InsertImageMemoryBarrierToGeneral(
-		_computeCommandBuffer,
-		target.cubemapImage,
-		range
-	);
+	VK_CHECK(vkBeginCommandBuffer(cmd, &begin));
 
-	const auto& obj =
-		_cubemapRenderInstance
-		._cubemapManager
-		._renderPipelineManager
-		->GetPipelineObject(_computePipelineHandle);
+	// Descriptor update MUST happen before bind
+	UpdateComputeDescriptorSet(slot, target);
 
-	vkCmdBindPipeline(
-		_computeCommandBuffer,
-		VK_PIPELINE_BIND_POINT_COMPUTE,
-		obj._handle
-	);
+	assert(slot < _computeDescriptorSets.size());
+
+	auto& pipe = _renderPipelineManager->GetPipelineObject(_computePipeline);
+
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipe._handle);
 
 	vkCmdBindDescriptorSets(
-		_computeCommandBuffer,
+		cmd,
 		VK_PIPELINE_BIND_POINT_COMPUTE,
-		obj._pipelineLayout,
+		pipe._pipelineLayout,
 		0, 1,
-		&_computeDescriptorSet,
+		&_computeDescriptorSets[slot],
 		0, nullptr
 	);
 
+	// Push constants
 	ComputePushConstants pc{};
-	pc.uNumCubemaps = 1;
-	pc.uNumCageVertices = static_cast<int>(
-		_cubemapRenderInstance
-		._cubemapManager
-		._cageMesh
-		._vertices.rows()
-		);
-	pc.uFaceSize = { 512, 512 };
-	pc.uFacesPerCubemap = 6;
-	pc.uNumTriangles =
-		_cubemapRenderInstance
-		._cubemapManager
-		._cageMesh
-		._faces.rows();
+	pc.uFaceSize = { (int)_faceSize, (int)_faceSize };
+	pc.uNumTriangles = _cageMesh._faces.rows();
 
 	vkCmdPushConstants(
-		_computeCommandBuffer,
-		obj._pipelineLayout,
+		cmd,
+		pipe._pipelineLayout,
 		VK_SHADER_STAGE_COMPUTE_BIT,
-		0,
-		sizeof(pc),
-		&pc
+		0, sizeof(pc), &pc
 	);
 
-	const uint32_t groupsX = (512 + 7) / 8;
-	const uint32_t groupsY = (512 + 7) / 8;
-	const uint32_t groupsZ = 6;
+	// ------------------------------------------------------------
+	// 3) Clear buffers
+	// ------------------------------------------------------------
+	vkCmdFillBuffer(
+		cmd,
+		_slots[slot].lambda._deviceBuffer,
+		0, VK_WHOLE_SIZE, 0
+	);
 
-	vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, groupsZ);
+	vkCmdFillBuffer(
+		cmd,
+		_slots[slot].wsum._deviceBuffer,
+		0, VK_WHOLE_SIZE, 0
+	);
 
-	vkEndCommandBuffer(_computeCommandBuffer);
+	VkBufferMemoryBarrier clearBarrier[2]{};
+	for (int i = 0; i < 2; ++i)
+	{
+		clearBarrier[i].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+		clearBarrier[i].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		clearBarrier[i].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		clearBarrier[i].offset = 0;
+		clearBarrier[i].size = VK_WHOLE_SIZE;
+	}
 
-	// ---- 4. Submit with fence ----
+	clearBarrier[0].buffer = _slots[slot].lambda._deviceBuffer;
+	clearBarrier[1].buffer = _slots[slot].wsum._deviceBuffer;
+
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		0,
+		0, nullptr,
+		2, clearBarrier,
+		0, nullptr
+	);
+
+	// ------------------------------------------------------------
+	// 4) Dispatch
+	// ------------------------------------------------------------
+	uint32_t groupsX = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize;
+	uint32_t groupsY = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize;
+
+	vkCmdDispatch(cmd, groupsX, groupsY, 6);
+
+	// Barrier for transfer reads (copy stage)
+	VkBufferMemoryBarrier postBarrier[2]{};
+	for (int i = 0; i < 2; ++i)
+	{
+		postBarrier[i] = clearBarrier[i];
+		postBarrier[i].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		postBarrier[i].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	}
+
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0, nullptr,
+		2, postBarrier,
+		0, nullptr
+	);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
+
+	// ------------------------------------------------------------
+	// 5) Submit with monotonic timeline signal
+	// ------------------------------------------------------------
+
+	VkTimelineSemaphoreSubmitInfo timelineInfo{
+		.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+		.waitSemaphoreValueCount = 1,
+		.pWaitSemaphoreValues = &waitValue,
+		.signalSemaphoreValueCount = 1,
+		.pSignalSemaphoreValues = &signalValue
+	};
+
+	VkPipelineStageFlags waitStage =
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+
 	VkSubmitInfo submit{};
 	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.pNext = &timelineInfo;
+
+	submit.waitSemaphoreCount = 1;
+	submit.pWaitSemaphores = &timeline;
+	submit.pWaitDstStageMask = &waitStage;
+
 	submit.commandBufferCount = 1;
-	submit.pCommandBuffers = &_computeCommandBuffer;
+	submit.pCommandBuffers = &cmd;
+
+	submit.signalSemaphoreCount = 1;
+	submit.pSignalSemaphores = &timeline;
 
 	VkQueue queue;
 	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
-	vkQueueSubmit(queue, 1, &submit, _computeFence);
+	VK_CHECK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));
 }
 
-
-
-uint64_t GpuSerialComputeStrategy::GetSlotCompletionValue(uint32_t) const { return 0; }
-
-void GpuSerialComputeStrategy::Readback(uint32_t cubemapIdx,
-	uint32_t targetIndex,
-	const std::string& filename) {
-	const uint32_t numCubemaps = static_cast<uint32_t>(_lambdaResults.size());
-	const uint32_t numVerts = static_cast<uint32_t>(_cubemapRenderInstance._cubemapManager._cageMesh._vertices.rows());
-	const VkDeviceSize lambdaBytes = numCubemaps * numVerts * sizeof(float);
-	const VkDeviceSize wsumBytes = numCubemaps * sizeof(float);
-
-	// Copy from GPU device to host-visible staging buffers
-	//VkCommandBuffer cmd = _cubemapRenderInstance._cubemapManager.BeginOneTimeCommands();
-
-	VkBufferCopy lambdaCopy{ 0, 0, lambdaBytes };
-	VkBufferCopy wsumCopy{ 0, 0, wsumBytes };
-
-	//vkCmdCopyBuffer(cmd,
-		//_lambdaBuffer._deviceBuffer,
-		//_lambdaStagingBuffer._deviceBuffer,
-		//1, &lambdaCopy);
-
-	//vkCmdCopyBuffer(cmd,
-		//_wsumBuffer._deviceBuffer,
-		//_wsumStagingBuffer._deviceBuffer,
-		//1, &wsumCopy);
-
-	//_cubemapRenderInstance._cubemapManager.EndOneTimeCommands(cmd);
-
-	// Map and read from staging buffer
-	const float* lambdaCPU = reinterpret_cast<float*>(_lambdaStagingBuffer._mappedData);
-	const float* wsumCPU = reinterpret_cast<float*>(_wsumStagingBuffer._mappedData);
-
-	// Resize containers
-	_lambdaResults.resize(numCubemaps);
-	_wsumResults.resize(numCubemaps);
-
-	for (uint32_t cubeIdx = 0; cubeIdx < numCubemaps; ++cubeIdx)
-	{
-		_lambdaResults[cubeIdx].assign(lambdaCPU + cubeIdx * numVerts,
-			lambdaCPU + (cubeIdx + 1) * numVerts);
-		_wsumResults[cubeIdx] = wsumCPU[cubeIdx];
-	}
-
-	WriteWeightsToFile(filename);
-}
-
-void GpuSerialComputeStrategy::WaitAll(VkSemaphore) {}
-
-//TODO resource manager, cage mesh, weights, device, pipeline manager, graphic command pool
-// define which image we are processing currently
-//endonetimecvommandbuffer extra class
-//make init depenedent in compute type overload function->different compute pmvc functions
-
-void GpuSerialComputeStrategy::CreateComputeCommandPool(uint32_t queueFamilyIndex)
+void GpuSerialComputeStrategy::SubmitReadbackCopy(
+	uint32_t slot,
+	VkSemaphore timeline,
+	uint64_t waitValue,
+	uint64_t signalValue)
 {
+	VkCommandBuffer cmd = _copyCommandBuffers[slot];
+
+	VK_CHECK(vkResetCommandBuffer(cmd, 0));
+
+	VkCommandBufferBeginInfo beginInfo{
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+	VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
+
+	VkBufferCopy lambdaCopy{
+		.srcOffset = 0,
+		.dstOffset = 0,
+		.size = _cageMesh._vertices.rows() * sizeof(float)
+	};
+
+	VkBufferCopy wsumCopy{
+		.srcOffset = 0,
+		.dstOffset = 0,
+		.size = sizeof(float)
+	};
+
+	vkCmdCopyBuffer(
+		cmd,
+		_slots[slot].lambda._deviceBuffer,
+		_slots[slot].lambdaStaging._deviceBuffer,
+		1, &lambdaCopy
+	);
+
+	vkCmdCopyBuffer(
+		cmd,
+		_slots[slot].wsum._deviceBuffer,
+		_slots[slot].wsumStaging._deviceBuffer,
+		1, &wsumCopy
+	);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
+
+	VkPipelineStageFlags waitStage =
+		VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+	VkTimelineSemaphoreSubmitInfo timelineInfo{
+		.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+		.waitSemaphoreValueCount = 1,
+		.pWaitSemaphoreValues = &waitValue,
+		.signalSemaphoreValueCount = 1,
+		.pSignalSemaphoreValues = &signalValue
+	};
+
+	VkSubmitInfo submit{};
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.pNext = &timelineInfo;
+
+	submit.waitSemaphoreCount = 1;
+	submit.pWaitSemaphores = &timeline;
+	submit.pWaitDstStageMask = &waitStage;
+
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &cmd;
+
+	submit.signalSemaphoreCount = 1;
+	submit.pSignalSemaphores = &timeline;
+
+	VkQueue queue;
+	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
+	VK_CHECK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));
+}
+
+void GpuSerialComputeStrategy::ConsumeSlot(
+	uint32_t deformableIndex,
+	uint32_t slot,
+	VkSemaphore timeline, 
+	uint32_t waitValue)
+{
+	uint64_t signal = waitValue;
+	VkSemaphoreWaitInfo wait{};
+	wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+	wait.semaphoreCount = 1;
+	wait.pSemaphores = &timeline;
+	wait.pValues = &signal;
+	vkWaitSemaphores(_device, &wait, UINT64_MAX);
+
+	const size_t C = _cageMesh._vertices.rows();
+
+	const float* lambda =
+		(float*)_slots[slot].lambdaStaging._mappedData;
+	const float wsum =
+		*(float*)_slots[slot].wsumStaging._mappedData;
+
+	for (size_t c = 0; c < C; ++c)
+		_lambdaResults[deformableIndex][c] = lambda[c];
+
+	_wsumResults[deformableIndex] = wsum;
+}
+
+void GpuSerialComputeStrategy::Readback()
+{
+	WriteWeightsToFile("GpuSerialComputeStrategy_Readback.txt");
+}
+
+void GpuSerialComputeStrategy::CreatePipelineAndLayouts() {
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	poolInfo.queueFamilyIndex = queueFamilyIndex;
+	poolInfo.queueFamilyIndex = _transferQueueFamily;
 	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 	if (vkCreateCommandPool(_device, &poolInfo, nullptr, &_computeCommandPool) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create compute command pool!");
-}
 
-void GpuSerialComputeStrategy::CreateComputeDescriptorSetLayout() {
 	std::vector<VkDescriptorSetLayoutBinding> bindings{
 		// Image
 		{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
@@ -254,156 +346,11 @@ void GpuSerialComputeStrategy::CreateComputeDescriptorSetLayout() {
 		{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
 	};
 
-	_computeLayout = _cubemapRenderInstance._cubemapManager._descriptorPool->CreateDescriptorSetLayout(bindings);
-}
+	_computeLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
 
-void GpuSerialComputeStrategy::CreateComputeBuffers()
-{
-	// -------------------------------
-	// Lambda / wsum buffers (ONE cubemap per dispatch)
-	// -------------------------------
-	const size_t numVertices =
-		static_cast<size_t>(_cubemapRenderInstance._cubemapManager._cageMesh._vertices.rows());
-
-	const size_t lambdaBytes = numVertices * sizeof(float);
-	const size_t wsumBytes = sizeof(float);
-
-	_lambdaStagingBuffer = _cubemapRenderInstance._cubemapManager._resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr, lambdaBytes),
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	_wsumStagingBuffer = _cubemapRenderInstance._cubemapManager._resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)nullptr, wsumBytes),
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	_lambdaBuffer = _cubemapRenderInstance._cubemapManager._resourceManager->AllocateDeviceBuffer(
-		lambdaBytes,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-	);
-
-	_wsumBuffer = _cubemapRenderInstance._cubemapManager._resourceManager->AllocateDeviceBuffer(
-		wsumBytes,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-	);
-
-	// -------------------------------
-	// Vertex index list (flatten Eigen faces)
-	// -------------------------------
-	const int triCount = _cubemapRenderInstance._cubemapManager._cageMesh._faces.rows();
-	if (_cubemapRenderInstance._cubemapManager._cageMesh._faces.cols() != 3) {
-		throw std::runtime_error("EigenMesh faces must be T x 3.");
-	}
-
-	std::vector<uint32_t> vertexList(static_cast<size_t>(triCount) * 3);
-
-	for (int t = 0; t < triCount; ++t) {
-		vertexList[t * 3 + 0] =
-			static_cast<uint32_t>(_cubemapRenderInstance._cubemapManager._cageMesh._faces(t, 0));
-		vertexList[t * 3 + 1] =
-			static_cast<uint32_t>(_cubemapRenderInstance._cubemapManager._cageMesh._faces(t, 1));
-		vertexList[t * 3 + 2] =
-			static_cast<uint32_t>(_cubemapRenderInstance._cubemapManager._cageMesh._faces(t, 2));
-	}
-
-	const size_t vertexListBytes =
-		vertexList.size() * sizeof(uint32_t);
-
-	// -------------------------------
-	// Upload vertex list (EXPLICIT memcpy)
-	// -------------------------------
-	auto vertexListStaging = _cubemapRenderInstance._cubemapManager._resourceManager->CreateBufferAndCopy(
-		std::span<const uint32_t>(vertexList.data(), vertexList.size()),
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-
-	std::memcpy(
-		vertexListStaging._mappedData,
-		vertexList.data(),
-		vertexListBytes
-	);
-
-	_vertexListBuffer = _cubemapRenderInstance._cubemapManager._resourceManager->AllocateDeviceBuffer(
-		vertexListBytes,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-	);
-
-	CopyBuffer(
-		vertexListStaging._deviceBuffer,
-		_vertexListBuffer._deviceBuffer,
-		vertexListBytes
-	);
-}
-
-void GpuSerialComputeStrategy::AllocateComputeDescriptorSet() {
-	VkDescriptorSetLayout layout = _computeLayout->GetReference();
-
-	VkDescriptorSetAllocateInfo alloc{};
-	alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	alloc.descriptorPool = _cubemapRenderInstance._cubemapManager._descriptorPool;
-	alloc.descriptorSetCount = 1;
-	alloc.pSetLayouts = &layout;
-
-	vkAllocateDescriptorSets(_device, &alloc, &_computeDescriptorSet);
-}
-
-void GpuSerialComputeStrategy::UpdateComputeDescriptorSet() {
-
-	VkDescriptorImageInfo imageInfo{};
-	imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-	imageInfo.imageView = _baryTexImageView;
-	imageInfo.sampler = _sampler;
-
-	VkDescriptorBufferInfo vertexListInfo{};
-	vertexListInfo.buffer = _vertexListBuffer._deviceBuffer;
-	vertexListInfo.range = VK_WHOLE_SIZE;
-
-	VkDescriptorBufferInfo lambdaInfo{};
-	lambdaInfo.buffer = _lambdaBuffer._deviceBuffer;
-	lambdaInfo.range = VK_WHOLE_SIZE;
-
-	VkDescriptorBufferInfo wsumInfo{};
-	wsumInfo.buffer = _wsumBuffer._deviceBuffer;
-	wsumInfo.range = VK_WHOLE_SIZE;
-
-	VkDescriptorImageInfo weightInfo{};
-	weightInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	//weightInfo.imageView = _cubemapRenderInstance._cubemapManager._solidAngleArrayView;
-	//weightInfo.sampler = _cubemapRenderInstance._cubemapManager._solidAngleSampler;
-
-	std::array<VkWriteDescriptorSet, 5> writes{};
-
-	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 0, 0, 1,
-				  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &imageInfo, nullptr, nullptr };
-	writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 1, 0, 1,
-				  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vertexListInfo, nullptr };
-	writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 2, 0, 1,
-				  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &lambdaInfo, nullptr };
-	writes[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 3, 0, 1,
-				  VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &wsumInfo, nullptr };
-	writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, _computeDescriptorSet, 4, 0,	1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &weightInfo, nullptr, nullptr };
-
-	vkUpdateDescriptorSets(_device, writes.size(), writes.data(), 0, nullptr);
-}
-
-void GpuSerialComputeStrategy::CreateComputePipeline() {
 	ComputePipelineObjectProxy proxy;
-	proxy._renderPipelineManager = _cubemapRenderInstance._cubemapManager._renderPipelineManager;
-	proxy._shaderModule = "assets/shaders/PMVCCompute.comp.spv";
+	proxy._renderPipelineManager = _renderPipelineManager;
+	proxy._shaderModule = "assets/shaders/PMVCComputeAtmoic.comp.spv";
 	proxy._descriptorSetLayouts = { _computeLayout };
 
 	VkPushConstantRange range{};
@@ -412,169 +359,230 @@ void GpuSerialComputeStrategy::CreateComputePipeline() {
 	range.size = sizeof(ComputePushConstants);
 	proxy._pushConstantRanges = { range };
 
-	_computePipelineHandle = proxy.Build();
+	_computePipeline = proxy.Build();
 }
 
-void GpuSerialComputeStrategy::CreateComputeCommandBuffer() {
-	VkCommandBufferAllocateInfo alloc{};
-	alloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	alloc.commandPool = _computeCommandPool;
-	alloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	alloc.commandBufferCount = 1;
-
-	vkAllocateCommandBuffers(_device, &alloc, &_computeCommandBuffer);
-}
-
-void GpuSerialComputeStrategy::ComputeCoordinates(uint32_t cubeIndex)
+void GpuSerialComputeStrategy::AllocateResources()
 {
-	// We only have one cubemap image & view, reused for each vertex.
-	// So we always use index 0 here.
-	//(void)cubeIndex; // cubeIndex only used to index CPU-side result arrays, not GPU resources
+	_computeDescriptorSets.resize(_targetCount);
 
-	uint32_t numTriangles = static_cast<int>(_cubemapRenderInstance._cubemapManager._cageMesh._faces.rows());
-	//LOG_DEBUG(numTriangles);
-	uint32_t numCageVertices = static_cast<int>(_cubemapRenderInstance._cubemapManager._cageMesh._vertices.rows());
-	//LOG_DEBUG(numCageVertices);
-
-	_baryTexImageView = _baryTexImageViews[0];
-	UpdateComputeDescriptorSet();
-
-	vkResetCommandBuffer(_computeCommandBuffer, 0);
-
-	VkCommandBufferBeginInfo begin{};
-	begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-
-	vkBeginCommandBuffer(_computeCommandBuffer, &begin);
-
-	VkImageSubresourceRange subresourceRange{};
-	subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	subresourceRange.baseMipLevel = 0;
-	subresourceRange.levelCount = 1;
-	subresourceRange.baseArrayLayer = 0;
-	subresourceRange.layerCount = 6;
-
-	// Transition the *single* cubemap image we are reusing:
-	InsertImageMemoryBarrierToGeneral(
-		_computeCommandBuffer,
-		_cubemapRenderInstance._cubemapRenderUnit.targets[0].cubemapImage,
-		subresourceRange
+	std::vector<VkDescriptorSetLayout> layouts(
+		_targetCount,
+		_computeLayout->GetReference()
 	);
 
-	const PipelineObject& obj =
-		_cubemapRenderInstance._cubemapManager._renderPipelineManager->GetPipelineObject(_computePipelineHandle);
+	VkDescriptorSetAllocateInfo allocInfo{
+		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
+	};
+	allocInfo.descriptorPool = _descriptorPool;
+	allocInfo.descriptorSetCount = _targetCount;
+	allocInfo.pSetLayouts = layouts.data();
 
-	vkCmdBindPipeline(_computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, obj._handle);
+	VK_CHECK(vkAllocateDescriptorSets(
+		_device,
+		&allocInfo,
+		_computeDescriptorSets.data()
+	));
 
-	vkCmdBindDescriptorSets(
-		_computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
-		obj._pipelineLayout, 0, 1,
-		&_computeDescriptorSet, 0, nullptr);
+	//const size_t C = static_cast<size_t>(_cageMesh._vertices.rows());
 
-	// --- Push constants: we are only processing ONE cubemap on this dispatch ---
-	ComputePushConstants pc{};
-	pc.uNumCubemaps = 1;
-	pc.uNumCageVertices = static_cast<int>(_cubemapRenderInstance._cubemapManager._cageMesh._vertices.rows());
-	pc.uFaceSize = glm::ivec2(512, 512);
-	pc.uFacesPerCubemap = 6;
-	pc.uNumTriangles = _cubemapRenderInstance._cubemapManager._cageMesh._faces.rows();
-
-	//LOG_DEBUG(static_cast<int>(_cageMesh._faces.size()) + _cageMesh._vertices.rows() + " triangles in cage mesh.\n");
-
-	vkCmdPushConstants(
-		_computeCommandBuffer,
-		obj._pipelineLayout,
-		VK_SHADER_STAGE_COMPUTE_BIT,
-		0,
-		sizeof(ComputePushConstants),
-		&pc
-	);
-
-	uint32_t groupsX = (512 + 7) / 8;
-	uint32_t groupsY = (512 + 7) / 8;
-
-	//vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, 1);  // one cubemap
-	int indexCount = _cubemapRenderInstance._cubemapManager._cageMesh._faces.size();
-	//LOG_DEBUG("index count : " + std::to_string(indexCount));
-	int triCount = _cubemapRenderInstance._cubemapManager._cageMesh._faces.rows(); //(and assert indexCount % 3 == 0)
-	//LOG_DEBUG("triangle count : " + std::to_string(triCount));
-	//LOG_DEBUG("lambda gpu size: " + std::to_string(_lambdaBuffer._allocatedSize));
-	//LOG_DEBUG("wsum gpu size: " + std::to_string(_wsumBuffer._allocatedSize));
-
-//vkCmdDispatch(_computeCommandBuffer, 1, 1, 1);
-	vkCmdDispatch(_computeCommandBuffer, groupsX, groupsY, static_cast<int>(_cubemapRenderInstance._cubemapManager._cageMesh._vertices.rows() * 6));
-
-	vkEndCommandBuffer(_computeCommandBuffer);
-
-	VkSubmitInfo submit{};
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit.commandBufferCount = 1;
-	submit.pCommandBuffers = &_computeCommandBuffer;
-
-	VkQueue queue;
-	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
-
-	vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
-	vkQueueWaitIdle(queue);
-}
-
-void GpuSerialComputeStrategy::ReadbackCompute(uint32_t cubeIndex)
-{
-	//VkCommandBuffer cmd = _cubemapRenderInstance._cubemapManager.BeginOneTimeCommands();
-
-	const VkDeviceSize lambdaBytes = static_cast<VkDeviceSize>(_cubemapRenderInstance._cubemapManager._cageMesh._vertices.rows()) * sizeof(float);
-	const VkDeviceSize wsumBytes = sizeof(float);
-
-	VkBufferCopy lambdaCopy{ 0, 0, lambdaBytes };
-	//vkCmdCopyBuffer(cmd,
-		//_lambdaBuffer._deviceBuffer,
-		//_lambdaStagingBuffer._deviceBuffer,
-		//1, &lambdaCopy);
-
-	VkBufferCopy wsumCopy{ 0, 0, wsumBytes };
-	//vkCmdCopyBuffer(cmd,
-		//_wsumBuffer._deviceBuffer,
-		//_wsumStagingBuffer._deviceBuffer,
-		//1, &wsumCopy);
-
-	//_cubemapRenderInstance._cubemapManager.EndOneTimeCommands(cmd);
-
-	float* lambdaCPU = reinterpret_cast<float*>(_lambdaStagingBuffer._mappedData);
-	float* wsumCPU = reinterpret_cast<float*>(_wsumStagingBuffer._mappedData);
-
-	storeLambdaForVertex(cubeIndex, lambdaCPU);
-
-	// shader writes only wsum[0]
-	storeWsumForVertex(cubeIndex, wsumCPU);
-}
-
-void GpuSerialComputeStrategy::storeLambdaForVertex(uint32_t cubeIndex, const float* lambdaCPU)
-{
-	const size_t numCageVerts = static_cast<size_t>(_cubemapRenderInstance._cubemapManager._cageMesh._vertices.rows());
-	if (numCageVerts == 0) return;
-
-	const size_t expectedSize = numCageVerts;
-
-	if (_lambdaResults.size() <= cubeIndex)
-		_lambdaResults.resize(cubeIndex + 1);
-
-	if (_lambdaResults[cubeIndex].size() != expectedSize)
-		_lambdaResults[cubeIndex].assign(expectedSize, 0.0f);
-
-	float* dst = _lambdaResults[cubeIndex].data();
-	for (size_t i = 0; i < expectedSize; i++)
+	// --------------------------------------------------
+	// Allocate per-slot lambda / wsum buffers
+	// --------------------------------------------------
+	for (uint32_t i = 0; i < _targetCount; ++i)
 	{
-		dst[i] += lambdaCPU[i];
+		const VkDeviceSize lambdaBytes = static_cast<size_t>(_cageMesh._vertices.rows()) * sizeof(float);
+		const VkDeviceSize wsumBytes = sizeof(float);
+
+		// Device-local buffers
+		_slots[i].lambda = _resourceManager->AllocateDeviceBuffer(
+			lambdaBytes,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		);
+
+		_slots[i].wsum = _resourceManager->AllocateDeviceBuffer(
+			wsumBytes,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		);
+
+		// Host-visible staging buffers
+		_slots[i].lambdaStaging = _resourceManager->CreateBufferAndMapMemory(
+			std::span<std::byte>((std::byte*)nullptr, lambdaBytes),
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+		);
+
+		_slots[i].wsumStaging = _resourceManager->CreateBufferAndMapMemory(
+			std::span<std::byte>((std::byte*)nullptr, wsumBytes),
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+		);
 	}
+
+	// --------------------------------------------------
+	// Vertex index list buffer
+	// --------------------------------------------------
+	const int triCount = _cageMesh._faces.rows();
+	std::vector<uint32_t> vertexList(triCount * 3);
+
+	for (int t = 0; t < triCount; ++t)
+	{
+		vertexList[t * 3 + 0] = static_cast<uint32_t>(_cageMesh._faces(t, 0));
+		vertexList[t * 3 + 1] = static_cast<uint32_t>(_cageMesh._faces(t, 1));
+		vertexList[t * 3 + 2] = static_cast<uint32_t>(_cageMesh._faces(t, 2));
+	}
+
+	auto vertexListStaging = _resourceManager->CreateBufferAndCopy(
+		std::span<const uint32_t>(vertexList.data(), vertexList.size()),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	_vertexListBuffer = _resourceManager->AllocateDeviceBuffer(
+		vertexList.size() * sizeof(uint32_t),
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	CopyBuffer(
+		vertexListStaging._deviceBuffer,
+		_vertexListBuffer._deviceBuffer,
+		vertexList.size() * sizeof(uint32_t)
+	);
 }
 
-void GpuSerialComputeStrategy::storeWsumForVertex(uint32_t cubeIndex, const float* wsumCPU)
+void GpuSerialComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, const CubemapRenderTarget& target)
 {
-	if (!wsumCPU) return;
+	VkDescriptorImageInfo imageInfo{};
+	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	imageInfo.imageView = target.cubemapView;
+	imageInfo.sampler = _barySampler;
+	VkDescriptorBufferInfo vertexListInfo{
+		_vertexListBuffer._deviceBuffer, 0, VK_WHOLE_SIZE
+	};
 
-	if (_wsumResults.size() <= cubeIndex)
-		_wsumResults.resize(cubeIndex + 1, 0.0f);
+	VkDescriptorBufferInfo lambdaInfo{
+		_slots[slotIndex].lambda._deviceBuffer, 0, VK_WHOLE_SIZE
+	};
 
-	_wsumResults[cubeIndex] = wsumCPU[0];
+	VkDescriptorBufferInfo wsumInfo{
+		_slots[slotIndex].wsum._deviceBuffer, 0, VK_WHOLE_SIZE
+	};
+
+	VkDescriptorImageInfo weightInfo{};
+	weightInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	weightInfo.imageView = _sphereWeightCalculator._solidAngleArrayView;
+	weightInfo.sampler = _sphereWeightCalculator._solidAngleSampler;
+
+	std::array<VkWriteDescriptorSet, 5> writes{};
+
+	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_computeDescriptorSets[slotIndex], 0, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &imageInfo };
+
+	writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_computeDescriptorSets[slotIndex], 1, 0, 1,
+		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vertexListInfo };
+
+	writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_computeDescriptorSets[slotIndex], 2, 0, 1,
+		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &lambdaInfo };
+
+	writes[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_computeDescriptorSets[slotIndex], 3, 0, 1,
+		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &wsumInfo };
+
+	writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_computeDescriptorSets[slotIndex], 4, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &weightInfo };
+
+	vkUpdateDescriptorSets(_device, writes.size(), writes.data(), 0, nullptr);
+}
+
+void GpuSerialComputeStrategy::CreateSampler() {
+	VkSamplerCreateInfo samplerInfo{};
+	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+	// NO filtering
+	samplerInfo.magFilter = VK_FILTER_NEAREST;
+	samplerInfo.minFilter = VK_FILTER_NEAREST;
+
+	// NO mipmapping
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	samplerInfo.minLod = 0.0f;
+	samplerInfo.maxLod = 0.0f;
+	samplerInfo.mipLodBias = 0.0f;
+
+	// Clamp (doesn’t really matter since texelFetch ignores addressing)
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+	// No anisotropy
+	samplerInfo.anisotropyEnable = VK_FALSE;
+
+	// No comparison
+	samplerInfo.compareEnable = VK_FALSE;
+
+	// Normalized coordinates irrelevant for texelFetch
+	samplerInfo.unnormalizedCoordinates = VK_FALSE;
+
+	// Border color unused
+	samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	vkCreateSampler(_device, &samplerInfo, nullptr, &_barySampler);
+}
+
+void GpuSerialComputeStrategy::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size)
+{
+	// Allocate a temporary one-time command buffer
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool = _computeCommandPool;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer cmd;
+	vkAllocateCommandBuffers(_device, &allocInfo, &cmd);
+
+	// Begin recording
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(cmd, &beginInfo);
+
+	// Copy command
+	VkBufferCopy copyRegion{};
+	copyRegion.srcOffset = 0;
+	copyRegion.dstOffset = 0;
+	copyRegion.size = size;
+	vkCmdCopyBuffer(cmd, src, dst, 1, &copyRegion);
+	vkEndCommandBuffer(cmd);
+
+	// Submit and wait
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &cmd;
+
+	VkQueue graphicsQueue;
+	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &graphicsQueue);
+
+	vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(graphicsQueue);
+
+	// Clean up
+	vkFreeCommandBuffers(_device, _computeCommandPool, 1, &cmd);
 }
 
 void GpuSerialComputeStrategy::WriteWeightsToFile(const std::string& filename)
@@ -599,115 +607,4 @@ void GpuSerialComputeStrategy::WriteWeightsToFile(const std::string& filename)
 
 	file.close();
 	LOG_INFO("Weights written to " + filename);
-}
-
-void GpuSerialComputeStrategy::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size)
-{
-	// Allocate a temporary one-time command buffer
-	VkCommandBufferAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandPool = _cubemapRenderInstance._cubemapManager._graphicCommandPool;
-	allocInfo.commandBufferCount = 1;
-
-	VkCommandBuffer cmd;
-	vkAllocateCommandBuffers(_device, &allocInfo, &cmd);
-
-	// Begin recording
-	VkCommandBufferBeginInfo beginInfo{};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-	vkBeginCommandBuffer(cmd, &beginInfo);
-
-	// Copy command
-	VkBufferCopy copyRegion{};
-	copyRegion.srcOffset = 0;
-	copyRegion.dstOffset = 0;
-	copyRegion.size = size;
-	vkCmdCopyBuffer(cmd, src, dst, 1, &copyRegion);
-
-	vkEndCommandBuffer(cmd);
-
-	// Submit and wait
-	VkSubmitInfo submitInfo{};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &cmd;
-
-	VkQueue graphicsQueue;
-	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &graphicsQueue);
-
-	vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-	vkQueueWaitIdle(graphicsQueue);
-
-	// Clean up
-	vkFreeCommandBuffers(_device, _cubemapRenderInstance._cubemapManager._graphicCommandPool, 1, &cmd);
-}
-
-void GpuSerialComputeStrategy::InsertImageMemoryBarrierToGeneral(
-	VkCommandBuffer cmd,
-	VkImage image,
-	VkImageSubresourceRange subresourceRange)
-{
-	VkImageMemoryBarrier barrier{};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-
-	// Compute shader will read the image (sampled)
-	barrier.srcAccessMask =
-		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-		VK_ACCESS_TRANSFER_WRITE_BIT |
-		VK_ACCESS_SHADER_WRITE_BIT;
-
-	barrier.dstAccessMask =
-		VK_ACCESS_SHADER_READ_BIT;
-
-	barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-	barrier.image = image;
-	barrier.subresourceRange = subresourceRange;
-
-	vkCmdPipelineBarrier(
-		cmd,
-		VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT |
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		0,
-		0, nullptr,
-		0, nullptr,
-		1, &barrier
-	);
-}
-
-void GpuSerialComputeStrategy::CreateSampler() {
-	VkSamplerCreateInfo s{};
-	s.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-	s.pNext = nullptr;
-	s.flags = 0;
-
-	s.magFilter = VK_FILTER_NEAREST;
-	s.minFilter = VK_FILTER_NEAREST;
-	s.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-
-	s.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	s.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	s.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-
-	s.mipLodBias = 0.0f;
-	s.minLod = 0.0f;
-	s.maxLod = 0.0f;
-
-	s.anisotropyEnable = VK_FALSE;
-	s.maxAnisotropy = 1.0f;
-
-	s.compareEnable = VK_FALSE;
-	s.compareOp = VK_COMPARE_OP_ALWAYS;
-
-	s.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-	s.unnormalizedCoordinates = VK_FALSE;
-
-	if (vkCreateSampler(_device, &s, nullptr, &_sampler) != VK_SUCCESS) {
-		throw std::runtime_error("Failed to create sampler for compute image!");
-	}
 }

@@ -3,8 +3,9 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../../external/stb_image_write.h"
 
-void DebugCubemapComputeStrategy::Initialize(uint32_t targetCount)
+void DebugCubemapComputeStrategy::Initialize()
 {
+	int targetCount = RequiredRenderTargetCount();
     // Command pool for transfer command buffers
     VkCommandPoolCreateInfo poolInfo{ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
     poolInfo.queueFamilyIndex = _transferQueueFamily;

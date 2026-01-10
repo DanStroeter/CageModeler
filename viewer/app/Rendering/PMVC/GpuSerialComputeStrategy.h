@@ -1,95 +1,117 @@
 #pragma once
 
 #include <Rendering/PMVC/IComputeStrategy.h>
+#include <Rendering/Core/DescriptorSetLayout.h>
 #include <Rendering/Core/Buffer.h>
-
+#include <Rendering/Core/Pipeline.h>
+#include <Mesh/GeometryUtils.h>
+#include <Rendering/Core/DescriptorPool.h>
+#include <Rendering/Core/RenderResourceManager.h>
 #include <Rendering/PMVC/CubemapRenderInstance.h>
 
 class GpuSerialComputeStrategy final : public ICubemapComputeStrategy
 {
 public:
     GpuSerialComputeStrategy(
-        VkDevice device,
-        VkPhysicalDevice physicalDevice,
-        VkQueue transferQueue,
+        RenderResourceRef<Device> device,
         uint32_t transferQueueFamily,
         uint32_t faceSize,
-        VkFormat format, 
-        CubemapRenderInstance& cubemaprenderinstance)
+        VkFormat format,
+        RenderResourceRef<DescriptorPool> descriptorPool,
+        const std::shared_ptr<RenderResourceManager>& resourceManager,
+        const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
+        EigenMesh& cageMesh,
+        EigenMesh& deformableMesh)
         : _device(device)
-        , _physicalDevice(physicalDevice)
-        , _transferQueue(transferQueue)
         , _transferQueueFamily(transferQueueFamily)
         , _faceSize(faceSize)
         , _format(format)
-		, _cubemapRenderInstance(cubemaprenderinstance)
+        , _descriptorPool(descriptorPool)
+        , _resourceManager(resourceManager)
+        , _renderPipelineManager(renderPipelineManager)
+        , _cageMesh(cageMesh)
+        , _deformableMesh(deformableMesh)
     {
     }
 
     uint32_t RequiredRenderTargetCount() const override;
 
-    void Initialize(uint32_t targetCount) override;
-    void WaitForTargetReuse(uint32_t targetIndex,
-        VkSemaphore timeline,
-        uint64_t slotDoneValue) override;
+    void Initialize() override;
 
     void DispatchAfterRender(
         uint32_t deformableIndex,
         uint32_t slot,
         VkSemaphore timeline,
-		const CubemapRenderTarget& target) override;
+        uint64_t waitValue,
+        uint64_t signalValue,
+        const CubemapRenderTarget& target);
+
+    void Readback();
 
     void ConsumeSlot(
         uint32_t deformableIndex,
         uint32_t slot,
-        VkSemaphore timeline) override {
-    }
+        VkSemaphore timeline,
+        uint32_t waitValue);
 
-    uint64_t GetSlotCompletionValue(uint32_t targetIndex) const override;
-    void Readback(uint32_t cubemapIdx,
-        uint32_t targetIndex,
-        const std::string& filename) override;
+    void SubmitReadbackCopy(
+        uint32_t slot,
+        VkSemaphore timeline,
+        uint64_t waitValue,
+        uint64_t signalValue);
 
-    void WaitAll(VkSemaphore timeline) override;
 private:
-    void CreateComputeCommandPool(uint32_t queueFamilyIndex);
-    void CreateComputeDescriptorSetLayout();
-    void CreateComputeBuffers();
-    void AllocateComputeDescriptorSet();
-    void UpdateComputeDescriptorSet();
-    void CreateComputePipeline();
-    void CreateComputeCommandBuffer();
-    void ComputeCoordinates(uint32_t cubeIndex);
-    void ReadbackCompute(uint32_t cubeIndex);
-    void storeLambdaForVertex(uint32_t cubeIndex, const float* lambdaCPU);
-	void storeWsumForVertex(uint32_t cubeIndex, const float* wsumCPU);
-    void WriteWeightsToFile(const std::string& filename);
-    void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
-    void InsertImageMemoryBarrierToGeneral(VkCommandBuffer cmd, VkImage image, VkImageSubresourceRange subresourceRange);
-    void CreateSampler();
+    void CreatePipelineAndLayouts();
+    void AllocateResources();
 
-    CubemapRenderInstance& _cubemapRenderInstance;
-    Buffer _lambdaBuffer;
-    Buffer _wsumBuffer;
-    Buffer _vertexListBuffer;
-    MemoryMappedBuffer _lambdaStagingBuffer;
-    MemoryMappedBuffer _wsumStagingBuffer;
-    VkDescriptorSet _computeDescriptorSet;
-    VkCommandPool _computeCommandPool;
-    VkCommandBuffer _computeCommandBuffer;
-    VkSampler _sampler;
-    VkImageView _baryTexImageView = VK_NULL_HANDLE;
-    std::vector<VkImageView> _baryTexImageViews;
-    PipelineHandle _computePipelineHandle;
+    const uint32_t kDispatchGroupSize = 8;
+
+    RenderResourceRef<Device> _device;
+    uint32_t _transferQueueFamily = 0;
+    uint32_t _faceSize = 512;
+    VkFormat _format = VK_FORMAT_R32G32B32A32_SFLOAT;
+
+    // Compute pipeline and descriptors
+    PipelineHandle _computePipeline;
     RenderResourceRef<DescriptorSetLayout> _computeLayout;
+    std::vector<VkDescriptorSet> _computeDescriptorSets = {};
+
+    // Command resources
+    VkCommandPool _computeCommandPool = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> _computeCommandBuffers = {};
+    std::vector<VkCommandBuffer> _copyCommandBuffers = {};
+
+    Buffer _vertexListBuffer;
+
+    struct SlotBuffers
+    {
+        Buffer lambda;
+        Buffer wsum;
+        MemoryMappedBuffer lambdaStaging;
+        MemoryMappedBuffer wsumStaging;
+    };
+    std::vector<SlotBuffers> _slots;
+
+    // CPU-side result storage
     std::vector<std::vector<float>> _lambdaResults;
     std::vector<float> _wsumResults;
 
-    VkDevice _device;
-	VkPhysicalDevice _physicalDevice = VK_NULL_HANDLE;
-	VkQueue _transferQueue = VK_NULL_HANDLE;
-	uint32_t _transferQueueFamily = 0;
-	uint32_t _faceSize = 512;
-	VkFormat _format = VK_FORMAT_R32G32B32A32_SFLOAT;
-    VkFence _computeFence = VK_NULL_HANDLE;
+    EigenMesh& _cageMesh;
+    EigenMesh& _deformableMesh;
+
+    RenderResourceRef<DescriptorPool> _descriptorPool;
+    std::shared_ptr<RenderResourceManager> _resourceManager;
+    std::shared_ptr<RenderPipelineManager> _renderPipelineManager;
+
+    void UpdateComputeDescriptorSet(uint32_t targetIndex, const CubemapRenderTarget& target);
+
+    SphereWeightCalculator _sphereWeightCalculator;
+
+    void CreateSampler();
+    void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
+    void WriteWeightsToFile(const std::string& filename);
+
+    int _targetCount = 1;
+
+    VkSampler _barySampler;
 };

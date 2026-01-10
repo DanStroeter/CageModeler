@@ -4,24 +4,16 @@
 
 uint32_t GpuAtomicComputeStrategy::RequiredRenderTargetCount() const
 {
-    return 2;
+    return _targetCount;
 }
 
-void GpuAtomicComputeStrategy::Initialize(uint32_t targetCount)
+void GpuAtomicComputeStrategy::Initialize()
 {
-	_slotSync.resize(targetCount);
+	_slotSync.resize(_targetCount);
 	// Prepare slots
-	_slotDoneValue.resize(targetCount, 0ull);
-	_computeCommandBuffers.resize(targetCount);
-
-	// Create command pool
-	VkCommandPoolCreateInfo poolInfo{};
-	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	poolInfo.queueFamilyIndex = _transferQueueFamily;
-	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-	if (vkCreateCommandPool(_device, &poolInfo, nullptr, &_computeCommandPool) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create compute command pool!");
-
+	_slotDoneValue.resize(_targetCount, 0ull);
+	_computeCommandBuffers.resize(_targetCount);
+	_slots.resize(_targetCount);
 	// Pipeline + layouts
 	CreatePipelineAndLayouts();
 
@@ -46,8 +38,8 @@ void GpuAtomicComputeStrategy::Initialize(uint32_t targetCount)
 	CreateSampler();
 }
 
-void GpuAtomicComputeStrategy::WaitForTargetReuse(
-	uint32_t targetIndex, VkSemaphore timeline, uint64_t slotDoneValue)
+//TODO maybe needs to be checked
+void GpuAtomicComputeStrategy::WaitForTargetReuse(VkSemaphore timeline, uint64_t slotDoneValue)
 {
 	if (slotDoneValue == 0) return;
 
@@ -72,58 +64,87 @@ void GpuAtomicComputeStrategy::DispatchAfterRender(
 	VkSemaphore timeline,
 	const CubemapRenderTarget& target)
 {
-	// Ensure slot reuse
-	WaitForTargetReuse(slot, timeline, _slotSync[slot].copyDone);
+	// ------------------------------------------------------------
+	// 1) CPU wait: ensure previous compute usage of this slot is done
+	// ------------------------------------------------------------
+	if (_slotSync[slot].computeDone != 0)
+	{
+		VkSemaphoreWaitInfo waitInfo{
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+			.semaphoreCount = 1,
+			.pSemaphores = &timeline,
+			.pValues = &_slotSync[slot].computeDone
+		};
 
+		VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
+	}
+
+	// ------------------------------------------------------------
+	// 2) Reset & record command buffer
+	// ------------------------------------------------------------
 	VkCommandBuffer cmd = _computeCommandBuffers[slot];
-	vkResetCommandBuffer(cmd, 0);
+	VK_CHECK(vkResetCommandBuffer(cmd, 0));
 
-	VkCommandBufferBeginInfo begin{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-	vkBeginCommandBuffer(cmd, &begin);
+	VkCommandBufferBeginInfo begin{
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+	};
+	VK_CHECK(vkBeginCommandBuffer(cmd, &begin));
 
-	// --- image barrier ---
-	InsertImageMemoryBarrierToGeneral(cmd, target.cubemapImage, {
-		VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6
-		});
+	// Descriptor update MUST happen before bind
+	UpdateComputeDescriptorSet(slot, target);
 
-	UpdateComputeDescriptorSet(slot);
+	assert(slot < _computeDescriptorSets.size());
 
 	auto& pipe = _renderPipelineManager->GetPipelineObject(_computePipeline);
+
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipe._handle);
+
 	vkCmdBindDescriptorSets(
-		cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
-		pipe._pipelineLayout, 0, 1,
-		&_computeDescriptorSets[slot], 0, nullptr
+		cmd,
+		VK_PIPELINE_BIND_POINT_COMPUTE,
+		pipe._pipelineLayout,
+		0, 1,
+		&_computeDescriptorSets[slot],
+		0, nullptr
 	);
 
+	// Push constants
 	ComputePushConstants pc{};
-	pc.uNumCubemaps = deformableIndex;
-	pc.uNumCageVertices = _cageMesh._vertices.rows();
 	pc.uFaceSize = { (int)_faceSize, (int)_faceSize };
-	pc.uFacesPerCubemap = 6;
 	pc.uNumTriangles = _cageMesh._faces.rows();
 
 	vkCmdPushConstants(
-		cmd, pipe._pipelineLayout,
+		cmd,
+		pipe._pipelineLayout,
 		VK_SHADER_STAGE_COMPUTE_BIT,
 		0, sizeof(pc), &pc
 	);
 
-	// Clear slot buffers
-	vkCmdFillBuffer(cmd,
-		_slots[slot].lambda._deviceBuffer, 0, VK_WHOLE_SIZE, 0);
-	vkCmdFillBuffer(cmd,
-		_slots[slot].wsum._deviceBuffer, 0, VK_WHOLE_SIZE, 0);
+	// ------------------------------------------------------------
+	// 3) Clear buffers
+	// ------------------------------------------------------------
+	vkCmdFillBuffer(
+		cmd,
+		_slots[slot].lambda._deviceBuffer,
+		0, VK_WHOLE_SIZE, 0
+	);
 
-	// Barrier: transfer ? compute
+	vkCmdFillBuffer(
+		cmd,
+		_slots[slot].wsum._deviceBuffer,
+		0, VK_WHOLE_SIZE, 0
+	);
+
 	VkBufferMemoryBarrier clearBarrier[2]{};
-	for (int i = 0; i < 2; ++i) {
+	for (int i = 0; i < 2; ++i)
+	{
 		clearBarrier[i].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
 		clearBarrier[i].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 		clearBarrier[i].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
 		clearBarrier[i].offset = 0;
 		clearBarrier[i].size = VK_WHOLE_SIZE;
 	}
+
 	clearBarrier[0].buffer = _slots[slot].lambda._deviceBuffer;
 	clearBarrier[1].buffer = _slots[slot].wsum._deviceBuffer;
 
@@ -131,17 +152,24 @@ void GpuAtomicComputeStrategy::DispatchAfterRender(
 		cmd,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		0, 0, nullptr, 2, clearBarrier, 0, nullptr
+		0,
+		0, nullptr,
+		2, clearBarrier,
+		0, nullptr
 	);
 
-	uint32_t groupsX = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize; 
+	// ------------------------------------------------------------
+	// 4) Dispatch
+	// ------------------------------------------------------------
+	uint32_t groupsX = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize;
 	uint32_t groupsY = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize;
 
 	vkCmdDispatch(cmd, groupsX, groupsY, 6);
 
-	// Barrier: compute transfer (for copy)
+	// Barrier for transfer reads (copy stage)
 	VkBufferMemoryBarrier postBarrier[2]{};
-	for (int i = 0; i < 2; ++i) {
+	for (int i = 0; i < 2; ++i)
+	{
 		postBarrier[i] = clearBarrier[i];
 		postBarrier[i].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
 		postBarrier[i].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -151,41 +179,48 @@ void GpuAtomicComputeStrategy::DispatchAfterRender(
 		cmd,
 		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		0, 0, nullptr, 2, postBarrier, 0, nullptr
+		0,
+		0, nullptr,
+		2, postBarrier,
+		0, nullptr
 	);
 
-	vkEndCommandBuffer(cmd);
+	VK_CHECK(vkEndCommandBuffer(cmd));
 
-	// --- Timeline submission ---
-	uint64_t signal = NextTimelineValue();
-	_slotSync[slot].computeDone = signal;
+	// ------------------------------------------------------------
+	// 5) Submit with monotonic timeline signal
+	// ------------------------------------------------------------
+	uint64_t signalValue = NextTimelineValue();
+	_slotSync[slot].computeDone = signalValue;
 
 	VkTimelineSemaphoreSubmitInfo timelineInfo{
-		VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO
+		.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+		.waitSemaphoreValueCount = 1,
+		.pWaitSemaphoreValues = &_slotSync[slot].renderDone,
+		.signalSemaphoreValueCount = 1,
+		.pSignalSemaphoreValues = &signalValue
 	};
-	timelineInfo.waitSemaphoreValueCount = 1;
-	timelineInfo.pWaitSemaphoreValues = &_slotSync[slot].renderDone;
-	timelineInfo.signalSemaphoreValueCount = 1;
-	timelineInfo.pSignalSemaphoreValues = &signal;
-
-	VkSemaphore semaphores[] = { timeline };
 
 	VkPipelineStageFlags waitStage =
 		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
 
-	VkSubmitInfo submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
+	VkSubmitInfo submit{};
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit.pNext = &timelineInfo;
+
 	submit.waitSemaphoreCount = 1;
-	submit.pWaitSemaphores = semaphores;
+	submit.pWaitSemaphores = &timeline;
 	submit.pWaitDstStageMask = &waitStage;
-	submit.signalSemaphoreCount = 1;
-	submit.pSignalSemaphores = semaphores;
+
 	submit.commandBufferCount = 1;
 	submit.pCommandBuffers = &cmd;
 
+	submit.signalSemaphoreCount = 1;
+	submit.pSignalSemaphores = &timeline;
+
 	VkQueue queue;
 	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
-	vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+	VK_CHECK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));
 }
 
 void GpuAtomicComputeStrategy::SubmitReadbackCopy(
@@ -195,9 +230,7 @@ void GpuAtomicComputeStrategy::SubmitReadbackCopy(
 	ScopedCmdBuffer scoped(_device, _computeCommandPool);
 	VkCommandBuffer cmd = scoped.Get();
 
-	const size_t C = _cageMesh._vertices.rows();
-
-	VkBufferCopy lambdaCopy{ 0, 0, C * sizeof(float) };
+	VkBufferCopy lambdaCopy{ 0, 0, _cageMesh._vertices.rows() * sizeof(float) };
 	VkBufferCopy wsumCopy{ 0, 0, sizeof(float) };
 
 	vkCmdCopyBuffer(
@@ -239,6 +272,7 @@ void GpuAtomicComputeStrategy::SubmitReadbackCopy(
 	submit.pSignalSemaphores = &timeline;
 	submit.commandBufferCount = 1;
 	submit.pCommandBuffers = &cmd;
+	//TODO whats the wait stage? i want to avoid waits all together<s
 
 	VkQueue queue;
 	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
@@ -271,82 +305,9 @@ void GpuAtomicComputeStrategy::ConsumeSlot(
 	_wsumResults[deformableIndex] = wsum;
 }
 
-uint64_t GpuAtomicComputeStrategy::GetSlotCompletionValue(uint32_t targetIndex) const
+void GpuAtomicComputeStrategy::Readback()
 {
-	return _slotDoneValue[targetIndex];
-}
-
-void GpuAtomicComputeStrategy::Readback(
-	uint32_t cubemapIdx,
-	uint32_t targetIndex,
-	const std::string&)
-{
-
-	const size_t C = static_cast<size_t>(_cageMesh._vertices.rows());
-
-	VkBufferCopy lambdaCopy{ 0, 0, C * sizeof(float) };
-	VkBufferCopy wsumCopy{ 0, 0, sizeof(float) };
-
-	ScopedCmdBuffer scoped(_device, _computeCommandPool);
-	VkCommandBuffer cmd = scoped.Get();
-
-	vkCmdCopyBuffer(
-		cmd,
-		_slots[targetIndex].lambda._deviceBuffer,
-		_slots[targetIndex].lambdaStaging._deviceBuffer,
-		1, &lambdaCopy
-	);
-
-	vkCmdCopyBuffer(
-		cmd,
-		_slots[targetIndex].wsum._deviceBuffer,
-		_slots[targetIndex].wsumStaging._deviceBuffer,
-		1, &wsumCopy
-	);
-
-	VkQueue transferQueue;
-	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &transferQueue);
-
-	scoped.SubmitAndWait(transferQueue);
-
-	// --------------------------------------------------
-	// CPU storage
-	// --------------------------------------------------
-	const float* lambdaCPU =
-		reinterpret_cast<const float*>(_slots[targetIndex].lambdaStaging._mappedData);
-
-	const float wsumCPU =
-		*reinterpret_cast<const float*>(_slots[targetIndex].wsumStaging._mappedData);
-
-	// Allocate CPU arrays once
-	if (_lambdaResults.empty())
-	{
-		const size_t D = _deformableMesh._vertices.rows();
-		_lambdaResults.resize(D);
-		for (auto& row : _lambdaResults)
-			row.resize(C, 0.0f);
-
-		_wsumResults.resize(D, 0.0f);
-	}
-
-	// Store results (NO accumulation)
-	for (size_t c = 0; c < C; ++c)
-		_lambdaResults[cubemapIdx][c] = lambdaCPU[c];
-
-	_wsumResults[cubemapIdx] = wsumCPU;
-}
-
-void GpuAtomicComputeStrategy::WaitAll(VkSemaphore _timeline)
-{
-	if (_timelineValue == 0) return;
-
-	VkSemaphoreWaitInfo waitInfo{};
-	waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-	waitInfo.semaphoreCount = 1;
-	waitInfo.pSemaphores = &_timeline;
-	waitInfo.pValues = &_timelineValue;
-
-	vkWaitSemaphores(_device, &waitInfo, UINT64_MAX);
+	WriteWeightsToFile("GpuAtomicComputeStrategy_Readback.txt");
 }
 
 void GpuAtomicComputeStrategy::CreatePipelineAndLayouts() {
@@ -360,7 +321,7 @@ void GpuAtomicComputeStrategy::CreatePipelineAndLayouts() {
 
 	std::vector<VkDescriptorSetLayoutBinding> bindings{
 		// Image
-		{0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT},
+		{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
 		// Vertex index list
 		{1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
 		// lambda output
@@ -389,17 +350,34 @@ void GpuAtomicComputeStrategy::CreatePipelineAndLayouts() {
 
 void GpuAtomicComputeStrategy::AllocateResources()
 {
-	const uint32_t slotCount = static_cast<uint32_t>(_slotDoneValue.size());
-	const size_t C = static_cast<size_t>(_cageMesh._vertices.rows());
+	_computeDescriptorSets.resize(_targetCount);
 
-	_slots.resize(slotCount);
+	std::vector<VkDescriptorSetLayout> layouts(
+		_targetCount,
+		_computeLayout->GetReference()
+	);
+
+	VkDescriptorSetAllocateInfo allocInfo{
+		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
+	};
+	allocInfo.descriptorPool = _descriptorPool;
+	allocInfo.descriptorSetCount = _targetCount;
+	allocInfo.pSetLayouts = layouts.data(); 
+
+	VK_CHECK(vkAllocateDescriptorSets(
+		_device,
+		&allocInfo,
+		_computeDescriptorSets.data()
+	));
+
+	//const size_t C = static_cast<size_t>(_cageMesh._vertices.rows());
 
 	// --------------------------------------------------
 	// Allocate per-slot lambda / wsum buffers
 	// --------------------------------------------------
-	for (uint32_t i = 0; i < slotCount; ++i)
+	for (uint32_t i = 0; i < _targetCount; ++i)
 	{
-		const VkDeviceSize lambdaBytes = C * sizeof(float);
+		const VkDeviceSize lambdaBytes = static_cast<size_t>(_cageMesh._vertices.rows()) * sizeof(float);
 		const VkDeviceSize wsumBytes = sizeof(float);
 
 		// Device-local buffers
@@ -436,7 +414,7 @@ void GpuAtomicComputeStrategy::AllocateResources()
 	}
 
 	// --------------------------------------------------
-	// Vertex index list buffer (unchanged)
+	// Vertex index list buffer
 	// --------------------------------------------------
 	const int triCount = _cageMesh._faces.rows();
 	std::vector<uint32_t> vertexList(triCount * 3);
@@ -469,12 +447,12 @@ void GpuAtomicComputeStrategy::AllocateResources()
 	);
 }
 
-void GpuAtomicComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex)
+void GpuAtomicComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, const CubemapRenderTarget& target)
 {
 	VkDescriptorImageInfo imageInfo{};
-	imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-	imageInfo.imageView = _baryTexImageView;
-
+	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	imageInfo.imageView = target.cubemapView;
+	imageInfo.sampler = _barySampler;
 	VkDescriptorBufferInfo vertexListInfo{
 		_vertexListBuffer._deviceBuffer, 0, VK_WHOLE_SIZE
 	};
@@ -496,7 +474,7 @@ void GpuAtomicComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex)
 
 	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 		_computeDescriptorSets[slotIndex], 0, 0, 1,
-		VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &imageInfo };
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &imageInfo };
 
 	writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 		_computeDescriptorSets[slotIndex], 1, 0, 1,
@@ -517,102 +495,37 @@ void GpuAtomicComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex)
 	vkUpdateDescriptorSets(_device, writes.size(), writes.data(), 0, nullptr);
 }
 
-void GpuAtomicComputeStrategy::storeLambdaForVertex(const float* lambdaCPU)
-{
-	const size_t numCageVerts = static_cast<size_t>(_cageMesh._vertices.rows());
-	if (numCageVerts == 0) return;
-
-	_lambdaResults.resize(numCageVerts);
-	for (int i = 0; i < _lambdaResults.size(); i++) {
-		_lambdaResults[i].resize(_deformableMesh._vertices.rows(), 0);
-	}
-
-	for (int j = 0; j < _lambdaResults.size(); j++) {
-		float* dst = _lambdaResults[j].data();
-		for (size_t i = 0; i < numCageVerts; i++)
-		{
-			dst[i] += lambdaCPU[i];
-		}
-	}
-}
-
-void GpuAtomicComputeStrategy::storeWsumForVertex(const float* wsumCPU)
-{
-	if (!wsumCPU) return;
-
-	_wsumResults.resize(_deformableMesh._vertices.rows(), 0);
-
-	float* dst = _wsumResults.data();
-	for (size_t i = 0; i < _wsumResults.size(); i++)
-	{
-		dst[i] += wsumCPU[i];
-	}
-}
-
-void GpuAtomicComputeStrategy::InsertImageMemoryBarrierToGeneral(
-	VkCommandBuffer cmd,
-	VkImage image,
-	VkImageSubresourceRange subresourceRange)
-{
-	VkImageMemoryBarrier barrier{};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-
-	// Compute shader will read the image (sampled)
-	barrier.srcAccessMask =
-		VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-		VK_ACCESS_TRANSFER_WRITE_BIT |
-		VK_ACCESS_SHADER_WRITE_BIT;
-
-	barrier.dstAccessMask =
-		VK_ACCESS_SHADER_READ_BIT;
-
-	barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-	barrier.image = image;
-	barrier.subresourceRange = subresourceRange;
-
-	vkCmdPipelineBarrier(
-		cmd,
-		VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT |
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT |
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		0,
-		0, nullptr,
-		0, nullptr,
-		1, &barrier
-	);
-}
 void GpuAtomicComputeStrategy::CreateSampler() {
-	VkSamplerCreateInfo s{};
-	s.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-	s.pNext = nullptr;
-	s.flags = 0;
+	VkSamplerCreateInfo samplerInfo{};
+	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 
-	s.magFilter = VK_FILTER_NEAREST;
-	s.minFilter = VK_FILTER_NEAREST;
-	s.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	// NO filtering
+	samplerInfo.magFilter = VK_FILTER_NEAREST;
+	samplerInfo.minFilter = VK_FILTER_NEAREST;
 
-	s.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	s.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	s.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	// NO mipmapping
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	samplerInfo.minLod = 0.0f;
+	samplerInfo.maxLod = 0.0f;
+	samplerInfo.mipLodBias = 0.0f;
 
-	s.mipLodBias = 0.0f;
-	s.minLod = 0.0f;
-	s.maxLod = 0.0f;
+	// Clamp (doesn’t really matter since texelFetch ignores addressing)
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 
-	s.anisotropyEnable = VK_FALSE;
-	s.maxAnisotropy = 1.0f;
+	// No anisotropy
+	samplerInfo.anisotropyEnable = VK_FALSE;
 
-	s.compareEnable = VK_FALSE;
-	s.compareOp = VK_COMPARE_OP_ALWAYS;
+	// No comparison
+	samplerInfo.compareEnable = VK_FALSE;
 
-	s.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-	s.unnormalizedCoordinates = VK_FALSE;
+	// Normalized coordinates irrelevant for texelFetch
+	samplerInfo.unnormalizedCoordinates = VK_FALSE;
 
-	if (vkCreateSampler(_device, &s, nullptr, &_sampler) != VK_SUCCESS) {
-		throw std::runtime_error("Failed to create sampler for compute image!");
-	}
+	// Border color unused
+	samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	vkCreateSampler(_device, &samplerInfo, nullptr, &_barySampler);
 }
 
 void GpuAtomicComputeStrategy::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size)

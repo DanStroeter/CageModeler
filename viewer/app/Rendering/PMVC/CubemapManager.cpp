@@ -42,7 +42,7 @@ void CubemapManager::CreateRenderPass(VkFormat format) {
 	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; 
 
 	VkAttachmentDescription depthAttachment{};
 	depthAttachment.format = _device->FindDepthFormat();
@@ -406,11 +406,11 @@ void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
 }
 
 void CubemapManager::ComputeCoordinates() {
-	CubemapRenderInstance instance(*this, _cubemapSize, _format, ComputeType::GPUATOMIC);
+	CubemapRenderInstance instance(*this, _cubemapSize, _format, ComputeType::GPUSERIAL);
 	
 	CubemapWorkRange range{};
 	range.first = 0;
 	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
 
-	instance.ComputeCoordinates(range);
+	instance.ComputeCoordinatesGPUSerial(range);
 }

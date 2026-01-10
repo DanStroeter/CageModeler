@@ -75,11 +75,11 @@ add_executable(${PROJECT_NAME}
     Rendering/PMVC/CubemapRenderInstance.cpp
     Rendering/PMVC/CubemapManager.cpp
     Rendering/PMVC/CpuComputeStrategy.cpp
-    Rendering/PMVC/GpuSortComputeStrategy.cpp
+    Rendering/PMVC/GpuSerialComputeStrategy.h
     Rendering/PMVC/GpuAtomicComputeStrategy.cpp
-    Rendering/PMVC/GpuSerialComputeStrategy.cpp
+    
     Rendering/PMVC/ScopedCmdBuffer.cpp
-    ${IMGUI_BINDINGS} "Rendering/PMVC/DebugCubemapComputeStrategy.h" "Rendering/PMVC/DebugCubemapComputeStrategy.cpp")
+    ${IMGUI_BINDINGS} "Rendering/PMVC/DebugCubemapComputeStrategy.h" "Rendering/PMVC/DebugCubemapComputeStrategy.cpp" "Rendering/PMVC/GpuSerialComputeStrategy.cpp")
 
 
 target_compile_definitions(

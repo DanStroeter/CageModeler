@@ -6,9 +6,9 @@ uint32_t CpuComputeStrategy::RequiredRenderTargetCount() const
     return 3;
 }
 
-void CpuComputeStrategy::Initialize(uint32_t targetCount)
+void CpuComputeStrategy::Initialize()
 {
-    _targetCount = targetCount;
+    _targetCount = 2;
 }
 
 void CpuComputeStrategy::WaitForTargetReuse(uint32_t,

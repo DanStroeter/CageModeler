@@ -30,26 +30,26 @@ public:
         return 8;
     }
 
-    void Initialize(uint32_t targetCount) override;
-    void WaitForTargetReuse(uint32_t targetIndex, VkSemaphore timeline, uint64_t slotDoneValue) override;
+    void Initialize() override;
+    void WaitForTargetReuse(uint32_t targetIndex, VkSemaphore timeline, uint64_t slotDoneValue);
     void DispatchAfterRender(
         uint32_t deformableIndex,
         uint32_t slot,
         VkSemaphore timeline,
-		const CubemapRenderTarget& target) override;
+		const CubemapRenderTarget& target);
 
-    uint64_t GetSlotCompletionValue(uint32_t targetIndex) const override
+    uint64_t GetSlotCompletionValue(uint32_t targetIndex) const
     {
         return _slotCopyDoneValue[targetIndex];
     }
 
-    void Readback(uint32_t cubemapIdx, uint32_t targetIndex, const std::string& filename) override;
-    void WaitAll(VkSemaphore timeline) override;
+    void Readback(uint32_t cubemapIdx, uint32_t targetIndex, const std::string& filename);
+    void WaitAll(VkSemaphore timeline);
 
     void ConsumeSlot(
         uint32_t deformableIndex,
         uint32_t slot,
-        VkSemaphore timeline) override {
+        VkSemaphore timeline) {
     }
     //void Destroy();
 
