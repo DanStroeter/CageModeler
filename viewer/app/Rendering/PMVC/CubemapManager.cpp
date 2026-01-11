@@ -28,8 +28,6 @@ void CubemapManager::Initialize()
 	CreateRenderPass(_format);
 	CreateDescriptorSetLayouts();
 	CreateCubemapRenderPipeline();
-	CreateVertexBufferFromMesh();
-	CreateIndexBufferFromMesh();
 	//SphereWeightInitialization(512);
 }
 
@@ -405,12 +403,13 @@ void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
 	}
 }
 
-void CubemapManager::ComputeCoordinates() {
+void CubemapManager::ComputeCoordinates(Eigen::MatrixXd& weights) {
 	CubemapRenderInstance instance(*this, _cubemapSize, _format, ComputeType::GPUSERIAL);
-	
+	CreateVertexBufferFromMesh();
+	CreateIndexBufferFromMesh();
 	CubemapWorkRange range{};
 	range.first = 0;
 	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
 
-	instance.ComputeCoordinatesGPUSerial(range);
+	instance.ComputeCoordinatesGPUSerial(range, weights);
 }

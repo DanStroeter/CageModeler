@@ -822,7 +822,7 @@ float SphereWeightCalculator::ComputeSphereWeight(
 }
 
 void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
-	const CubemapWorkRange& range)
+	const CubemapWorkRange& range, Eigen::MatrixXd& weights)
 {
 	LOG_DEBUG("ComputeCoordinatesGPUSerial: range.first={}, range.count={}",
 		range.first, range.count);
@@ -918,7 +918,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
 			UINT64_MAX
 		);
 	}
-	computeStage->Readback();
-
+	weights = computeStage->Readback();
+	
 	LOG_DEBUG("ComputeCoordinatesGPUSerial: done");
 }

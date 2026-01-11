@@ -2,6 +2,7 @@
 
 #include <Mesh/Operations/MeshOperation.h>
 #include <Mesh/Operations/MeshWeightsParams.h>
+#include <Rendering/PMVC/CubemapManager.h>
 
 struct MeshComputeWeightsOperationParams
 {
@@ -35,6 +36,7 @@ struct MeshComputeWeightsOperationParams
 		, _forceCalculateWeights(forceCalculateWeights)
 		, _numBBWSteps(numBBWSteps)
 		, _numSamples(numSamples)
+		, _cubemapManager(nullptr)
 	{ }
 
 	DeformationType _deformationType = DeformationType::Green;
@@ -44,6 +46,7 @@ struct MeshComputeWeightsOperationParams
 	std::optional<EigenMesh> _embedding;
 	std::optional<Eigen::MatrixXd> _weights;
 	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
+	CubemapManager* _cubemapManager = nullptr;
 
 	Eigen::MatrixXi _cagePoints;
 	Eigen::MatrixXd _normals;

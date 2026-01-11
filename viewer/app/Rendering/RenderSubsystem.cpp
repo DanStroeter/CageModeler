@@ -104,9 +104,9 @@ void RenderSubsystem::InitializeEditor(const std::shared_ptr<Editor>& editor)
 		_renderCommandScheduler,
 		_renderResourceManager,
 		_renderPass);
-
+	LOG_DEBUG("init editor");
 	_cubemapRenderer = std::make_shared<CubemapManager>(_renderPipelineManager, _renderResourceManager, _device, _instance, 32, VK_FORMAT_R32G32B32A32_SFLOAT);
-
+	_cubemapRenderer->Initialize();
 	_editor = editor;
 	_editor->Initialize(_sceneRenderer, _cubemapRenderer);
 	// Finishes the ImGui setup.

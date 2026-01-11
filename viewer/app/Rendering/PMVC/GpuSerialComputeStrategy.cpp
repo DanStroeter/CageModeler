@@ -364,10 +364,29 @@ void GpuSerialComputeStrategy::ConsumeSlot(
 
 	_wsumResults[deformableIndex] = wsum;
 }
-
-void GpuSerialComputeStrategy::Readback()
+Eigen::MatrixXd toEigenMatrix(const std::vector<std::vector<float>>& v)
 {
-	WriteWeightsToFile("GpuSerialComputeStrategy_Readback.txt");
+	const std::size_t rows = v.size();
+	const std::size_t cols = rows ? v[0].size() : 0;
+
+	Eigen::MatrixXd m(rows, cols);
+
+	for (std::size_t i = 0; i < rows; ++i)
+	{
+		assert(v[i].size() == cols); // ensure rectangular
+		for (std::size_t j = 0; j < cols; ++j)
+		{
+			m(static_cast<Eigen::Index>(i),
+				static_cast<Eigen::Index>(j)) = static_cast<double>(v[i][j]);
+		}
+	}
+	return m;
+}
+
+Eigen::MatrixXd GpuSerialComputeStrategy::Readback()
+{
+	return toEigenMatrix(_lambdaResults);
+	//WriteWeightsToFile("GpuSerialComputeStrategy_Readback.txt");
 }
 
 void GpuSerialComputeStrategy::CreatePipelineAndLayouts() {

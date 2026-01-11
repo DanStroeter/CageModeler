@@ -4,13 +4,13 @@
 #include <Rendering/Core/RenderResourceManager.h>
 #include <Rendering/Core/Buffer.h>
 #include <vulkan/vulkan.h>
-
+#include <Eigen/Dense>
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
 
 
-class CubemapManager;
+//class CubemapManager;
 struct CubemapWorkRange;
 
 class SphereWeightCalculator {
@@ -70,16 +70,16 @@ class CubemapRenderInstance {
 public:
 	//CubemapRenderInstance() = delete;
 
-	CubemapRenderInstance(CubemapManager& cubemapManager);
-	CubemapRenderInstance(CubemapManager& cubemapManager, int cubemapSize, VkFormat format, ComputeType computeType);
+	CubemapRenderInstance();//CubemapManager& cubemapManager);
+	CubemapRenderInstance(int cubemapSize, VkFormat format, ComputeType computeType); //CubemapManager& cubemapManager, 
 	~CubemapRenderInstance();
 	//CubemapRenderInstance(CubemapRenderInstance&) = default;
 	//CubemapRenderInstance& operator=(CubemapRenderInstance&) = default;
 
-	void ComputeCoordinatesGPUSerial(const CubemapWorkRange& range);
+	void ComputeCoordinatesGPUSerial(const CubemapWorkRange& range, Eigen::MatrixXd& weights);
 
 private:
-	CubemapManager& _cubemapManager;
+	//CubemapManager& _cubemapManager;
 
 	std::unique_ptr<ICubemapComputeStrategy> _computeStage;
 	

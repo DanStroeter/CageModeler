@@ -137,7 +137,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCancelled(); },
 		[this] { OnNewProjectCreated(); });
 
-	_projectModel->_deformationType = DeformationType::MVC; 
+	_projectModel->_deformationType = DeformationType::PMVCLipman; 
 	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
 	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
 	_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
@@ -563,13 +563,13 @@ void Editor::OnNewCageCreated()
 
 void Editor::OnNewProjectCreated()
 {
+	LOG_DEBUG("Set Cage and Mesh");
 	if (_projectModel->CheckMissingFiles())
 	{
 		_statusBar->SetError("Unable to load all files, check if some of them are missing.");
 
 		return;
 	}
-
 	_threadPool->Submit([this]()
 	{
 		_isComputingWeightsData.store(true, std::memory_order_seq_cst);
@@ -662,10 +662,11 @@ void Editor::OnNewProjectCreated()
 
 			_deformedCageHandle = _scene->AddCage(_projectData->_deformedCage._vertices, _projectData->_deformedCage._faces);
 
-			_cubemapRenderer->SetCage(_projectData->_cage);
-			_cubemapRenderer->SetMesh(_projectData->_mesh);
-			_cubemapRenderer->Initialize();
-			_cubemapRenderer->ComputeCoordinates();
+			//_cubemapRenderer->SetCage(_projectData->_cage);
+			//_cubemapRenderer->SetMesh(_projectData->_mesh);
+			//_cubemapRenderer->Initialize();
+			//LOG_DEBUG("Cubemaprenderer init fertig");
+			//_cubemapRenderer->ComputeCoordinates();
 
 			const auto cageMesh = _scene->GetMesh(_deformedCageHandle);
 			cageMesh->SetModelMatrix(newModelMatrix);
@@ -715,8 +716,11 @@ void Editor::OnNewProjectCreated()
 				_projectSettingsPanel->Dismiss();
 				_projectSettingsPanel = nullptr;
 			}
+
 		});
 	});
+	_cubemapRenderer->SetCage(_projectData->_cage);
+	_cubemapRenderer->SetMesh(_projectData->_mesh);
 }
 
 void Editor::OnProjectSettingsCancelled()

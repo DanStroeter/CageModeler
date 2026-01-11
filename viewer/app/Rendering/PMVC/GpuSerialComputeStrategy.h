@@ -46,7 +46,7 @@ public:
         uint64_t signalValue,
         const CubemapRenderTarget& target);
 
-    void Readback();
+    Eigen::MatrixXd Readback();
 
     void ConsumeSlot(
         uint32_t deformableIndex,
