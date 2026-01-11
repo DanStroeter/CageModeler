@@ -42,7 +42,7 @@ void CubemapManager::CreateRenderPass(VkFormat format) {
 	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; 
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	VkAttachmentDescription depthAttachment{};
 	depthAttachment.format = _device->FindDepthFormat();

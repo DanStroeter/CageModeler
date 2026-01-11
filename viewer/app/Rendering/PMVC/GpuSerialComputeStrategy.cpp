@@ -199,7 +199,7 @@ void GpuSerialComputeStrategy::DispatchAfterRender(
 	VkPipelineStageFlags waitStage =
 		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
 
-	VkSubmitInfo submit{};
+	/*VkSubmitInfo submit{};
 	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit.pNext = &timelineInfo;
 
@@ -215,7 +215,39 @@ void GpuSerialComputeStrategy::DispatchAfterRender(
 
 	VkQueue queue;
 	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
-	VK_CHECK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));
+	VK_CHECK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));*/
+	VkCommandBufferSubmitInfo cmdInfo{
+	.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+	.commandBuffer = cmd
+	};
+
+	VkSemaphoreSubmitInfo waitInfo{
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		.semaphore = timeline,
+		.value = waitValue,
+		.stageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+	};
+
+	VkSemaphoreSubmitInfo signalInfo{
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		.semaphore = timeline,
+		.value = signalValue,
+		.stageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+	};
+
+	VkSubmitInfo2 submit2{
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+		.waitSemaphoreInfoCount = 1,
+		.pWaitSemaphoreInfos = &waitInfo,
+		.commandBufferInfoCount = 1,
+		.pCommandBufferInfos = &cmdInfo,
+		.signalSemaphoreInfoCount = 1,
+		.pSignalSemaphoreInfos = &signalInfo
+	};
+
+	VkQueue queue;
+	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
+	vkQueueSubmit2(queue, 1, &submit2, VK_NULL_HANDLE);
 }
 
 void GpuSerialComputeStrategy::SubmitReadbackCopy(

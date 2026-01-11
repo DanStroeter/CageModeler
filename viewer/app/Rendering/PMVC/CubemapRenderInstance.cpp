@@ -107,6 +107,7 @@ void CubemapRenderInstance::Initalize() {
 CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 {
 	CubemapRenderTarget target{};
+	target.currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	// ---------------------------------------------------------------------
 	// Create cubemap color image
@@ -138,6 +139,82 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 
 	VK_CHECK(vkAllocateMemory(_cubemapManager._device, &allocInfo, nullptr, &target.cubemapMemory));
 	VK_CHECK(vkBindImageMemory(_cubemapManager._device, target.cubemapImage, target.cubemapMemory, 0));
+
+
+	VkCommandBufferAllocateInfo allocInfoCB{
+	.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+	.commandPool = _cubemapManager._graphicCommandPool, // or graphics pool
+	.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+	.commandBufferCount = 1
+	};
+
+	VkCommandBuffer cmd;
+	VK_CHECK(vkAllocateCommandBuffers(_cubemapManager._device, &allocInfoCB, &cmd));
+
+	VkCommandBufferBeginInfo beginInfo{
+	.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+	.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
+
+	VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
+
+	VkImageMemoryBarrier2 barrier{
+		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+		.srcStageMask = VK_PIPELINE_STAGE_2_NONE,
+		.srcAccessMask = 0,
+		.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+		.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+		.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		.image = target.cubemapImage,
+		.subresourceRange = {
+			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			.baseMipLevel = 0,
+			.levelCount = 1,
+			.baseArrayLayer = 0,
+			.layerCount = 6
+		}
+	};
+
+	VkDependencyInfo depInfo{
+		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+		.imageMemoryBarrierCount = 1,
+		.pImageMemoryBarriers = &barrier
+	};
+
+	vkCmdPipelineBarrier2(cmd, &depInfo);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
+
+	VkCommandBufferSubmitInfo sInfo = {
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+		.commandBuffer = cmd
+	};
+	VkSubmitInfo2 submit{
+	.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+	.commandBufferInfoCount = 1,
+	.pCommandBufferInfos = &sInfo
+	};
+
+	VkQueue graphicsQueue;
+	vkGetDeviceQueue(
+		_cubemapManager._device,
+		_cubemapManager._device->GetQueueFamilies()._graphics.value(),
+		0,
+		&graphicsQueue
+	);
+
+	VK_CHECK(vkQueueSubmit2(graphicsQueue, 1, &submit, VK_NULL_HANDLE));
+	VK_CHECK(vkQueueWaitIdle(graphicsQueue));
+	vkFreeCommandBuffers(
+		_cubemapManager._device,
+		_cubemapManager._graphicCommandPool,
+		1,
+		&cmd
+	);
+
+	target.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
 
 	// ---------------------------------------------------------------------
 	// Create per-face color views
@@ -288,7 +365,29 @@ CubemapRenderUnit CubemapRenderInstance::CreateCubemapRenderUnit() const
 	// ------------------------------------------------------------
 	// Allocate command buffers (one per face)
 	// ------------------------------------------------------------
-	VkCommandBufferAllocateInfo cmdAllocInfo{
+	std::array<VkCommandBuffer, 8> buffers{};
+
+	VkCommandBufferAllocateInfo alloc{
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		.commandPool = _graphicCommandPool,
+		.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+		.commandBufferCount = (uint32_t)buffers.size()
+	};
+
+	VK_CHECK(vkAllocateCommandBuffers(
+		_cubemapManager._device,
+		&alloc,
+		buffers.data()));
+
+	unit.beginCmd = buffers[0];
+
+	for (uint32_t i = 0; i < 6; ++i)
+		unit.graphicsCmd[i] = buffers[1 + i];
+
+	unit.endCmd = buffers[7];
+
+
+	/*VkCommandBufferAllocateInfo cmdAllocInfo{
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO
 	};
 	cmdAllocInfo.commandPool = _graphicCommandPool;
@@ -299,7 +398,7 @@ CubemapRenderUnit CubemapRenderInstance::CreateCubemapRenderUnit() const
 		_cubemapManager._device,
 		&cmdAllocInfo,
 		unit.graphicsCmd.data()
-	));
+	));*/
 
 	return unit;
 }
@@ -341,103 +440,218 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 	VkSemaphore timeline,
 	uint64_t signalValue)
 {
-	VkClearValue clearValues[2];
+	VkClearValue clearValues[2]{};
 	clearValues[0].color = { {0.f, 0.f, 0.f, 1.f} };
 	clearValues[1].depthStencil = { 1.f, 0 };
 
-	VkCommandBufferBeginInfo beginInfo{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
-	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	VkCommandBufferBeginInfo beginInfo{
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+	};
 
-	const PipelineObject& pipelineObj = _cubemapManager._renderPipelineManager->GetPipelineObject(_cubemapManager._cubemapPipelineHandle);
+	const PipelineObject& pipelineObj =
+		_cubemapManager._renderPipelineManager->GetPipelineObject(
+			_cubemapManager._cubemapPipelineHandle);
 
+	// ---------------------------------------------------------------------
+	// Update shared UBO (outside render loop)
+	// ---------------------------------------------------------------------
 	const uint32_t numTriangles =
 		static_cast<uint32_t>(_cubemapManager._cageMesh._faces.size() / 3);
-	const float invNumTriangles = 1.0f / static_cast<float>(numTriangles);
-	CubemapMatricesUBO uBO{};
-	uBO.invNumTriangles = invNumTriangles;
-	std::memcpy(_cubemapRenderUnit.matricesUBO._mappedData, &uBO, sizeof(uBO));//TODO move somewhere else
 
-	// Record 6 command buffers, one per face
+	CubemapMatricesUBO ubo{};
+	ubo.invNumTriangles = 1.0f / float(numTriangles);
+	std::memcpy(
+		_cubemapRenderUnit.matricesUBO._mappedData,
+		&ubo,
+		sizeof(ubo));
+
+	// =====================================================================
+	// BEGIN CMD — transition to COLOR_ATTACHMENT_OPTIMAL
+	// =====================================================================
+	{
+		VkCommandBuffer cmd = _cubemapRenderUnit.beginCmd;
+		VK_CHECK(vkResetCommandBuffer(cmd, 0));
+		VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
+
+		VkPipelineStageFlags2 srcStage;
+		VkAccessFlags2 srcAccess;
+
+		if (target.currentLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+			srcStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+			srcAccess = VK_ACCESS_2_SHADER_READ_BIT;
+		}
+		else {
+			// first use
+			srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+			srcAccess = 0;
+		}
+
+		VkImageMemoryBarrier2 barrier{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+			.srcStageMask = srcStage,
+			.srcAccessMask = srcAccess,
+			.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.dstAccessMask =
+				VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT |
+				VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+			.oldLayout = target.currentLayout,
+			.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			.image = target.cubemapImage,
+			.subresourceRange = {
+				VK_IMAGE_ASPECT_COLOR_BIT,
+				0, 1,
+				0, 6
+			}
+		};
+
+		VkDependencyInfo dep{
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = &barrier
+		};
+
+		vkCmdPipelineBarrier2(cmd, &dep);
+		VK_CHECK(vkEndCommandBuffer(cmd));
+	}
+
+	target.currentLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	// =====================================================================
+	// GRAPHICS CMDS — one per face
+	// =====================================================================
 	for (uint32_t face = 0; face < 6; ++face)
 	{
-
-		/*faceUBO.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 1000.0f);
-		faceUBO.proj[1][1] *= -1.0f;
-		faceUBO.view = _cubemapManager.ComputeCubemapViewMatrix(face, camPos);*/
-
 		VkCommandBuffer cmd = _cubemapRenderUnit.graphicsCmd[face];
 		VK_CHECK(vkResetCommandBuffer(cmd, 0));
 		VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
 
-		CubemapPushConstants facePush{};
-		facePush.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 1000.0f);
-		facePush.proj[1][1] *= -1.0f;
-		facePush.view = _cubemapManager.ComputeCubemapViewMatrix(face, camPos);
+		CubemapPushConstants push{};
+		push.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 1000.0f);
+		push.proj[1][1] *= -1.0f;
+		push.view = _cubemapManager.ComputeCubemapViewMatrix(face, camPos);
 
 		vkCmdPushConstants(
 			cmd,
 			pipelineObj._pipelineLayout,
 			VK_SHADER_STAGE_VERTEX_BIT,
 			0,
-			sizeof(CubemapPushConstants),
-			&facePush
-		);
+			sizeof(push),
+			&push);
 
-		VkRenderPassBeginInfo rpInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
-		rpInfo.renderPass = _cubemapManager._renderPass;
-		rpInfo.framebuffer = target.framebuffers[face];
-		rpInfo.renderArea.offset = { 0, 0 };
-		rpInfo.renderArea.extent = { (uint32_t)_cubemapSize, (uint32_t)_cubemapSize };
-		rpInfo.clearValueCount = 2;
-		rpInfo.pClearValues = clearValues;
+		VkRenderPassBeginInfo rpInfo{
+			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+			.renderPass = _cubemapManager._renderPass,
+			.framebuffer = target.framebuffers[face],
+			.renderArea = {{0, 0}, {_cubemapSize, _cubemapSize}},
+			.clearValueCount = 2,
+			.pClearValues = clearValues
+		};
 
 		vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
 		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineObj._handle);
 
 		VkBuffer vb[] = { _cubemapManager._vertexBuffer._deviceBuffer };
 		VkDeviceSize offs[] = { 0 };
 		vkCmdBindVertexBuffers(cmd, 0, 1, vb, offs);
-		vkCmdBindIndexBuffer(cmd, _cubemapManager._indexBuffer._deviceBuffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdBindIndexBuffer(
+			cmd,
+			_cubemapManager._indexBuffer._deviceBuffer,
+			0,
+			VK_INDEX_TYPE_UINT32);
 
 		vkCmdBindDescriptorSets(
-			cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+			cmd,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
 			pipelineObj._pipelineLayout,
-			0, 1, &_cubemapRenderUnit.matricesDescriptorSet,
-			0, nullptr
-		);
+			0, 1,
+			&_cubemapRenderUnit.matricesDescriptorSet,
+			0, nullptr);
 
-		vkCmdDrawIndexed(cmd, (uint32_t)_cubemapManager._cageMesh._faces.size(), 1, 0, 0, 0);
+		vkCmdDrawIndexed(
+			cmd,
+			static_cast<uint32_t>(_cubemapManager._cageMesh._faces.size()),
+			1, 0, 0, 0);
 
 		vkCmdEndRenderPass(cmd);
 		VK_CHECK(vkEndCommandBuffer(cmd));
 	}
 
-	// Submit all 6 in a single submit, signal timeline semaphore
-	std::array<VkCommandBufferSubmitInfo, 6> cmdInfos{};
-	for (uint32_t i = 0; i < 6; ++i)
+	// =====================================================================
+	// END CMD — transition to SHADER_READ_ONLY_OPTIMAL
+	// =====================================================================
 	{
-		cmdInfos[i] = VkCommandBufferSubmitInfo{
-			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-			.commandBuffer = _cubemapRenderUnit.graphicsCmd[i]
+		VkCommandBuffer cmd = _cubemapRenderUnit.endCmd;
+		VK_CHECK(vkResetCommandBuffer(cmd, 0));
+		VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
+
+		VkImageMemoryBarrier2 barrier{
+			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+			.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+			.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+			.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+			.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+			.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			.image = target.cubemapImage,
+			.subresourceRange = {
+				VK_IMAGE_ASPECT_COLOR_BIT,
+				0, 1,
+				0, 6
+			}
+		};
+
+		VkDependencyInfo dep{
+			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+			.imageMemoryBarrierCount = 1,
+			.pImageMemoryBarriers = &barrier
+		};
+
+		vkCmdPipelineBarrier2(cmd, &dep);
+		VK_CHECK(vkEndCommandBuffer(cmd));
+	}
+
+	target.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	// =====================================================================
+	// SUBMIT
+	// =====================================================================
+	std::array<VkCommandBufferSubmitInfo, 8> cmdInfos{};
+	cmdInfos[0] = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr,
+				   _cubemapRenderUnit.beginCmd };
+
+	for (uint32_t i = 0; i < 6; ++i) {
+		cmdInfos[1 + i] = {
+			VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+			nullptr,
+			_cubemapRenderUnit.graphicsCmd[i]
 		};
 	}
+
+	cmdInfos[7] = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr,
+				   _cubemapRenderUnit.endCmd };
 
 	VkSemaphoreSubmitInfo signalInfo{
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 		.semaphore = timeline,
 		.value = signalValue,
-		//.stageMask = VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT
+		.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
 	};
 
-	VkSubmitInfo2 submit{ VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
-	submit.commandBufferInfoCount = (uint32_t)cmdInfos.size();
-	submit.pCommandBufferInfos = cmdInfos.data();
-	submit.signalSemaphoreInfoCount = 1;
-	submit.pSignalSemaphoreInfos = &signalInfo;
+	VkSubmitInfo2 submit{
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+		.commandBufferInfoCount = uint32_t(cmdInfos.size()),
+		.pCommandBufferInfos = cmdInfos.data(),
+		.signalSemaphoreInfoCount = 1,
+		.pSignalSemaphoreInfos = &signalInfo
+	};
 
 	VkQueue graphicsQueue;
-	vkGetDeviceQueue(_cubemapManager._device, _cubemapManager._device->GetQueueFamilies()._graphics.value(), 0, &graphicsQueue);
+	vkGetDeviceQueue(
+		_cubemapManager._device,
+		_cubemapManager._device->GetQueueFamilies()._graphics.value(),
+		0,
+		&graphicsQueue);
 
 	VK_CHECK(vkQueueSubmit2(graphicsQueue, 1, &submit, VK_NULL_HANDLE));
 }
@@ -809,7 +1023,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
 			computeDone,
 			target
 		);
-
+		/*
 		// ------------------------------------------------------------
 		// 3) Copy (waits on computeDone)
 		// ------------------------------------------------------------
@@ -830,7 +1044,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
 			slot,
 			timeline,
 			copyDone
-		);
+		);*/
 
 		// ------------------------------------------------------------
 		// 4) CPU wait (serialization point)
@@ -839,7 +1053,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
 		waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
 		waitInfo.semaphoreCount = 1;
 		waitInfo.pSemaphores = &timeline;
-		waitInfo.pValues = &copyDone;
+		waitInfo.pValues = &computeDone;
 
 		vkWaitSemaphores(
 			_cubemapManager._device,
