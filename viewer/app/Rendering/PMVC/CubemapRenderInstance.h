@@ -36,7 +36,6 @@ struct CubemapRenderTarget
 	std::array<VkImageView, 6> depthViews;
 
 	std::array<VkFramebuffer, 6> framebuffers;
-	VkImageLayout  currentLayout;
 
 };
 
@@ -48,9 +47,6 @@ struct CubemapRenderUnit
 
 	MemoryMappedBuffer matricesUBO;
 	VkDescriptorSet    matricesDescriptorSet;
-
-	VkCommandBuffer beginCmd;
-	VkCommandBuffer endCmd;
 };
 
 enum class ComputeType {

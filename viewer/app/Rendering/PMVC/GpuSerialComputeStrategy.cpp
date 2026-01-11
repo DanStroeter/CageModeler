@@ -12,6 +12,12 @@ void GpuSerialComputeStrategy::Initialize()
 	//_slotSync.resize(_targetCount);
 	// Prepare slots
 	//_slotDoneValue.resize(_targetCount, 0ull);
+	_lambdaResults.resize(_deformableMesh._vertices.rows());
+	for (int i = 0; i < _lambdaResults.size(); i++) {
+		_lambdaResults[i].resize(_cageMesh._vertices.rows(), 0.0f);
+	}
+	_wsumResults.resize(_deformableMesh._vertices.rows(), 0.0f);
+
 	_computeCommandBuffers.resize(1);
 	_copyCommandBuffers.resize(1);
 	_slots.resize(1);
@@ -330,6 +336,14 @@ void GpuSerialComputeStrategy::ConsumeSlot(
 	VkSemaphore timeline, 
 	uint32_t waitValue)
 {
+	//assert(slot < _slots.size());
+	//assert(deformableIndex < _lambdaResults.size());
+
+	const size_t c = _cageMesh._vertices.rows();
+
+	//assert(_lambdaResults[deformableIndex].size() == c);
+	//assert(_slots[slot].lambdaStaging.sizeBytes >= C * sizeof(float));
+	//assert(_slots[slot].wsumStaging.sizeBytes >= sizeof(float));
 	uint64_t signal = waitValue;
 	VkSemaphoreWaitInfo wait{};
 	wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
@@ -631,12 +645,8 @@ void GpuSerialComputeStrategy::WriteWeightsToFile(const std::string& filename)
 			sum += _lambdaResults[cub][v];
 		}
 		file << "Lambda sum: " << sum << "\n";
+		file << "Sum normalize: " << _wsumResults[cub] << "\n";
 	}
-	file << "\n===== Pixels Processed per Cubemap(" << _wsumResults.size() << " floats) =====\n";
-	for (size_t cub = 0; cub < _wsumResults.size(); ++cub) {
-		file << "wsum[" << cub << "] = " << _wsumResults[cub] << "\n";
-	}
-
 	file.close();
 	LOG_INFO("Weights written to " + filename);
 }

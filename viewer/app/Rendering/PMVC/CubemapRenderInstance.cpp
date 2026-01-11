@@ -100,14 +100,14 @@ void CubemapRenderInstance::Initalize() {
 	}
 	UpdateMatricesDescriptorSet();
 	CreateSyncObjects();
-	_sphereWeightCalculator = SphereWeightCalculator();
-	_sphereWeightCalculator.SphereWeightInitialization(_cubemapSize, _cubemapManager._device, _cubemapManager._resourceManager, _graphicCommandPool);
+	//_sphereWeightCalculator = SphereWeightCalculator();
+	//_sphereWeightCalculator.SphereWeightInitialization(_cubemapSize, _cubemapManager._device, _cubemapManager._resourceManager, _graphicCommandPool);
 }
 
 CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 {
 	CubemapRenderTarget target{};
-	target.currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	//target.currentLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	// ---------------------------------------------------------------------
 	// Create cubemap color image
@@ -125,6 +125,7 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
 		VK_IMAGE_USAGE_SAMPLED_BIT |
 		VK_IMAGE_USAGE_STORAGE_BIT |
+		VK_IMAGE_LAYOUT_GENERAL |
 		VK_IMAGE_USAGE_TRANSFER_SRC_BIT; //TODO: only added for debugging prints for image remove after done(needed for CPU compute?)
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -157,64 +158,6 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	};
 
 	VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
-
-	VkImageMemoryBarrier2 barrier{
-		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-		.srcStageMask = VK_PIPELINE_STAGE_2_NONE,
-		.srcAccessMask = 0,
-		.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-		.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-		.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-		.image = target.cubemapImage,
-		.subresourceRange = {
-			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			.baseMipLevel = 0,
-			.levelCount = 1,
-			.baseArrayLayer = 0,
-			.layerCount = 6
-		}
-	};
-
-	VkDependencyInfo depInfo{
-		.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-		.imageMemoryBarrierCount = 1,
-		.pImageMemoryBarriers = &barrier
-	};
-
-	vkCmdPipelineBarrier2(cmd, &depInfo);
-
-	VK_CHECK(vkEndCommandBuffer(cmd));
-
-	VkCommandBufferSubmitInfo sInfo = {
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-		.commandBuffer = cmd
-	};
-	VkSubmitInfo2 submit{
-	.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-	.commandBufferInfoCount = 1,
-	.pCommandBufferInfos = &sInfo
-	};
-
-	VkQueue graphicsQueue;
-	vkGetDeviceQueue(
-		_cubemapManager._device,
-		_cubemapManager._device->GetQueueFamilies()._graphics.value(),
-		0,
-		&graphicsQueue
-	);
-
-	VK_CHECK(vkQueueSubmit2(graphicsQueue, 1, &submit, VK_NULL_HANDLE));
-	VK_CHECK(vkQueueWaitIdle(graphicsQueue));
-	vkFreeCommandBuffers(
-		_cubemapManager._device,
-		_cubemapManager._graphicCommandPool,
-		1,
-		&cmd
-	);
-
-	target.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
 
 	// ---------------------------------------------------------------------
 	// Create per-face color views
@@ -365,7 +308,7 @@ CubemapRenderUnit CubemapRenderInstance::CreateCubemapRenderUnit() const
 	// ------------------------------------------------------------
 	// Allocate command buffers (one per face)
 	// ------------------------------------------------------------
-	std::array<VkCommandBuffer, 8> buffers{};
+	std::array<VkCommandBuffer, 6> buffers{};
 
 	VkCommandBufferAllocateInfo alloc{
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -379,12 +322,12 @@ CubemapRenderUnit CubemapRenderInstance::CreateCubemapRenderUnit() const
 		&alloc,
 		buffers.data()));
 
-	unit.beginCmd = buffers[0];
+	//unit.beginCmd = buffers[0];
 
 	for (uint32_t i = 0; i < 6; ++i)
-		unit.graphicsCmd[i] = buffers[1 + i];
+		unit.graphicsCmd[i] = buffers[i];
 
-	unit.endCmd = buffers[7];
+	//unit.endCmd = buffers[7];
 
 
 	/*VkCommandBufferAllocateInfo cmdAllocInfo{
@@ -467,57 +410,6 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 		sizeof(ubo));
 
 	// =====================================================================
-	// BEGIN CMD — transition to COLOR_ATTACHMENT_OPTIMAL
-	// =====================================================================
-	{
-		VkCommandBuffer cmd = _cubemapRenderUnit.beginCmd;
-		VK_CHECK(vkResetCommandBuffer(cmd, 0));
-		VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
-
-		VkPipelineStageFlags2 srcStage;
-		VkAccessFlags2 srcAccess;
-
-		if (target.currentLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-			srcStage = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
-			srcAccess = VK_ACCESS_2_SHADER_READ_BIT;
-		}
-		else {
-			// first use
-			srcStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
-			srcAccess = 0;
-		}
-
-		VkImageMemoryBarrier2 barrier{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-			.srcStageMask = srcStage,
-			.srcAccessMask = srcAccess,
-			.dstStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.dstAccessMask =
-				VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT |
-				VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-			.oldLayout = target.currentLayout,
-			.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			.image = target.cubemapImage,
-			.subresourceRange = {
-				VK_IMAGE_ASPECT_COLOR_BIT,
-				0, 1,
-				0, 6
-			}
-		};
-
-		VkDependencyInfo dep{
-			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-			.imageMemoryBarrierCount = 1,
-			.pImageMemoryBarriers = &barrier
-		};
-
-		vkCmdPipelineBarrier2(cmd, &dep);
-		VK_CHECK(vkEndCommandBuffer(cmd));
-	}
-
-	target.currentLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	// =====================================================================
 	// GRAPHICS CMDS — one per face
 	// =====================================================================
 	for (uint32_t face = 0; face < 6; ++face)
@@ -578,58 +470,17 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 	}
 
 	// =====================================================================
-	// END CMD — transition to SHADER_READ_ONLY_OPTIMAL
-	// =====================================================================
-	{
-		VkCommandBuffer cmd = _cubemapRenderUnit.endCmd;
-		VK_CHECK(vkResetCommandBuffer(cmd, 0));
-		VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
-
-		VkImageMemoryBarrier2 barrier{
-			.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-			.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-			.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-			.dstStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-			.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
-			.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-			.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			.image = target.cubemapImage,
-			.subresourceRange = {
-				VK_IMAGE_ASPECT_COLOR_BIT,
-				0, 1,
-				0, 6
-			}
-		};
-
-		VkDependencyInfo dep{
-			.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-			.imageMemoryBarrierCount = 1,
-			.pImageMemoryBarriers = &barrier
-		};
-
-		vkCmdPipelineBarrier2(cmd, &dep);
-		VK_CHECK(vkEndCommandBuffer(cmd));
-	}
-
-	target.currentLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	// =====================================================================
 	// SUBMIT
 	// =====================================================================
-	std::array<VkCommandBufferSubmitInfo, 8> cmdInfos{};
-	cmdInfos[0] = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr,
-				   _cubemapRenderUnit.beginCmd };
+	std::array<VkCommandBufferSubmitInfo, 6> cmdInfos{};
 
 	for (uint32_t i = 0; i < 6; ++i) {
-		cmdInfos[1 + i] = {
+		cmdInfos[i] = {
 			VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
 			nullptr,
 			_cubemapRenderUnit.graphicsCmd[i]
 		};
 	}
-
-	cmdInfos[7] = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO, nullptr,
-				   _cubemapRenderUnit.endCmd };
 
 	VkSemaphoreSubmitInfo signalInfo{
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
@@ -868,7 +719,13 @@ void SphereWeightCalculator::SphereWeightInitialization(uint32_t size, RenderRes
 		1, &barrier2
 	);
 
-	//EndOneTimeCommands(cmd);
+	VkQueue transferQueue;
+	vkGetDeviceQueue(
+		device,
+		device->GetQueueFamilies()._graphics.value(),
+		0,
+		&transferQueue);
+	scoped.SubmitAndWait(transferQueue);
 
 	// ------------------------------------------------------------
 	// 4) Create 2D-array image view (for compute)
@@ -1023,7 +880,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
 			computeDone,
 			target
 		);
-		/*
+
 		// ------------------------------------------------------------
 		// 3) Copy (waits on computeDone)
 		// ------------------------------------------------------------
@@ -1038,13 +895,13 @@ void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
 			computeDone,
 			copyDone
 		);
-
+		
 		computeStage->ConsumeSlot(
 			cubemapIdx,
 			slot,
 			timeline,
 			copyDone
-		);*/
+		);
 
 		// ------------------------------------------------------------
 		// 4) CPU wait (serialization point)
