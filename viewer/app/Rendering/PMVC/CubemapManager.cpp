@@ -253,20 +253,6 @@ void CubemapManager::CreateIndexBufferFromMesh()
 		indices.size() * sizeof(uint32_t));
 }
 
-glm::mat4 CubemapManager::ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos)
-{
-	switch (faceIndex)
-	{
-	case 0: return glm::lookAt(pos, pos + glm::vec3(1, 0, 0), glm::vec3(0, -1, 0)); // +X
-	case 1: return glm::lookAt(pos, pos + glm::vec3(-1, 0, 0), glm::vec3(0, -1, 0)); // -X
-	case 2: return glm::lookAt(pos, pos + glm::vec3(0, 1, 0), glm::vec3(0, 0, 1));  // +Y
-	case 3: return glm::lookAt(pos, pos + glm::vec3(0, -1, 0), glm::vec3(0, 0, -1)); // -Y
-	case 4: return glm::lookAt(pos, pos + glm::vec3(0, 0, 1), glm::vec3(0, -1, 0)); // +Z
-	case 5: return glm::lookAt(pos, pos + glm::vec3(0, 0, -1), glm::vec3(0, -1, 0)); // -Z
-	default: return glm::mat4(1.0f);
-	}
-}
-
 float CubemapManager::ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices)
 {
 	float minDist = std::numeric_limits<float>::max();
@@ -310,18 +296,6 @@ std::vector<CubemapVertex> CubemapManager::CreateCubemapVertexBuffer(const Polyg
 	return vertexBuffer;
 }
 
-uint32_t CubemapManager::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const
-{
-	VkPhysicalDeviceMemoryProperties memProperties;
-	vkGetPhysicalDeviceMemoryProperties(_device->GetPhysicalDeviceHandle(), &memProperties);
-
-	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-		if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-			return i;
-	}
-	throw std::runtime_error("Failed to find suitable memory type!");
-}
-
 /*VkCommandBuffer CubemapManager::BeginOneTimeCommands() {
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -354,11 +328,10 @@ void CubemapManager::EndOneTimeCommands(VkCommandBuffer cmd) {
 }
 */
 
-void CubemapManager::DebugRenderCubemaps()
+/*void CubemapManager::DebugRenderCubemaps()
 {
 	// 1. Create render instance in DEBUG mode
 	CubemapRenderInstance instance(
-		*this,
 		_cubemapSize,
 		_format,
 		ComputeType::DEBUGCUBEMAPS
@@ -377,7 +350,6 @@ void CubemapManager::DebugComputeCoordinates()
 {
 	// 1. Create render instance in DEBUG mode
 	CubemapRenderInstance instance(
-		*this,
 		_cubemapSize,
 		_format,
 		ComputeType::GPUSERIAL
@@ -390,7 +362,7 @@ void CubemapManager::DebugComputeCoordinates()
 
 	// 4. Execute
 	//instance.DebugPMVC(range);
-}
+}*/
 
 void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
 	VkCommandPoolCreateInfo poolInfo{};
@@ -404,9 +376,37 @@ void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
 }
 
 void CubemapManager::ComputeCoordinates(Eigen::MatrixXd& weights) {
-	CubemapRenderInstance instance(*this, _cubemapSize, _format, ComputeType::GPUSERIAL);
+	assert(_device && "Device is null");
+	assert(_descriptorPool && "DescriptorPool is null");
+	assert(_resourceManager && "ResourceManager is null");
+	assert(_renderPipelineManager && "RenderPipelineManager is null");
+	assert(_matricesLayout && "MatricesLayout is null");
 	CreateVertexBufferFromMesh();
 	CreateIndexBufferFromMesh();
+	CubemapRenderInstance instance(
+		*this,
+		_cubemapSize,
+		_format,
+		ComputeType::GPUSERIAL,
+
+		_device,
+		_descriptorPool,
+		_resourceManager,
+		_renderPipelineManager,
+
+		_cageMesh,
+		_deformableMesh,
+
+		_graphicCommandPool,
+		_renderPass,
+		_cubemapPipelineHandle,
+
+		_matricesLayout,
+
+		_indexBuffer,
+		_vertexBuffer
+	);
+	
 	CubemapWorkRange range{};
 	range.first = 0;
 	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());

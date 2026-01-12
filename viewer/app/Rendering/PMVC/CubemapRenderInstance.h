@@ -3,14 +3,16 @@
 #include <Rendering/PMVC/IComputeStrategy.h>
 #include <Rendering/Core/RenderResourceManager.h>
 #include <Rendering/Core/Buffer.h>
+#include <Rendering/Core/DescriptorPool.h>
 #include <vulkan/vulkan.h>
-#include <Eigen/Dense>
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec3.hpp>
+#include <Mesh/GeometryUtils.h>
+#include <Rendering/PMVC/CubemapManager.h>
 
 
-//class CubemapManager;
+class CubemapManager;
 struct CubemapWorkRange;
 
 class SphereWeightCalculator {
@@ -71,7 +73,29 @@ public:
 	//CubemapRenderInstance() = delete;
 
 	CubemapRenderInstance();//CubemapManager& cubemapManager);
-	CubemapRenderInstance(int cubemapSize, VkFormat format, ComputeType computeType); //CubemapManager& cubemapManager, 
+	CubemapRenderInstance(
+		CubemapManager& cubemapManager,
+		int cubemapSize,
+		VkFormat format,
+		ComputeType computeType,
+
+		RenderResourceRef<Device> device,
+		RenderResourceRef<DescriptorPool> descriptorPool,
+		std::shared_ptr<RenderResourceManager> resourceManager,
+		std::shared_ptr<RenderPipelineManager> renderPipelineManager,
+
+		EigenMesh cageMesh,
+		EigenMesh deformableMesh,
+
+		VkCommandPool graphicsCommandPool,
+		VkRenderPass renderPass,
+		PipelineHandle cubemapPipelineHandle,
+
+		RenderResourceRef<DescriptorSetLayout> matricesLayout,
+
+		MemoryMappedBuffer indexBuffer,
+		MemoryMappedBuffer vertexBuffer
+	);
 	~CubemapRenderInstance();
 	//CubemapRenderInstance(CubemapRenderInstance&) = default;
 	//CubemapRenderInstance& operator=(CubemapRenderInstance&) = default;
@@ -89,7 +113,7 @@ private:
 	ComputeType _computeType;
 
 	//init functions
-	void Initalize();
+	void Initialize();
 	CubemapRenderTarget CreateCubemapRenderTarget() const;
 	CubemapRenderUnit CreateCubemapRenderUnit() const;
 
@@ -108,7 +132,22 @@ private:
 	//sync objects
 	std::vector<uint64_t> _slotDoneValue;
 	std::vector <VkSemaphore> _timelines = {};
-
-	friend class GpuSerialComputeStrategy;
+	glm::mat4 ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos);
+	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
+	//friend class GpuSerialComputeStrategy;
 	SphereWeightCalculator _sphereWeightCalculator;
+
+	//from manager
+	RenderResourceRef<Device> _device;
+	RenderResourceRef < DescriptorPool> _descriptorPool;
+	std::shared_ptr<RenderResourceManager> _resourceManager;
+	std::shared_ptr<RenderPipelineManager> _renderPipelineManager;
+	EigenMesh _cageMesh;
+	EigenMesh _deformableMesh;
+	VkCommandPool _graphicsCommandPool;
+	VkRenderPass _renderPass;
+	PipelineHandle _cubemapPipelineHandle;
+	RenderResourceRef<DescriptorSetLayout>  _matricesLayout;
+	MemoryMappedBuffer _indexBuffer;
+	MemoryMappedBuffer _vertexBuffer;
 };

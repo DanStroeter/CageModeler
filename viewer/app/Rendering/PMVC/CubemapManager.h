@@ -67,14 +67,14 @@ private:
 	void CreateIndexBufferFromMesh();
 	//void SphereWeightInitialization(uint32_t size);
 	//float ComputeSphereWeight(int px, int py, int faceSize, int face);
-	uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
+	//uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 	//VkCommandBuffer BeginOneTimeCommands();
 	//void EndOneTimeCommands(VkCommandBuffer cmd);
 
 	//helper functions:
 	float ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
 	float ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
-	glm::mat4 ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos);
+	//glm::mat4 ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos);
 	std::vector<CubemapVertex> CreateCubemapVertexBuffer(const PolygonMesh& mesh);
 
 	//resources:
@@ -89,8 +89,8 @@ private:
 	EigenMesh _deformableMesh;
 
 	//pipeline
-	VkCommandPool _graphicCommandPool = VK_NULL_HANDLE;
-	VkRenderPass _renderPass = VK_NULL_HANDLE;
+	VkCommandPool _graphicCommandPool;
+	VkRenderPass _renderPass;
 	PipelineHandle _cubemapPipelineHandle;
 
 	//buffers
@@ -98,11 +98,11 @@ private:
 	MemoryMappedBuffer _vertexBuffer;
 
 	//descriptors
-	RenderResourceRef<DescriptorPool> _descriptorPool;
-	RenderResourceRef<DescriptorSetLayout> _matricesLayout;
+	RenderResourceRef < DescriptorPool> _descriptorPool;
+	RenderResourceRef < DescriptorSetLayout> _matricesLayout;
 
-	friend class CubemapRenderInstance; //TODO remove and fix dependencies!
-	friend class GpuSerialComputeStrategy;
+	//friend class CubemapRenderInstance; //TODO remove and fix dependencies!
+	//friend class GpuSerialComputeStrategy;
 
 	uint32_t _cubemapSize;
 	VkFormat _format;

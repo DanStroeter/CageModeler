@@ -184,7 +184,6 @@ MeshComputeWeightsOperation::ExecutionResult MeshComputeWeightsOperation::Execut
 	{
 		//TODO
 		//calculatePMVCLIpmanCoordinates(_params._cage._vertices,_params._cage._faces,_params._mesh._vertices,weights);
-		_params._cubemapManager->ComputeCoordinates(weights);
 		return ExecutionResult("Failed to compute PMVC weights");
 	}
 	else if (_params._deformationType == DeformationType::PMVCRayracing)

@@ -570,6 +570,8 @@ void Editor::OnNewProjectCreated()
 
 		return;
 	}
+	
+
 	_threadPool->Submit([this]()
 	{
 		_isComputingWeightsData.store(true, std::memory_order_seq_cst);
@@ -592,11 +594,25 @@ void Editor::OnNewProjectCreated()
 
 			return;
 		}
-
+		
+		
 		// Compute the weights, but do it off the main thread, because it's the most expensive operation.
 		auto weightsResult = ComputeCageWeights(*projectResult.GetValue());
 
-		if (weightsResult.HasError())
+		//LOG_DEBUG(_projectModel.get()->_deformationType);
+		if (_projectModel.get()->_deformationType == DeformationType::PMVCLipman) {
+			Eigen::MatrixXd weightsResultMatrix;
+			_mainThreadQueue->Push([this, weightsResultMatrix = weightsResultMatrix, projectResult = projectResult]() mutable {
+				//LOG_DEBUG("Cubemaprenderer compute coordinates start");
+				_cubemapRenderer->SetCage(projectResult.GetValue().get()->_cage);
+				_cubemapRenderer->SetMesh(projectResult.GetValue().get()->_mesh);
+				_cubemapRenderer->Initialize();
+				_cubemapRenderer->ComputeCoordinates(weightsResultMatrix);
+			});
+		}
+			
+
+		if (weightsResult.HasError() && _projectModel.get()->_deformationType != DeformationType::PMVCLipman)
 		{
 			// Update the status with an error.
 			_mainThreadQueue->Push([this, error = std::move(weightsResult.GetError())]() mutable
@@ -719,8 +735,6 @@ void Editor::OnNewProjectCreated()
 
 		});
 	});
-	_cubemapRenderer->SetCage(_projectData->_cage);
-	_cubemapRenderer->SetMesh(_projectData->_mesh);
 }
 
 void Editor::OnProjectSettingsCancelled()

@@ -11,7 +11,7 @@ void App::Initialize()
 	REGISTER_SUBSYSTEM(_collection, WindowSubsystem)
 	REGISTER_SUBSYSTEM(_collection, CameraSubsystem)
 	REGISTER_SUBSYSTEM(_collection, RenderSubsystem)
-
+	
 	_collection.PostInitializeSubsystems();
 }
 
@@ -24,6 +24,7 @@ void App::Start()
 
 	const auto renderSubsystem = _collection.GetDependencySubsystem<RenderSubsystem>();
 
+	
 	// TODO: Separate the editor from the editor rendering to avoid post-initialization from the rendering subsystem.
 	renderSubsystem->InitializeEditor(_editor);
 
@@ -40,6 +41,7 @@ void App::Start()
 	auto accumulator = 0.0;
 	bool cubemapstart = true;
 
+	//_editor->OnNewProjectCreated();
 	while (_isRunning)
 	{
 		auto newTime = std::chrono::high_resolution_clock::now();

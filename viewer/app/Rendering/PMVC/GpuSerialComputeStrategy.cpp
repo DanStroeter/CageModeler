@@ -385,8 +385,8 @@ Eigen::MatrixXd toEigenMatrix(const std::vector<std::vector<float>>& v)
 
 Eigen::MatrixXd GpuSerialComputeStrategy::Readback()
 {
+	WriteWeightsToFile("GpuSerialComputeStrategy_Readback.txt");
 	return toEigenMatrix(_lambdaResults);
-	//WriteWeightsToFile("GpuSerialComputeStrategy_Readback.txt");
 }
 
 void GpuSerialComputeStrategy::CreatePipelineAndLayouts() {
