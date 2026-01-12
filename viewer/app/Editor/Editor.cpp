@@ -597,21 +597,23 @@ void Editor::OnNewProjectCreated()
 		
 		
 		// Compute the weights, but do it off the main thread, because it's the most expensive operation.
-		auto weightsResult = ComputeCageWeights(*projectResult.GetValue());
-
 		//LOG_DEBUG(_projectModel.get()->_deformationType);
-		if (_projectModel.get()->_deformationType == DeformationType::PMVCLipman) {
-			Eigen::MatrixXd weightsResultMatrix;
-			_mainThreadQueue->Push([this, weightsResultMatrix = weightsResultMatrix, projectResult = projectResult]() mutable {
-				//LOG_DEBUG("Cubemaprenderer compute coordinates start");
-				_cubemapRenderer->SetCage(projectResult.GetValue().get()->_cage);
-				_cubemapRenderer->SetMesh(projectResult.GetValue().get()->_mesh);
-				_cubemapRenderer->Initialize();
-				_cubemapRenderer->ComputeCoordinates(weightsResultMatrix);
-			});
-		}
-			
+		//std::optional<decltype(ComputeCageWeights(*projectResult.GetValue()))> weightsResult;
+		std::promise<decltype(ComputeCageWeights(*projectResult.GetValue()))> promise;
+		auto future = promise.get_future();
 
+		if (_projectModel.get()->_deformationType == DeformationType::PMVCLipman) {
+			_mainThreadQueue->Push(
+				[this, projectResult, p = std::move(promise)]() mutable {
+				p.set_value(ComputeCageWeights(*projectResult.GetValue()));
+			}
+			);
+		}
+		else {
+			promise.set_value(ComputeCageWeights(*projectResult.GetValue()));
+		}
+
+		auto weightsResult = future.get();
 		if (weightsResult.HasError() && _projectModel.get()->_deformationType != DeformationType::PMVCLipman)
 		{
 			// Update the status with an error.
@@ -1364,7 +1366,8 @@ MeshOperationResult<MeshComputeWeightsOperationResult> Editor::ComputeCageWeight
 		projectData._bc,
 		projectData.CanInterpolateWeights(),
 		projectData._numBBWSteps,
-		projectData._numSamples);
+		projectData._numSamples,
+		projectData._cubemapManager);
 }
 
 MeshOperationResult<MeshCageGenerationResult> Editor::GenerateCage(const CageGenerationMethod cageGenerationMethod,
