@@ -50,7 +50,7 @@ public:
 	~CubemapManager();
 	void Initialize();
 
-	void ComputeCoordinates(Eigen::MatrixXd& weights);
+	MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates();
 	void DebugRenderCubemaps();
 	void DebugComputeCoordinates();
 

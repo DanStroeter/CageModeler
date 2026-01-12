@@ -142,7 +142,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
 	_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
 	_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
-	_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated.msh";
+	_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated_embedding.msh";
 	_projectModel->_deformedCageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
@@ -601,11 +601,16 @@ void Editor::OnNewProjectCreated()
 		//std::optional<decltype(ComputeCageWeights(*projectResult.GetValue()))> weightsResult;
 		std::promise<decltype(ComputeCageWeights(*projectResult.GetValue()))> promise;
 		auto future = promise.get_future();
-
+		Eigen::MatrixXd weightMatrix;
 		if (_projectModel.get()->_deformationType == DeformationType::PMVCLipman) {
 			_mainThreadQueue->Push(
-				[this, projectResult, p = std::move(promise)]() mutable {
-				p.set_value(ComputeCageWeights(*projectResult.GetValue()));
+				[this, projectResult, p = std::move(promise), &weightMatrix]() mutable {
+				_cubemapRenderer->SetCage(projectResult.GetValue()->_cage);
+				_cubemapRenderer->SetMesh(projectResult.GetValue()->_mesh);
+				_cubemapRenderer->Initialize();
+				//_cubemapRenderer->ComputeCoordinates(weightMatrix);
+				
+				p.set_value(_cubemapRenderer->ComputeCoordinates());
 			}
 			);
 		}
@@ -635,6 +640,15 @@ void Editor::OnNewProjectCreated()
 			std::move(weightsResult.GetValue()._psiQuad));
 
 		_isComputingDeformationData.store(true, std::memory_order_seq_cst);
+
+		const auto& mesh = projectResult.GetValue()->_mesh;
+		const auto& cage = projectResult.GetValue()->_cage;
+		const auto& defCage = projectResult.GetValue()->_deformedCage;
+
+		LOG_DEBUG("MESH vertices: {} x {}", mesh._vertices.rows(), mesh._vertices.cols());
+		LOG_DEBUG("CAGE vertices: {} x {}", cage._vertices.rows(), cage._vertices.cols());
+		LOG_DEBUG("DEF CAGE vertices: {} x {}", defCage._vertices.rows(), defCage._vertices.cols());
+		//LOG_DEBUG(projectResult.GetValue()->_deformationType);
 
 		auto deformedMeshResult = ComputeDeformedMesh(projectResult.GetValue()->_mesh,
 			projectResult.GetValue()->_cage,
@@ -1366,8 +1380,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> Editor::ComputeCageWeight
 		projectData._bc,
 		projectData.CanInterpolateWeights(),
 		projectData._numBBWSteps,
-		projectData._numSamples,
-		projectData._cubemapManager);
+		projectData._numSamples);
 }
 
 MeshOperationResult<MeshCageGenerationResult> Editor::GenerateCage(const CageGenerationMethod cageGenerationMethod,
