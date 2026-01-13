@@ -387,7 +387,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 		*this,
 		_cubemapSize,
 		_format,
-		ComputeType::GPUSERIAL,
+		ComputeType::GPUATOMIC,
 
 		_device,
 		_descriptorPool,
@@ -410,7 +410,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	range.first = 0;
 	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
 	Eigen::MatrixXd weights;
-	instance.ComputeCoordinatesGPUSerial(range, weights);
+	instance.ComputeCoordinatesGPUAtomic(range, weights);
 	Eigen::MatrixXd M = weights;
 	Eigen::MatrixXd interpolatedWeights;
 	Eigen::MatrixXd psi;

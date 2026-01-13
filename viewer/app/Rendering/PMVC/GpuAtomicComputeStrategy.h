@@ -26,7 +26,7 @@ public:
         , _transferQueueFamily(transferQueueFamily)
         , _faceSize(faceSize)
         , _format(format)
-		, _descriptorPool(descriptorPool)
+        , _descriptorPool(descriptorPool)
         , _resourceManager(resourceManager)
         , _renderPipelineManager(renderPipelineManager)
         , _cageMesh(cageMesh)
@@ -42,37 +42,34 @@ public:
         uint32_t deformableIndex,
         uint32_t slot,
         VkSemaphore timeline,
+        uint64_t waitValue,
+        uint64_t signalValue,
         const CubemapRenderTarget& target);
 
-    void Readback();
+    Eigen::MatrixXd Readback();
 
     void ConsumeSlot(
         uint32_t deformableIndex,
         uint32_t slot,
-        VkSemaphore timeline);
+        VkSemaphore timeline,
+        uint32_t waitValue);
 
     void SubmitReadbackCopy(
         uint32_t slot,
-        VkSemaphore timeline);
+        VkSemaphore timeline,
+        uint64_t waitValue,
+        uint64_t signalValue);
 
-    std::vector<VkCommandBuffer> _computeCommandBuffers;
-
-    uint64_t NextTimelineValue() {
-        return ++_timelineValue;
-    }
 private:
-    void WaitForTargetReuse(VkSemaphore timeline,
-        uint64_t slotDoneValue);
-
     void CreatePipelineAndLayouts();
     void AllocateResources();
 
     const uint32_t kDispatchGroupSize = 8;
 
     RenderResourceRef<Device> _device;
-	uint32_t _transferQueueFamily = 0;
-	uint32_t _faceSize = 512;
-	VkFormat _format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    uint32_t _transferQueueFamily = 0;
+    uint32_t _faceSize = 32;
+    VkFormat _format = VK_FORMAT_R32G32B32A32_SFLOAT;
 
     // Compute pipeline and descriptors
     PipelineHandle _computePipeline;
@@ -81,7 +78,8 @@ private:
 
     // Command resources
     VkCommandPool _computeCommandPool = VK_NULL_HANDLE;
-    VkCommandBuffer _computeCommandBuffer = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> _computeCommandBuffers = {};
+    std::vector<VkCommandBuffer> _copyCommandBuffers = {};
 
     Buffer _vertexListBuffer;
 
@@ -92,18 +90,10 @@ private:
         MemoryMappedBuffer lambdaStaging;
         MemoryMappedBuffer wsumStaging;
     };
-
     std::vector<SlotBuffers> _slots;
 
-    struct SlotSync {
-        uint64_t renderDone = 0;
-        uint64_t computeDone = 0;
-        uint64_t copyDone = 0;
-    };
-    std::vector<SlotSync> _slotSync;
-
     // CPU-side result storage
-    std::vector<std::vector<float>> _lambdaResults;
+    Eigen::MatrixXd _lambdaResults;
     std::vector<float> _wsumResults;
 
     EigenMesh& _cageMesh;
@@ -113,18 +103,15 @@ private:
     std::shared_ptr<RenderResourceManager> _resourceManager;
     std::shared_ptr<RenderPipelineManager> _renderPipelineManager;
 
-    uint64_t _timelineValue = 0;
-    std::vector<uint64_t> _slotDoneValue;
-
     void UpdateComputeDescriptorSet(uint32_t targetIndex, const CubemapRenderTarget& target);
 
-	SphereWeightCalculator _sphereWeightCalculator;
+    SphereWeightCalculator _sphereWeightCalculator;
 
     void CreateSampler();
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
-    void WriteWeightsToFile(const std::string& filename); 
+    void WriteWeightsToFile(const std::string& filename);
 
-    int _targetCount = 2;
+    int _targetCount = 6;
 
     VkSampler _barySampler;
 };

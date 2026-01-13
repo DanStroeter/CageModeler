@@ -80,7 +80,7 @@ add_executable(${PROJECT_NAME}
     Rendering/PMVC/Raytracer.cpp
     
     Rendering/PMVC/ScopedCmdBuffer.cpp
-    ${IMGUI_BINDINGS} "Rendering/PMVC/DebugCubemapComputeStrategy.h" "Rendering/PMVC/DebugCubemapComputeStrategy.cpp" "Rendering/PMVC/GpuSerialComputeStrategy.cpp" "Rendering/PMVC/Raytracer.h" "Rendering/PMVC/Raytracer.cpp")
+    ${IMGUI_BINDINGS} "Rendering/PMVC/DebugCubemapComputeStrategy.h" "Rendering/PMVC/DebugCubemapComputeStrategy.cpp" "Rendering/PMVC/GpuSerialComputeStrategy.cpp" "Rendering/PMVC/Raytracer.h" "Rendering/PMVC/Raytracer.cpp" "Rendering/PMVC/GpuMassivelyParallelComputeStrategy.h" "Rendering/PMVC/GpuMassivelyParallelComputeStrategy.cpp")
 
 
 target_compile_definitions(

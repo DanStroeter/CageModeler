@@ -68,7 +68,7 @@ private:
 
     RenderResourceRef<Device> _device;
     uint32_t _transferQueueFamily = 0;
-    uint32_t _faceSize = 512;
+    uint32_t _faceSize = 32;
     VkFormat _format = VK_FORMAT_R32G32B32A32_SFLOAT;
 
     // Compute pipeline and descriptors

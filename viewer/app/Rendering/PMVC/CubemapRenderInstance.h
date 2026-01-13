@@ -56,7 +56,8 @@ enum class ComputeType {
 	GPUATOMIC,
 	//GPUSORT,
 	DEBUGCUBEMAPS, // for debugging writes cupemaps to disk no compute
-	GPUSERIAL 
+	GPUSERIAL ,
+	GPUMP
 	// TODO: implement if time leftover
 };
 
@@ -101,6 +102,10 @@ public:
 	//CubemapRenderInstance& operator=(CubemapRenderInstance&) = default;
 
 	void ComputeCoordinatesGPUSerial(const CubemapWorkRange& range, Eigen::MatrixXd& weights);
+	void ComputeCoordinatesGPUAtomic(const CubemapWorkRange& range, Eigen::MatrixXd& weights);
+	void ComputeCoordinatesGPUMP(
+		const CubemapWorkRange& range,
+		Eigen::MatrixXd& weights);
 
 private:
 	//CubemapManager& _cubemapManager;

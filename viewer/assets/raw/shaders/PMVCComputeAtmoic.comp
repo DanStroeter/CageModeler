@@ -47,8 +47,10 @@ void main()
     if (tri >= uint(params.uNumTriangles))
         return;
 
+    uint fy = params.uFaceSize.y - 1 - y;
+    float w = texelFetch(uSolidAngleTex, ivec3(x, fy, face), 0).r;
     // Solid angle weight
-    float w = texelFetch(uSolidAngleTex, ivec3(x, y, face), 0).r;
+    //float w = texelFetch(uSolidAngleTex, ivec3(x, y, face), 0).r;
 
     // Triangle vertex indices
     uint i0 = vertexList[tri * 3 + 0];

@@ -103,18 +103,6 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 		else if (_params._deformationType == DeformationType::MVC ||_params._deformationType == DeformationType::QMVC || _params._deformationType == DeformationType::MLC ||
 			_params._deformationType == DeformationType::MEC)
 		{
-			const auto& W = _params._weightsData._weights;
-			const auto& C = _params._deformedCage._vertices;
-
-			LOG_DEBUG("About to multiply: W^T ({} x {}) * C ({} x {})",
-				W.cols(), W.rows(),
-				C.rows(), C.cols());
-
-			CheckFormat(
-				W.cols() == C.rows(),
-				"INVALID DIMENSIONS: W^T.cols={} != C.rows={}",
-				W.cols(), C.rows()
-			);
 			vertexData[i]._vertices = _params._weightsData._weights.transpose() * _params._deformedCage._vertices;
 		}
 		else if (_params._deformationType == DeformationType::PMVCRayracing || _params._deformationType == DeformationType::PMVCLipman) {

@@ -141,10 +141,10 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	_projectModel->_deformationType = DeformationType::PMVCRayracing;
 	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
 	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
-	_projectModel->_meshFilepath = "assets/meshes/chessBishop.obj";
-	_projectModel->_cageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
+	_projectModel->_meshFilepath = "assets/meshes/armadilloman.obj";
+	_projectModel->_cageFilepath = "assets/meshes/armadilloman_cages_triangulated.obj";
 	_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated_embedding.msh";
-	_projectModel->_deformedCageFilepath = "assets/meshes/bishop_cages_triangulated.obj";
+	_projectModel->_deformedCageFilepath = "assets/meshes/armadilloman_cages_triangulated_deformed_8.obj";
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 
@@ -600,7 +600,7 @@ void Editor::OnNewProjectCreated()
 		// Compute the weights, but do it off the main thread, because it's the most expensive operation.
 		//LOG_DEBUG(_projectModel.get()->_deformationType);
 		//std::optional<decltype(ComputeCageWeights(*projectResult.GetValue()))> weightsResult;
-		std::promise<decltype(ComputeCageWeights(*projectResult.GetValue()))> promise;
+		/*std::promise<decltype(ComputeCageWeights(*projectResult.GetValue()))> promise;
 		auto future = promise.get_future();
 		Eigen::MatrixXd weightMatrix;
 		if (_projectModel.get()->_deformationType == DeformationType::PMVCLipman) {
@@ -630,6 +630,32 @@ void Editor::OnNewProjectCreated()
 			);
 		}
 		else {
+			promise.set_value(ComputeCageWeights(*projectResult.GetValue()));
+		}
+
+		auto weightsResult = future.get();*/
+		using WeightsResult = decltype(ComputeCageWeights(*projectResult.GetValue()));
+
+		std::future<WeightsResult> future;
+
+		if (_projectModel->_deformationType == DeformationType::PMVCLipman) {
+
+			auto promise = std::make_shared<std::promise<WeightsResult>>();
+			future = promise->get_future();
+
+			_mainThreadQueue->Push(
+				[this, projectResult, promise]() mutable {
+				_cubemapRenderer->SetCage(projectResult.GetValue()->_cage);
+				_cubemapRenderer->SetMesh(projectResult.GetValue()->_mesh);
+				_cubemapRenderer->Initialize();
+
+				promise->set_value(_cubemapRenderer->ComputeCoordinates());
+			}
+			);
+		}
+		else {
+			std::promise<WeightsResult> promise;
+			future = promise.get_future();
 			promise.set_value(ComputeCageWeights(*projectResult.GetValue()));
 		}
 
