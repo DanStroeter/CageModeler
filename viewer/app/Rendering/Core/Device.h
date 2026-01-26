@@ -150,6 +150,10 @@ private:
 		bool _timelineSemaphore = false;
 		bool _synchronization2 = false;
 		bool _shaderAtomicFloat = false;
+		bool _raytracing = false;
+
+		VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rtProperties;
+		VkPhysicalDeviceAccelerationStructurePropertiesKHR _asProperties;
 	};
 
 	struct PhysicalDeviceQueryResult

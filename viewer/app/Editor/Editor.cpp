@@ -614,6 +614,18 @@ void Editor::OnNewProjectCreated()
 			}
 			);
 		}
+		else if (_projectModel.get()->_deformationType == DeformationType::PMVCLipman) {
+			_mainThreadQueue->Push(
+				[this, projectResult, p = std::move(promise), &weightMatrix]() mutable {
+				_raytracer->SetCage(projectResult.GetValue()->_cage);
+				_raytracer->SetMesh(projectResult.GetValue()->_mesh);
+				_raytracer->Initialize();
+				//_cubemapRenderer->ComputeCoordinates(weightMatrix);
+
+				p.set_value(_raytracer->ComputeCoordinates());
+			}
+			);
+		}
 		else {
 			promise.set_value(ComputeCageWeights(*projectResult.GetValue()));
 		}

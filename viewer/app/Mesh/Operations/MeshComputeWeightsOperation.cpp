@@ -184,11 +184,12 @@ MeshComputeWeightsOperation::ExecutionResult MeshComputeWeightsOperation::Execut
 	{
 		//TODO
 		//calculatePMVCLIpmanCoordinates(_params._cage._vertices,_params._cage._faces,_params._mesh._vertices,weights);
+		LOG_ERROR("PMVCLipman implemented elsewhere, method shouldnt be called with this parameter!");
 		return ExecutionResult("Failed to compute PMVC weights");
 	}
 	else if (_params._deformationType == DeformationType::PMVCRayracing)
 	{
-		LOG_ERROR("PMVCRaytracing not implemented yet!");
+		LOG_ERROR("PMVCRaytracing implemented elsewhere, method shouldnt be called with this parameter!");
 		return ExecutionResult("Failed to compute PMVC weights");
 	}
 

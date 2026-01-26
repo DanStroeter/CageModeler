@@ -242,6 +242,8 @@ private:
 
 	std::shared_ptr<CubemapManager> _cubemapRenderer = nullptr;
 
+	std::shared_ptr<CubemapManager> _raytracer = nullptr;
+
 	/// All gizmos in the scene.
 	std::shared_ptr<Gizmo> _gizmo;
 

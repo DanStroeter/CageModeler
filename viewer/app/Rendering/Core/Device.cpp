@@ -131,21 +131,45 @@ Device::PhysicalDeviceQueryResult Device::QueryPhysicalDevice() const
 	barycentricFeatures.fragmentShaderBarycentric = VK_TRUE;
 	barycentricFeatures.pNext = &timelineFeatures;
 
-	// Physical device features chain head
-	VkPhysicalDeviceFeatures2 physicalFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
-	physicalFeatures.pNext = &barycentricFeatures;
-
 	// Atomic float features
 	VkPhysicalDeviceShaderAtomicFloatFeaturesEXT atomicFloatFeatures{
 		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT
 	};
 
 	// Chain into feature query
-	atomicFloatFeatures.pNext = physicalFeatures.pNext;
-	physicalFeatures.pNext = &atomicFloatFeatures;
+	atomicFloatFeatures.pNext = &barycentricFeatures;
+	//physicalFeatures.pNext = &atomicFloatFeatures;
+
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR accelFeatures{
+	VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR
+	};
+	accelFeatures.pNext = &atomicFloatFeatures;
+
+	VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures{
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR
+	};
+	rtPipelineFeatures.pNext = &accelFeatures;
+	// Physical device features chain head
+	VkPhysicalDeviceFeatures2 physicalFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+	physicalFeatures.pNext = &rtPipelineFeatures;
 
 	vkGetPhysicalDeviceFeatures2(foundPhysicalDevice, &physicalFeatures);
 	//vkGetPhysicalDeviceFeatures2(foundPhysicalDevice, &physicalFeatures);
+	// Ray tracing properties
+	VkPhysicalDeviceAccelerationStructurePropertiesKHR asProperties{
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR
+	};
+	VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProperties{
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR
+	};
+	rtProperties.pNext = &asProperties;
+
+	VkPhysicalDeviceProperties2 prop2{
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
+	};
+	prop2.pNext = &rtProperties;
+
+	vkGetPhysicalDeviceProperties2(foundPhysicalDevice, &prop2);
 
 	PhysicalDeviceQueryResult result;
 	result._device = foundPhysicalDevice;
@@ -153,6 +177,11 @@ Device::PhysicalDeviceQueryResult Device::QueryPhysicalDevice() const
 	result._supportedFeatures._timelineSemaphore = (timelineFeatures.timelineSemaphore == VK_TRUE);
 	result._supportedFeatures._synchronization2 = (sync2Features.synchronization2 == VK_TRUE);
 	result._supportedFeatures._shaderAtomicFloat = atomicFloatFeatures.shaderBufferFloat32AtomicAdd == VK_TRUE;
+	result._supportedFeatures._raytracing =
+		accelFeatures.accelerationStructure == VK_TRUE &&
+		rtPipelineFeatures.rayTracingPipeline == VK_TRUE;
+	result._rtProperties = rtProperties;  
+	result._asProperties = asProperties;
 
 	return result;
 }
@@ -215,6 +244,22 @@ VkDevice Device::CreateLogicalDevice(const SupportedPhysicalDeviceFeatures& feat
 
 		PushFeaturePointerToChainNext(&deviceFeatures, &atomicFloatFeatures);
 		enabledExtensions.push_back(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME);
+	}
+	// Add ray tracing features
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR accelFeature{
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
+	VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeature{
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR };
+	if (features._raytracing) 
+	{
+		accelFeature.accelerationStructure = VK_TRUE;
+		rtPipelineFeature.rayTracingPipeline = VK_TRUE;
+		PushFeaturePointerToChainNext(&deviceFeatures, &accelFeature);
+		PushFeaturePointerToChainNext(&deviceFeatures, &rtPipelineFeature);
+		enabledExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+		enabledExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+		enabledExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+
 	}
 
 	VkDeviceCreateInfo createInfo { };
