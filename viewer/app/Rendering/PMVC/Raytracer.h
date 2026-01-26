@@ -12,7 +12,7 @@
 #include <Core/Subsystem.h>
 #include <Rendering/RenderSubsystem.h>
 #include <Eigen/Core>
-#include <external/nvvk/acceleration_structures.hpp>
+#include <nvvk/acceleration_structures.hpp>
 
 class Raytracer {
 public:

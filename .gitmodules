@@ -4,6 +4,3 @@
 [submodule "libigl"]
 	path = external/libigl
 	url = https://github.com/libigl/libigl.git
-[submodule "external/nvpro_core"]
-	path = external/nvpro_core
-	url = https://github.com/nvpro-samples/nvpro_core.git

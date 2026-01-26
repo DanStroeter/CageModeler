@@ -151,15 +151,15 @@ private:
 		bool _synchronization2 = false;
 		bool _shaderAtomicFloat = false;
 		bool _raytracing = false;
-
-		VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rtProperties;
-		VkPhysicalDeviceAccelerationStructurePropertiesKHR _asProperties;
 	};
 
 	struct PhysicalDeviceQueryResult
 	{
 		VkPhysicalDevice _device = VK_NULL_HANDLE;
 		SupportedPhysicalDeviceFeatures _supportedFeatures;
+
+		VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rtProperties;
+		VkPhysicalDeviceAccelerationStructurePropertiesKHR _asProperties;
 	};
 
 	/**
