@@ -39,7 +39,7 @@ public:
 	Editor(const SubsystemPtr<InputSubsystem>& inputSubsystem,
 		const SubsystemPtr<CameraSubsystem>& cameraSubsystem);
 
-	void Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, const std::shared_ptr<CubemapManager>& cubemapRenderer);
+	void Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, const std::shared_ptr<CubemapManager>& cubemapRenderer, const std::shared_ptr<Raytracer>& raytracer);
 
 	void RecordUI();
 

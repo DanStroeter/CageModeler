@@ -10,6 +10,7 @@
 #include <Editor/Editor.h>
 #include <UI/UserInterfaceBackend.h>
 #include <Rendering/PMVC/CubemapManager.h>
+#include <Rendering/PMVC/Raytracer.h>
 
 class CameraSubsystem;
 class RenderCommandScheduler;
@@ -18,6 +19,7 @@ class ResourceManager;
 class RenderPipelineManager;
 class CubemapManager;
 class Editor;
+class Raytracer;
 
 class RenderSubsystem final : public Subsystem
 {
@@ -69,6 +71,7 @@ private:
 	std::shared_ptr<Editor> _editor = nullptr;
 	std::shared_ptr<SceneRenderer> _sceneRenderer = nullptr;
 	std::shared_ptr<CubemapManager> _cubemapRenderer = nullptr;
+	std::shared_ptr<Raytracer> _raytracer = nullptr;
 
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
 	std::vector<VkFramebuffer> _framebuffers;

@@ -106,10 +106,11 @@ void RenderSubsystem::InitializeEditor(const std::shared_ptr<Editor>& editor)
 		_renderPass);
 	LOG_DEBUG("init editor");
 	_cubemapRenderer = std::make_shared<CubemapManager>(_renderPipelineManager, _renderResourceManager, _device, _instance, 32, VK_FORMAT_R32G32B32A32_SFLOAT);
+	_raytracer = std::make_shared<Raytracer>(_renderPipelineManager, _renderResourceManager, _device, _instance, 512, VK_FORMAT_R32G32B32A32_SFLOAT);
 	//_cubemapRenderer->Initialize();
 	LOG_DEBUG("init");
 	_editor = editor;
-	_editor->Initialize(_sceneRenderer, _cubemapRenderer);
+	_editor->Initialize(_sceneRenderer, _cubemapRenderer, _raytracer);
 	// Finishes the ImGui setup.
 	_uiBackend->Init(*_windowSubsystem->_window);
 }

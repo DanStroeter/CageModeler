@@ -117,9 +117,16 @@ Device::PhysicalDeviceQueryResult Device::QueryPhysicalDevice() const
 	const VkPhysicalDevice foundPhysicalDevice = *found;
 	CHECK_VK_HANDLE(foundPhysicalDevice);
 
+	// Buffer device address (REQUIRED for RT)
+	VkPhysicalDeviceBufferDeviceAddressFeatures bdaFeatures{
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES
+	};
+	bdaFeatures.bufferDeviceAddress = VK_TRUE;
+
 	// Sync2 feature
 	VkPhysicalDeviceSynchronization2Features sync2Features{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES };
 	sync2Features.synchronization2 = VK_TRUE;
+	sync2Features.pNext = &bdaFeatures;
 
 	// Timeline semaphore
 	VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeatures{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES };
@@ -247,19 +254,28 @@ VkDevice Device::CreateLogicalDevice(const SupportedPhysicalDeviceFeatures& feat
 	}
 	// Add ray tracing features
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR accelFeature{
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR };
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR
+	};
 	VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeature{
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR };
-	if (features._raytracing) 
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR
+	};
+	VkPhysicalDeviceBufferDeviceAddressFeatures bdaFeature{
+		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES
+	};
+
+	if (features._raytracing)
 	{
 		accelFeature.accelerationStructure = VK_TRUE;
 		rtPipelineFeature.rayTracingPipeline = VK_TRUE;
+		bdaFeature.bufferDeviceAddress = VK_TRUE;
+
 		PushFeaturePointerToChainNext(&deviceFeatures, &accelFeature);
 		PushFeaturePointerToChainNext(&deviceFeatures, &rtPipelineFeature);
+		PushFeaturePointerToChainNext(&deviceFeatures, &bdaFeature);
+
 		enabledExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 		enabledExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
 		enabledExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
-
 	}
 
 	VkDeviceCreateInfo createInfo { };

@@ -12,86 +12,124 @@
 #include <Core/Subsystem.h>
 #include <Rendering/RenderSubsystem.h>
 #include <Eigen/Core>
-#include <nvvk/acceleration_structures.hpp>
+#include <vector>
+#include <cstdint>
+
+class RenderPipelineManager;
+class RenderResourceManager;
+class RenderSubsystem;
+
+struct alignas(16) RTVertex {
+    glm::vec3 pos;
+};
 
 class Raytracer {
 public:
-	Raytracer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
-		const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance, uint32_t cubemapSize, VkFormat format);
-	~Raytracer();
-		
-	void Initialize();
+    Raytracer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
+        const std::shared_ptr<RenderResourceManager>& resourceManager,
+        const RenderResourceRef<Device> device,
+        const RenderResourceRef<Instance> instance,
+        uint32_t cubemapSize,
+        VkFormat format);
+    Raytracer();
+    ~Raytracer();
 
-	MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates();
-	void TraceRays();
+    void Initialize();
+    MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates();
+    void TraceRays();
 
-	void SetCage(const EigenMesh& mesh) { _cageMesh = mesh; }
-	void SetMesh(const EigenMesh& mesh) { _deformableMesh = mesh; }
+    void SetCage(const EigenMesh& mesh) { _cageMesh = mesh; }
+    void SetMesh(const EigenMesh& mesh) { _deformableMesh = mesh; }
 
 private:
-	//init functions:
-	void GetRaytracingComponents();
-	void CreateRaytracingPipeline();
-	void PrimitiveToGeometry(EigenMesh& eigenMesh,
-		VkAccelerationStructureGeometryKHR& geometry,
-		VkAccelerationStructureBuildRangeInfoKHR& rangeInfo);
+    enum BindingPoints
+    {
+        eOutImage = 0,
+        eAccelStruct = 1,
+    };
+    // init functions
+    void GetRaytracingComponents();
+    void CreateRaytracingPipeline();
+    void PrimitiveToGeometry(MemoryMappedBuffer& vertexBuffer,
+        MemoryMappedBuffer& indexBuffer,
+        uint32_t vertexCount,
+        uint32_t triangleCount,
+        VkAccelerationStructureGeometryKHR& geometry,
+        VkAccelerationStructureBuildRangeInfoKHR& rangeInfo);
 
-	void CreateVertexBufferFromMesh();
-	void CreateIndexBufferFromMesh()
+    void CreateVertexBufferFromMesh();
+    void CreateIndexBufferFromMesh();
+    void CreateRaytraceDescriptorLayout();
+    void CreateShaderBindingTable();
 
+    void OnDetach();
 
-	//resources:
-	RenderResourceRef<Device> _device;
-	RenderResourceRef<Instance> _instance;
-	SubsystemPtr<RenderSubsystem> _renderSubsystem = nullptr;
-	std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr;
-	std::shared_ptr<RenderResourceManager> _resourceManager = nullptr;
+    VkDescriptorSetLayout _rtDescSetLayout;
 
-	//geodata:
-	EigenMesh _cageMesh;
-	EigenMesh _deformableMesh;
+    // resources
+    RenderResourceRef<Device> _device;
+    RenderResourceRef<Instance> _instance;
+    SubsystemPtr<RenderSubsystem> _renderSubsystem = nullptr;
+    std::shared_ptr<RenderPipelineManager> _renderPipelineManager = nullptr;
+    std::shared_ptr<RenderResourceManager> _resourceManager = nullptr;
+    VkQueue _queue;
 
-	//pipeline
-	PipelineHandle _raytracingPipelineHandle;
+    VkCommandPool _commandPool;
 
-	//buffers
-	MemoryMappedBuffer _indexBuffer;
-	MemoryMappedBuffer _vertexBuffer;
+    // geodata
+    EigenMesh _cageMesh;
+    EigenMesh _deformableMesh;
 
-	//descriptors
-	//RenderResourceRef < DescriptorPool> _descriptorPool;
-	//RenderResourceRef < DescriptorSetLayout> _matricesLayout;
+    // pipeline
+    PipelineHandle _raytracingPipelineHandle;
 
-	void CreateAccelerationStructure(VkAccelerationStructureTypeKHR asType,  // The type of acceleration structure (BLAS or TLAS)
-		nvvk::AccelerationStructure& accelStruct,  // The acceleration structure to create
-		VkAccelerationStructureGeometryKHR& asGeometry,  // The geometry to build the acceleration structure from
-		VkAccelerationStructureBuildRangeInfoKHR& asBuildRangeInfo,  // The range info for building the acceleration structure
-		VkBuildAccelerationStructureFlagsKHR flags  // Build flags (e.g. prefer fast trace)
-	);
+    // buffers
+    MemoryMappedBuffer _indexBuffer;
+    MemoryMappedBuffer _vertexBuffer;
 
-	void CreateBottomLevelAS();  // Set up BLAS infrastructure
-	void CreateTopLevelAS();
+    // descriptors
+    // RenderResourceRef<DescriptorPool> _descriptorPool;
+    // RenderResourceRef<DescriptorSetLayout> _matricesLayout;
 
-	// Ray Tracing Pipeline Components
-	nvvk::DescriptorPack m_rtDescPack;               // Ray tracing descriptor bindings
-	VkPipeline           m_rtPipeline{};             // Ray tracing pipeline
-	VkPipelineLayout     m_rtPipelineLayout{};       // Ray tracing pipeline layout
+    // --- Acceleration Structures ---
 
-	// Acceleration Structure Components
-	std::vector<nvvk::AccelerationStructure> m_blasAccel;     // Bottom-level acceleration structures
-	nvvk::AccelerationStructure              m_tlasAccel;     // Top-level acceleration structure
+    void CreateAccelerationStructure(VkAccelerationStructureTypeKHR asType,
+        VkAccelerationStructureKHR& accelStruct,
+        VkDeviceMemory& accelMemory,
+        MemoryMappedBuffer& vertexBuffer,
+        MemoryMappedBuffer& indexBuffer,
+        uint32_t vertexCount,
+        uint32_t triangleCount,
+        VkBuildAccelerationStructureFlagsKHR flags);
 
-	// Direct SBT management
-	nvvk::Buffer                    m_sbtBuffer;         // Buffer for shader binding table
-	std::vector<uint8_t>            m_shaderHandles;     // Storage for shader group handles
-	VkStridedDeviceAddressRegionKHR m_raygenRegion{};    // Ray generation shader region
-	VkStridedDeviceAddressRegionKHR m_missRegion{};      // Miss shader region
-	VkStridedDeviceAddressRegionKHR m_hitRegion{};       // Hit shader region
-	VkStridedDeviceAddressRegionKHR m_callableRegion{};  // Callable shader region
+    void CreateCommandPool(uint32_t queueFamilyIndex);
+    void CreateBottomLevelAS();
+    //void CreateTopLevelAS();
 
-	// Ray Tracing Properties
-	VkPhysicalDeviceRayTracingPipelinePropertiesKHR m_rtProperties{
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR };
-	VkPhysicalDeviceAccelerationStructurePropertiesKHR m_asProperties{
-		VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR };
+    VkAccelerationStructureKHR m_blasAccel; // Bottom-level acceleration structures
+    VkDeviceMemory m_blasMemory;            // Memory for BLAS
+    //VkAccelerationStructureKHR m_tlasAccel = VK_NULL_HANDLE; // Top-level acceleration structure
+    //VkDeviceMemory m_tlasMemory = VK_NULL_HANDLE;            // TLAS memory
+
+    // Ray Tracing Pipeline Components
+    VkPipeline       m_rtPipeline{};             // Ray tracing pipeline
+    VkPipelineLayout m_rtPipelineLayout{};       // Ray tracing pipeline layout
+    VkDescriptorSet  m_rtDescriptorSet{};        // Descriptor set
+
+    // Direct SBT management
+    MemoryMappedBuffer _sbtBuffer;              // Shader Binding Table buffer
+    std::vector<uint8_t> _shaderHandles;        // Shader handles
+    VkStridedDeviceAddressRegionKHR m_raygenRegion{};
+    VkStridedDeviceAddressRegionKHR m_missRegion{};
+    VkStridedDeviceAddressRegionKHR m_hitRegion{};
+    VkStridedDeviceAddressRegionKHR m_callableRegion{};
+
+    // Ray Tracing Properties
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR m_rtProperties{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR
+    };
+    VkPhysicalDeviceAccelerationStructurePropertiesKHR m_asProperties{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR
+    };
+    uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 };

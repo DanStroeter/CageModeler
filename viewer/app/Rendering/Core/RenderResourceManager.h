@@ -115,6 +115,13 @@ public:
 											  const VkBufferUsageFlags bufferUsage,
 											  const VkMemoryPropertyFlags properties) const;
 
+	MemoryMappedBuffer CreateScratchBuffer(
+		VkDeviceSize size,
+		VkBufferUsageFlags usage,
+		VkMemoryPropertyFlags properties,
+		VkDeviceSize alignment /* = 0 */
+	) const;
+
 	/**
 	 * Gets the proper buffer alignment for the given type.
 	 * @tparam T The type of object to find the alignment of.
