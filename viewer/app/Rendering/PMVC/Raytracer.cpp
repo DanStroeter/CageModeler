@@ -8,7 +8,9 @@
 #include <Mesh/PolygonMesh.h>
 #include <Mesh/ScreenPass.h>
 #include <Editor/Light.h>
+
 #include <cstddef>
+
 #include "ScopedCmdBuffer.h"
 
 
@@ -29,16 +31,20 @@ void TraceRays() {
 void Raytracer::Initialize()
 {
 	CreateCommandPool(_device->GetQueueFamilies()._graphics.value());
-	GetRaytracingComponents();
+
+	assert(_commandPool != VK_NULL_HANDLE);
+	assert(_queue != VK_NULL_HANDLE);
 	
-	CreateVertexBufferFromMesh();
-	CreateIndexBufferFromMesh();
+	//CreateVertexBufferFromMesh();
+	//CreateIndexBufferFromMesh();
 
 	vkGetDeviceQueue(
 		_device,
 		_device->GetQueueFamilies()._graphics.value(),
 		0,
 		&_queue);
+
+	GetRaytracingComponents();
 	/*
 	
 	When creating _vertexBuffer and _indexBuffer, include:
@@ -48,35 +54,222 @@ VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
 
 */
 
-	VkAccelerationStructureGeometryKHR geometry;
-	VkAccelerationStructureBuildRangeInfoKHR rangeInfo;
+	//VkAccelerationStructureGeometryKHR geometry;
+	//VkAccelerationStructureBuildRangeInfoKHR rangeInfo;
+	//VkAccelerationStructureBuildRangeInfoKHR rangeInfo;
 
-	PrimitiveToGeometry(_vertexBuffer,
-		_indexBuffer,
-		static_cast<uint32_t>(_cageMesh._vertices.rows()),
-		static_cast<uint32_t>(_cageMesh._faces.rows()),
-		geometry,
-		rangeInfo);
+	UploadVertexAndIndexBuffers();
 
-	VkAccelerationStructureKHR cageBLAS = VK_NULL_HANDLE; // The BLAS handle
-	VkDeviceMemory cageBLASMemory = VK_NULL_HANDLE;       // Memory for the BLAS
+	
+	//VkAccelerationStructureKHR cageBLAS = VK_NULL_HANDLE; // The BLAS handle
+	//VkDeviceMemory cageBLASMemory = VK_NULL_HANDLE;       // Memory for the BLAS
 
 	// Build the BLAS for the cage mesh
-	CreateAccelerationStructure(
-		VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-		cageBLAS,          // VkAccelerationStructureKHR output
-		cageBLASMemory,    // VkDeviceMemory output
-		_vertexBuffer,     // Vertex buffer of the cage
-		_indexBuffer,      // Index buffer of the cage
-		static_cast<uint32_t>(_cageMesh._vertices.rows()), // number of vertices
-		static_cast<uint32_t>(_cageMesh._faces.rows()),    // number of triangles
-		VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR
-	);
 
 	CreateBottomLevelAS();
 	CreateRaytraceDescriptorLayout();
 	CreateRaytracingPipeline();
 
+}
+
+/*void Raytracer::UploadVertexAndIndexBuffers()
+{
+	// --- Vertex buffer ---
+	const auto& vertPositions = _cageMesh._vertices;
+	const auto& vertFaces = _cageMesh._faces;
+
+	std::vector<RTVertex> vertexData;
+	vertexData.reserve(vertFaces.rows() * 3);
+
+	for (int tri = 0; tri < vertFaces.rows(); ++tri)
+	{
+		for (int v = 0; v < 3; ++v)
+		{
+			int idx = vertFaces(tri, v);
+			vertexData.push_back({
+				glm::vec3(
+					static_cast<float>(vertPositions(idx, 0)),
+					static_cast<float>(vertPositions(idx, 1)),
+					static_cast<float>(vertPositions(idx, 2))
+				)
+				});
+		}
+	}
+
+	// --- Step 1: Create staging vertex buffer (CPU visible) ---
+	auto stagingVertex = _resourceManager->CreateBufferAndCopy(
+		std::span(vertexData),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	// --- Step 2: Create device-local vertex buffer (GPU only) ---
+	_vertexBuffer = _resourceManager->AllocateDeviceBuffer(
+		stagingVertex._allocatedSize,
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	// --- Step 3: Copy staging -> GPU ---
+	CopyBuffer(stagingVertex, _vertexBuffer, stagingVertex._allocatedSize);
+
+	// --- Step 4: Release staging buffer ---
+	stagingVertex.ReleaseResource(_device);
+
+	// --- Index buffer ---
+	const uint32_t indexCount = static_cast<uint32_t>(vertFaces.rows() * 3);
+	std::vector<uint32_t> indices(indexCount);
+
+	for (uint32_t tri = 0; tri < vertFaces.rows(); ++tri)
+	{
+		for (uint32_t v = 0; v < 3; ++v)
+		{
+			indices[tri * 3 + v] = vertFaces(tri, v);
+		}
+	}
+
+	// --- Step 1: Create staging index buffer (CPU visible) ---
+	auto stagingIndex = _resourceManager->CreateBufferAndCopy(
+		std::span(indices),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	// --- Step 2: Create device-local index buffer (GPU only) ---
+	_indexBuffer = _resourceManager->AllocateDeviceBuffer(
+		stagingIndex._allocatedSize,
+		VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	// --- Step 3: Copy staging -> GPU ---
+	CopyBuffer(stagingIndex, _indexBuffer, stagingIndex._allocatedSize);
+
+	// --- Step 4: Release staging buffer ---
+	stagingIndex.ReleaseResource(_device);
+}*/
+void Raytracer::UploadVertexAndIndexBuffers()
+{
+	const auto& positions = _cageMesh._vertices;
+	const auto& faces = _cageMesh._faces;
+
+	// -------------------------------------------------
+	// 1. Build FLATTENED vertex buffer
+	// -------------------------------------------------
+	std::vector<RTVertex> vertices;
+	vertices.reserve(faces.rows() * 3);
+
+	for (int tri = 0; tri < faces.rows(); ++tri)
+	{
+		for (int v = 0; v < 3; ++v)
+		{
+			int idx = faces(tri, v);
+			vertices.push_back({
+				glm::vec3(
+					float(positions(idx, 0)),
+					float(positions(idx, 1)),
+					float(positions(idx, 2))
+				)
+				});
+		}
+	}
+
+	VkDeviceSize vertexBufferSize = sizeof(RTVertex) * vertices.size();
+
+	// -------------------------------------------------
+	// 2. Build LINEAR index buffer (CRITICAL FIX)
+	// -------------------------------------------------
+	std::vector<uint32_t> indices(vertices.size());
+	for (uint32_t i = 0; i < indices.size(); ++i)
+		indices[i] = i;
+
+	VkDeviceSize indexBufferSize = sizeof(uint32_t) * indices.size();
+
+	// -------------------------------------------------
+	// 3. Staging buffers (CPU visible)
+	// -------------------------------------------------
+	auto stagingVertex = _resourceManager->CreateBufferAndCopy(
+		std::span(vertices),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	auto stagingIndex = _resourceManager->CreateBufferAndCopy(
+		std::span(indices),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	// -------------------------------------------------
+	// 4. Device-local RT buffers
+	// -------------------------------------------------
+	_vertexBuffer = _resourceManager->AllocateDeviceBuffer(
+		vertexBufferSize,
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	_indexBuffer = _resourceManager->AllocateDeviceBuffer(
+		indexBufferSize,
+		VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	// -------------------------------------------------
+	// 5. Copy to GPU
+	// -------------------------------------------------
+	CopyBuffer(stagingVertex, _vertexBuffer, vertexBufferSize);
+	CopyBuffer(stagingIndex, _indexBuffer, indexBufferSize);
+
+	stagingVertex.ReleaseResource(_device);
+	stagingIndex.ReleaseResource(_device);
+}
+
+void Raytracer::CopyBuffer(const Buffer& src, Buffer& dst, VkDeviceSize size)
+{
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool = _commandPool;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer cmd;
+	VK_CHECK(vkAllocateCommandBuffers(_device, &allocInfo, &cmd));
+
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
+
+	VkBufferCopy copyRegion{};
+	copyRegion.srcOffset = 0;
+	copyRegion.dstOffset = 0;
+	copyRegion.size = size;
+	vkCmdCopyBuffer(cmd, src._deviceBuffer, dst._deviceBuffer, 1, &copyRegion);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &cmd;
+
+	VK_CHECK(vkQueueSubmit(_queue, 1, &submitInfo, VK_NULL_HANDLE));
+	VK_CHECK(vkQueueWaitIdle(_queue));
+
+	vkFreeCommandBuffers(_device, _commandPool, 1, &cmd);
 }
 
 void Raytracer::OnDetach() {
@@ -109,23 +302,15 @@ void Raytracer::CreateCommandPool(uint32_t queueFamilyIndex) {
 
 void Raytracer::CreateBottomLevelAS()
 {
-	// Make sure buffers exist
-	//CreateVertexBufferFromMesh();
-	//CreateIndexBufferFromMesh();
-
 	const uint32_t vertexCount =
-		static_cast<uint32_t>(_deformableMesh._vertices.rows());
+		static_cast<uint32_t>(_cageMesh._faces.rows() * 3);
 
 	const uint32_t triangleCount =
-		static_cast<uint32_t>(_deformableMesh._faces.rows());
+		static_cast<uint32_t>(_cageMesh._faces.rows());
 
-	VkAccelerationStructureGeometryKHR geometry{
-		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR
-	};
-
+	VkAccelerationStructureGeometryKHR geometry{};
 	VkAccelerationStructureBuildRangeInfoKHR rangeInfo{};
 
-	// Convert mesh buffers to AS geometry
 	PrimitiveToGeometry(
 		_vertexBuffer,
 		_indexBuffer,
@@ -135,7 +320,6 @@ void Raytracer::CreateBottomLevelAS()
 		rangeInfo
 	);
 
-	// Build BLAS
 	CreateAccelerationStructure(
 		VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
 		m_blasAccel,
@@ -146,8 +330,6 @@ void Raytracer::CreateBottomLevelAS()
 		triangleCount,
 		VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR
 	);
-
-	LOG_DEBUG("Bottom-level acceleration structure built successfully");
 }
 
 void Raytracer::CreateRaytraceDescriptorLayout()
@@ -194,8 +376,8 @@ void Raytracer::CreateRaytraceDescriptorLayout()
 void Raytracer::CreateAccelerationStructure(VkAccelerationStructureTypeKHR asType,
 	VkAccelerationStructureKHR& accelStruct,
 	VkDeviceMemory& accelMemory,
-	MemoryMappedBuffer& vertexBuffer,
-	MemoryMappedBuffer& indexBuffer,
+	Buffer& vertexBuffer,
+	Buffer& indexBuffer,
 	uint32_t vertexCount,
 	uint32_t triangleCount,
 	VkBuildAccelerationStructureFlagsKHR flags)
@@ -323,12 +505,10 @@ void Raytracer::CreateAccelerationStructure(VkAccelerationStructureTypeKHR asTyp
 		_resourceManager->CreateScratchBuffer(
 			scratchSize,
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-			VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			m_asProperties.minAccelerationStructureScratchOffsetAlignment
 		);
-
 	VkBufferDeviceAddressInfo scratchAddressInfo{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
 	scratchAddressInfo.buffer = scratchBuffer._deviceBuffer;
 	VkDeviceAddress scratchAddress = vkGetBufferDeviceAddress(device, &scratchAddressInfo);
@@ -360,8 +540,8 @@ void Raytracer::CreateAccelerationStructure(VkAccelerationStructureTypeKHR asTyp
 }
 
 void Raytracer::PrimitiveToGeometry(
-	MemoryMappedBuffer& vertexBuffer,
-	MemoryMappedBuffer& indexBuffer,
+	Buffer& vertexBuffer,
+	Buffer& indexBuffer,
 	uint32_t vertexCount,
 	uint32_t triangleCount,
 	VkAccelerationStructureGeometryKHR& geometry,
@@ -469,6 +649,7 @@ void Raytracer::CreateVertexBufferFromMesh()
 	const auto& positions = geom._vertices;
 	const auto& faces = geom._faces;
 
+	// Flattened vertex buffer
 	std::vector<RTVertex> vertexData;
 	vertexData.reserve(faces.rows() * 3);
 
@@ -477,7 +658,6 @@ void Raytracer::CreateVertexBufferFromMesh()
 		for (int v = 0; v < 3; ++v)
 		{
 			int idx = faces(tri, v);
-
 			vertexData.push_back({
 				glm::vec3(
 					static_cast<float>(positions(idx, 0)),
@@ -488,22 +668,48 @@ void Raytracer::CreateVertexBufferFromMesh()
 		}
 	}
 
-	_vertexBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>(
-			reinterpret_cast<std::byte*>(vertexData.data()),
-			vertexData.size() * sizeof(RTVertex)
-		),
-		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+	VkDeviceSize bufferSize = sizeof(RTVertex) * vertexData.size();
+
+	// --- Step 1: Create staging buffer (CPU visible) ---
+	MemoryMappedBuffer stagingBuffer = _resourceManager->CreateBufferAndMapMemory(
+		std::span<std::byte>(reinterpret_cast<std::byte*>(vertexData.data()), bufferSize),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 	);
 
-	//memcpy(
-		//_vertexBuffer._mappedData,
-		//vertexData.data(),
-		//vertexData.size() * sizeof(RTVertex)
-	//);
+	// Copy data into staging buffer
+	memcpy(stagingBuffer._mappedData, vertexData.data(), static_cast<size_t>(bufferSize));
+
+	bufferSize = sizeof(RTVertex) * vertexData.size();
+	std::span<std::byte> sizeSpan(
+		static_cast<std::byte*>(nullptr),
+		bufferSize
+	);
+
+	// --- Step 2: Create device-local vertex buffer (GPU only) ---
+	_vertexBuffer = _resourceManager->AllocateDeviceBuffer(
+		bufferSize,
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	// --- Step 3: Copy from staging - device-local buffer ---
+	{
+		ScopedCmdBuffer cmd(_device, _commandPool);
+		VkBufferCopy copyRegion{};
+		copyRegion.srcOffset = 0;
+		copyRegion.dstOffset = 0;
+		copyRegion.size = bufferSize;
+		vkCmdCopyBuffer(cmd.Get(), stagingBuffer._deviceBuffer, _vertexBuffer._deviceBuffer, 1, &copyRegion);
+
+		cmd.SubmitAndWait(_queue);
+	}
+
+	// --- Step 4: Release staging buffer ---
+	stagingBuffer.ReleaseResource(_device);
 }
 
 void Raytracer::CreateIndexBufferFromMesh()
@@ -512,30 +718,56 @@ void Raytracer::CreateIndexBufferFromMesh()
 	const auto& faces = geom._faces;
 
 	const uint32_t indexCount = static_cast<uint32_t>(faces.rows()) * 3;
-
 	std::vector<uint32_t> indices(indexCount);
 
-	for (uint32_t tri = 0; tri < faces.rows(); ++tri) {
-		for (uint32_t v = 0; v < 3; ++v) {
+	for (uint32_t tri = 0; tri < faces.rows(); ++tri)
+		for (uint32_t v = 0; v < 3; ++v)
 			indices[tri * 3 + v] = faces(tri, v);
-		}
-	}
-	//for (uint32_t i = 0; i < indexCount; ++i)
-		//indices[i] = i;
 
-	_indexBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span(indices),
-		VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+	VkDeviceSize bufferSize = sizeof(uint32_t) * indexCount;
+
+	// --- Step 1: Create staging buffer (CPU visible) ---
+	MemoryMappedBuffer stagingBuffer = _resourceManager->CreateBufferAndMapMemory(
+		std::span<std::byte>(reinterpret_cast<std::byte*>(indices.data()), bufferSize),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 	);
 
-	//memcpy(
-		//_indexBuffer._mappedData,
-		//indices.data(),
-		//indices.size() * sizeof(uint32_t)
-	//);
+	memcpy(stagingBuffer._mappedData, indices.data(), static_cast<size_t>(bufferSize));
+	std::span<std::byte> testSpan(
+		reinterpret_cast<std::byte*>(indices.data()),
+		static_cast<size_t>(bufferSize)
+	);
+
+	bufferSize = sizeof(RTVertex) * indices.size();
+	std::span<std::byte> sizeSpan(
+		reinterpret_cast<std::byte*>(indices.data()), // pointer to first element
+		sizeof(uint32_t) * indices.size()            // total byte size
+	);
+	// --- Step 2: Create device-local index buffer (GPU only) ---
+	_indexBuffer = _resourceManager->AllocateDeviceBuffer(
+		sizeof(uint32_t) * indices.size(),  // empty, copy from staging
+		VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	// --- Step 3: Copy from staging device-local buffer ---
+	{
+		ScopedCmdBuffer cmd(_device, _commandPool);
+		VkBufferCopy copyRegion{};
+		copyRegion.srcOffset = 0;
+		copyRegion.dstOffset = 0;
+		copyRegion.size = bufferSize;
+		vkCmdCopyBuffer(cmd.Get(), stagingBuffer._deviceBuffer, _indexBuffer._deviceBuffer, 1, &copyRegion);
+
+		cmd.SubmitAndWait(_queue);
+	}
+
+	// --- Step 4: Release staging buffer ---
+	stagingBuffer.ReleaseResource(_device);
 }
 
 void Raytracer::CreateRaytracingPipeline()

@@ -50,12 +50,13 @@ private:
     // init functions
     void GetRaytracingComponents();
     void CreateRaytracingPipeline();
-    void PrimitiveToGeometry(MemoryMappedBuffer& vertexBuffer,
-        MemoryMappedBuffer& indexBuffer,
+    void PrimitiveToGeometry(Buffer& vertexBuffer,
+        Buffer& indexBuffer,
         uint32_t vertexCount,
         uint32_t triangleCount,
         VkAccelerationStructureGeometryKHR& geometry,
         VkAccelerationStructureBuildRangeInfoKHR& rangeInfo);
+    void CopyBuffer(const Buffer& src, Buffer& dst, VkDeviceSize size);
 
     void CreateVertexBufferFromMesh();
     void CreateIndexBufferFromMesh();
@@ -84,8 +85,8 @@ private:
     PipelineHandle _raytracingPipelineHandle;
 
     // buffers
-    MemoryMappedBuffer _indexBuffer;
-    MemoryMappedBuffer _vertexBuffer;
+    Buffer _indexBuffer;
+    Buffer _vertexBuffer;
 
     // descriptors
     // RenderResourceRef<DescriptorPool> _descriptorPool;
@@ -96,8 +97,8 @@ private:
     void CreateAccelerationStructure(VkAccelerationStructureTypeKHR asType,
         VkAccelerationStructureKHR& accelStruct,
         VkDeviceMemory& accelMemory,
-        MemoryMappedBuffer& vertexBuffer,
-        MemoryMappedBuffer& indexBuffer,
+        Buffer& vertexBuffer,
+        Buffer& indexBuffer,
         uint32_t vertexCount,
         uint32_t triangleCount,
         VkBuildAccelerationStructureFlagsKHR flags);
@@ -105,6 +106,7 @@ private:
     void CreateCommandPool(uint32_t queueFamilyIndex);
     void CreateBottomLevelAS();
     //void CreateTopLevelAS();
+    void UploadVertexAndIndexBuffers();
 
     VkAccelerationStructureKHR m_blasAccel; // Bottom-level acceleration structures
     VkDeviceMemory m_blasMemory;            // Memory for BLAS
