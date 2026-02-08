@@ -36,10 +36,13 @@ public:
 
     void Initialize();
     MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates();
-    void TraceRays();
+    //void TraceRays();
 
     void SetCage(const EigenMesh& mesh) { _cageMesh = mesh; }
     void SetMesh(const EigenMesh& mesh) { _deformableMesh = mesh; }
+
+    void TraceRays();
+    void ComputeMVCCoordinates();
 
 private:
     enum BindingPoints
@@ -134,4 +137,92 @@ private:
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR
     };
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
+
+
+
+    // New members for ray tracing setup
+    struct PushConstants {
+        uint32_t maxHitsPerRay = 8;
+        uint32_t skipEveryNthHit = 0; // 0 = no skip, 1 = skip every other
+        uint32_t vertexCount = 0;
+        uint32_t raysPerVertex = 256; // Number of rays per vertex for Monte Carlo
+    };
+
+    // Buffers for ray tracing
+    Buffer _deformableVertexBuffer;
+    Buffer _rayDirectionsBuffer;
+    Buffer _hitBuffer;
+    Buffer _cageIndexBuffer;
+
+    // For MVC calculation
+    Buffer _mvcWeightsBuffer;
+
+    // Shader modules
+    VkShaderModule _raygenShader = VK_NULL_HANDLE;
+    VkShaderModule _missShader = VK_NULL_HANDLE;
+    VkShaderModule _hitShader = VK_NULL_HANDLE;
+
+    // Shader file paths
+    std::filesystem::path _shaderDir = "assets/shaders/";
+
+    // Shader loading functions
+    std::vector<uint32_t> LoadSPIRV(const std::string& filename);
+    VkShaderModule CreateShaderModule(const std::vector<uint32_t>& code);
+    void LoadShaders();
+    void CleanupShaders();
+
+    void CreateRayTracingBuffers();
+    void CreateRayTracingDescriptorSet();
+    void SetupRayDirections();
+
+    void SetupRayDirections();
+
+    void CreateRayTracingBuffers();
+
+    void CreateRayTracingDescriptorSet();
+
+    void ReadHitData();
+
+    // MVC calculation
+    void ProcessHitsForMVC();
+
+    // Configuration
+    PushConstants _pushConstants;
+
+    struct GLSLHitRecord {
+        glm::vec3 position;
+        glm::vec3 normal;
+        glm::vec2 barycentric;
+        uint32_t triangleId;
+        uint32_t vertexIndices[3];
+        float distance;
+        uint32_t rayIndex;
+        uint32_t hitSequence;
+
+        // For CPU-side alignment
+        static_assert(sizeof(GLSLHitRecord) == 64, "GLSLHitRecord must be tightly packed");
+    };
+
+    struct RayPayload {
+        uint32_t vertexIndex;
+        uint32_t rayIndex;
+        uint32_t hitCount;
+        float tMax;
+    };
+
+    struct PushConstants {
+        uint32_t maxHitsPerRay = 8;
+        uint32_t skipEveryNthHit = 0; // 0 = no skip, 1 = skip every other
+        uint32_t vertexCount = 0;
+        uint32_t raysPerVertex = 256;
+
+        // Ensure 16-byte alignment for GLSL
+        static_assert(sizeof(PushConstants) % 16 == 0, "PushConstants must be 16-byte aligned");
+    };
+    std::vector<GLSLHitRecord> _hits;
+    Eigen::MatrixXd _mvcWeights;
+
+    // Helper functions
+    std::vector<GLSLHitRecord> ReadHitData();
+    void ProcessHitsForMVC();
 };

@@ -1,0 +1,82 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_buffer_reference2 : require
+
+// STRUCTS FIRST
+struct RayPayload {
+    uint vertexIndex;
+    uint rayIndex;
+    uint hitCount;
+    float tMax;
+};
+
+struct HitRecord {
+    vec3 position;
+    vec3 normal;
+    vec2 barycentric;
+    uint triangleId;
+    uint vertexIndices[3];
+    float distance;
+    uint rayIndex;
+    uint hitSequence;
+};
+
+// NOW use structs
+layout(location = 0) rayPayloadEXT RayPayload payload;
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT cageAccel;
+layout(binding = 1, set = 0, rgba8) uniform writeonly image2D outputImage;  // MOVED writeonly before image2D
+layout(binding = 2, set = 0) buffer VertexBuffer {
+    vec3 vertices[];
+} deformableVertices;
+layout(binding = 3, set = 0) buffer RayDirections {
+    vec4 directions[];
+} rayDirs;
+layout(binding = 4, set = 0) buffer HitBuffer {
+    HitRecord hits[];
+} hitBuffer;
+
+layout(push_constant) uniform PushConstants {
+    uint maxHitsPerRay;
+    uint skipEveryNthHit;
+    uint vertexCount;
+    uint raysPerVertex;
+} pc;
+
+void main() {
+    ivec2 launchIndex = ivec2(gl_LaunchIDEXT.xy);
+    uint rayIndex = gl_LaunchIDEXT.x;
+    
+    uint vertexIndex = rayIndex / pc.raysPerVertex;
+    uint directionIndex = rayIndex % pc.raysPerVertex;
+    
+    if (vertexIndex >= pc.vertexCount) {
+        return;
+    }
+    
+    vec3 vertexPos = deformableVertices.vertices[vertexIndex];
+    vec3 rayDir = normalize(rayDirs.directions[rayIndex].xyz);
+    
+    payload.vertexIndex = vertexIndex;
+    payload.rayIndex = rayIndex;
+    payload.hitCount = 0;
+    payload.tMax = 1000.0;
+    
+    traceRayEXT(
+        cageAccel,
+        gl_RayFlagsOpaqueEXT,
+        0xFF,
+        0,
+        0,
+        0,
+        vertexPos,
+        0.001,
+        rayDir,
+        payload.tMax,
+        0
+    );
+    
+    vec4 color = vec4(float(payload.hitCount) / float(pc.maxHitsPerRay), 0.0, 0.0, 1.0);
+    imageStore(outputImage, launchIndex, color);
+}
