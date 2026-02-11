@@ -99,13 +99,13 @@ private:
     // init functions
     void GetRaytracingComponents();
     void CreateRaytracingPipeline();
-    void PrimitiveToGeometry(Buffer& vertexBuffer,
-        Buffer& indexBuffer,
+    void PrimitiveToGeometry(MemoryMappedBuffer& vertexBuffer,
+        MemoryMappedBuffer& indexBuffer,
         uint32_t vertexCount,
         uint32_t triangleCount,
         VkAccelerationStructureGeometryKHR& geometry,
         VkAccelerationStructureBuildRangeInfoKHR& rangeInfo);
-    void CopyBuffer(const Buffer& src, Buffer& dst, VkDeviceSize size);
+    void CopyBuffer(const MemoryMappedBuffer& src, MemoryMappedBuffer& dst, VkDeviceSize size);
 
     void CreateVertexBufferFromMesh();
     void CreateIndexBufferFromMesh();
@@ -135,8 +135,8 @@ private:
     PipelineHandle _raytracingPipelineHandle;
 
     // buffers
-    Buffer _indexBuffer;
-    Buffer _vertexBuffer;
+    MemoryMappedBuffer _indexBuffer;
+    MemoryMappedBuffer _vertexBuffer;
 
     // descriptors
     // RenderResourceRef<DescriptorPool> _descriptorPool;
@@ -148,8 +148,8 @@ private:
     void CreateAccelerationStructure(VkAccelerationStructureTypeKHR asType,
         VkAccelerationStructureKHR& accelStruct,
         VkDeviceMemory& accelMemory,
-        Buffer& vertexBuffer,
-        Buffer& indexBuffer,
+        MemoryMappedBuffer& vertexBuffer,
+        MemoryMappedBuffer& indexBuffer,
         uint32_t vertexCount,
         uint32_t triangleCount,
         VkBuildAccelerationStructureFlagsKHR flags);
@@ -204,13 +204,13 @@ private:
 
     // New members for ray tracing setup
     // Buffers for ray tracing
-    Buffer _deformableVertexBuffer;
-    Buffer _rayDirectionsBuffer;
-    Buffer _hitBuffer;
-    Buffer _cageIndexBuffer;
+    Buffer  _deformableVertexBuffer;
+    Buffer  _rayDirectionsBuffer;
+    Buffer  _hitBuffer;
+    Buffer  _cageIndexBuffer;
 
     // For MVC calculation
-    Buffer _mvcWeightsBuffer;
+    Buffer  _mvcWeightsBuffer;
 
     // Shader modules
     VkShaderModule _raygenShader = VK_NULL_HANDLE;
@@ -239,4 +239,6 @@ private:
     // Data storage
     std::vector<GLSLHitRecord> _hits;
     Eigen::MatrixXd _mvcWeights;
+
+    VkDeviceAddress GetBufferDeviceAddress(const MemoryMappedBuffer& buffer) const;
 };
