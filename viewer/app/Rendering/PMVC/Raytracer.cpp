@@ -20,8 +20,8 @@
 //static_assert(sizeof(Raytracer::PushConstants) % 16 == 0, "PushConstants must be 16-byte aligned");
 
 Raytracer::Raytracer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
-	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance, uint32_t cubemapSize, VkFormat format) : _renderPipelineManager(renderPipelineManager),
-	_resourceManager(resourceManager), _device(device), _instance(instance)
+	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, uint32_t cubemapSize, VkFormat format) : _renderPipelineManager(renderPipelineManager),
+	_resourceManager(resourceManager), _device(device)
 {
 }
 
@@ -119,6 +119,260 @@ void Raytracer::CleanupShaders() {
 
 void Raytracer::Initialize()
 {
+	LOG_INFO("Initializing Raytracer...");
+
+	CreateCommandPool(_queueFamilyIndex);
+
+	vkGetDeviceQueue(
+		_device,
+		_queueFamilyIndex,
+		0,
+		&_queue);
+
+	CreateGeometryBuffers();
+	CreateAccelerationStructures();
+	CreateRayTracingPipeline();
+	CreateShaderBindingTable();
+	CreateRayBuffers();
+	CreateOutputImage();
+	UpdateDescriptorSet();
+}
+
+void Raytracer::CreateGeometryBuffers()
+{
+	const auto& positions = _cageMesh._vertices;
+	const auto& faces = _cageMesh._faces;
+
+	std::vector<glm::vec3> vertices;
+	std::vector<uint32_t>  indices;
+
+	vertices.reserve(faces.rows() * 3);
+	indices.reserve(faces.rows() * 3);
+
+	for (int tri = 0; tri < faces.rows(); ++tri)
+	{
+		for (int v = 0; v < 3; ++v)
+		{
+			int idx = faces(tri, v);
+
+			vertices.emplace_back(
+				float(positions(idx, 0)),
+				float(positions(idx, 1)),
+				float(positions(idx, 2)));
+
+			indices.push_back(indices.size());
+		}
+	}
+
+	VkDeviceSize vertexSize = vertices.size() * sizeof(glm::vec3);
+	VkDeviceSize indexSize = indices.size() * sizeof(uint32_t);
+
+	auto stagingVertices = _resourceManager->CreateBufferAndCopy(
+		std::as_bytes(std::span(vertices)),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	auto stagingIndices = _resourceManager->CreateBufferAndCopy(
+		std::as_bytes(std::span(indices)),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	_cageGeometry.vertexBuffer = _resourceManager->AllocateDeviceBuffer(
+		vertexSize,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	_cageGeometry.indexBuffer = _resourceManager->AllocateDeviceBuffer(
+		indexSize,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	CopyBuffer(stagingVertices, _cageGeometry.vertexBuffer, vertexSize);
+	CopyBuffer(stagingIndices, _cageGeometry.indexBuffer, indexSize);
+
+	stagingVertices.ReleaseResource(_device);
+	stagingIndices.ReleaseResource(_device);
+
+	_cageGeometry.vertexCount = static_cast<uint32_t>(vertices.size());
+	_cageGeometry.indexCount = static_cast<uint32_t>(indices.size());
+}
+
+void Raytracer::CreateAccelerationStructures()
+{
+	CreateBLAS();
+	CreateTLAS();
+}
+
+void Raytracer::CreateBLAS()
+{
+	VkAccelerationStructureGeometryTrianglesDataKHR triangles{
+		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR
+	};
+
+	triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+	triangles.vertexStride = sizeof(glm::vec3);
+	triangles.maxVertex = _cageGeometry.vertexCount - 1;
+	triangles.indexType = VK_INDEX_TYPE_UINT32;
+
+	triangles.vertexData.deviceAddress =
+		GetBufferAddress(_cageGeometry.vertexBuffer);
+
+	triangles.indexData.deviceAddress =
+		GetBufferAddress(_cageGeometry.indexBuffer);
+
+	VkAccelerationStructureGeometryKHR geometry{
+		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR
+	};
+
+	geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+	geometry.geometry.triangles = triangles;
+	geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+
+	BuildAccelerationStructure(
+		geometry,
+		_cageGeometry.indexCount / 3,
+		VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+		_blas);
+}
+
+void Raytracer::CreateTLAS()
+{
+	VkAccelerationStructureInstanceKHR instance{};
+	instance.transform = {
+		1,0,0,0,
+		0,1,0,0,
+		0,0,1,0
+	};
+
+	instance.accelerationStructureReference = _blas.deviceAddress;
+	instance.mask = 0xFF;
+
+	auto instanceBuffer = _resourceManager->CreateBufferAndCopy(
+		std::as_bytes(std::span(&instance, 1)),
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	VkAccelerationStructureGeometryKHR geometry{
+		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR
+	};
+
+	geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+	geometry.geometry.instances.sType =
+		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+	geometry.geometry.instances.data.deviceAddress =
+		GetBufferAddress(instanceBuffer);
+
+	BuildAccelerationStructure(
+		geometry,
+		1,
+		VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+		_tlas);
+
+	instanceBuffer.ReleaseResource(_device);
+}
+
+void Raytracer::BuildAccelerationStructure(
+	VkAccelerationStructureGeometryKHR& geometry,
+	uint32_t primitiveCount,
+	VkAccelerationStructureTypeKHR type,
+	AccelerationStructure& outAS)
+{
+	VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
+		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR
+	};
+
+	buildInfo.type = type;
+	buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+	buildInfo.geometryCount = 1;
+	buildInfo.pGeometries = &geometry;
+
+	VkAccelerationStructureBuildSizesInfoKHR sizeInfo{
+		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR
+	};
+
+	vkGetAccelerationStructureBuildSizesKHR(
+		_device,
+		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+		&buildInfo,
+		&primitiveCount,
+		&sizeInfo);
+
+	outAS.buffer = _resourceManager->AllocateDeviceBuffer(
+		sizeInfo.accelerationStructureSize,
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VkAccelerationStructureCreateInfoKHR createInfo{
+		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR
+	};
+
+	createInfo.buffer = outAS.buffer._deviceBuffer;
+	createInfo.size = sizeInfo.accelerationStructureSize;
+	createInfo.type = type;
+
+	vkCreateAccelerationStructureKHR(
+		_device,
+		&createInfo,
+		nullptr,
+		&outAS.handle);
+
+	auto scratch = _resourceManager->CreateScratchBuffer(
+		sizeInfo.buildScratchSize,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	buildInfo.dstAccelerationStructure = outAS.handle;
+	buildInfo.scratchData.deviceAddress =
+		GetBufferAddress(scratch);
+
+	VkAccelerationStructureBuildRangeInfoKHR range{
+		.primitiveCount = primitiveCount
+	};
+
+	VkAccelerationStructureBuildRangeInfoKHR* pRange = &range;
+
+	{
+		ScopedCmdBuffer cmd(_device, _commandPool);
+
+		vkCmdBuildAccelerationStructuresKHR(
+			cmd.Get(),
+			1,
+			&buildInfo,
+			&pRange);
+
+		cmd.SubmitAndWait(_queue);
+	}
+
+	scratch.ReleaseResource(_device);
+
+	VkAccelerationStructureDeviceAddressInfoKHR addrInfo{
+		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR
+	};
+	addrInfo.accelerationStructure = outAS.handle;
+
+	outAS.deviceAddress =
+		vkGetAccelerationStructureDeviceAddressKHR(_device, &addrInfo);
+}
+
+VkDeviceAddress Raytracer::GetBufferAddress(const Buffer& buffer) const
+{
+	VkBufferDeviceAddressInfo info{
+		VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO
+	};
+	info.buffer = buffer._deviceBuffer;
+
+	return vkGetBufferDeviceAddress(_device, &info);
+}
+/*void Raytracer::Initialize()
+{
 	// Add mesh validation
 	LOG_INFO("Cage mesh vertices: {}, faces: {}",
 		_cageMesh._vertices.rows(),
@@ -164,7 +418,7 @@ void Raytracer::Initialize()
 	// Create SBT after pipeline
 	// Note: CreateShaderBindingTable() should be called inside CreateRaytracingPipeline()
 	// after pipeline creation
-}
+}*/
 
 void Raytracer::CreateCommandPool(uint32_t queueFamilyIndex) {
 	VkCommandPoolCreateInfo poolInfo{};
