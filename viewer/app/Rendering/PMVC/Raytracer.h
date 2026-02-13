@@ -27,8 +27,7 @@ public:
     Raytracer(
         const std::shared_ptr<RenderPipelineManager>& pipelineManager,
         const std::shared_ptr<RenderResourceManager>& resourceManager,
-        RenderResourceRef<Device> device,
-        uint32_t queueFamilyIndex,
+        const RenderResourceRef<Device> device,
         uint32_t cubemapSize,
         VkFormat format);
 
@@ -125,6 +124,10 @@ private:
         VkStridedDeviceAddressRegionKHR callable{};
     };
 
+    VkShaderModule _raygenShader = VK_NULL_HANDLE;
+    VkShaderModule _missShader = VK_NULL_HANDLE;
+    VkShaderModule _hitShader = VK_NULL_HANDLE;
+
     ShaderBindingTable _sbt;
 
     // ============================================================
@@ -134,8 +137,9 @@ private:
     struct RayBuffers
     {
         Buffer rayDirections;               // DEVICE_LOCAL
-        MemoryMappedBuffer hitBuffer;       // GPU write -> CPU read
-        MemoryMappedBuffer mvcWeights;      // GPU write -> CPU read
+        Buffer hitBuffer;       // GPU write -> CPU read
+        Buffer mvcWeights;      // GPU write -> CPU read
+        Buffer atomicCounterBuffer;
     };
 
     RayBuffers _rayBuffers;
@@ -174,11 +178,39 @@ private:
     void CreateCommandPool();
     void CreateGeometryBuffers();
     void CreateAccelerationStructures();
+    void CreateBLAS();
+    void CreateTLAS();
+    void BuildAccelerationStructure(
+        VkAccelerationStructureGeometryKHR& geometry,
+        uint32_t primitiveCount,
+        VkAccelerationStructureTypeKHR type,
+        AccelerationStructure& outAS);
+    void CopyBuffer(const MemoryMappedBuffer& src, Buffer& dst, VkDeviceSize size);
+    
     void CreateRayTracingPipeline();
     void CreateShaderBindingTable();
     void CreateRayBuffers();
     void CreateOutputImage();
     void UpdateDescriptorSet();
+
+    void CreateRaytraceDescriptorLayout();
+    void CreateRayTracingDescriptorSet();
+    void SetupRayDirections();
+
+    void LoadShaders();
+    std::vector<uint32_t> LoadSPIRV(const std::string& filename);
+    VkShaderModule CreateShaderModule(const std::vector<uint32_t>& code);
+    //void GetRaytracingComponents();
+
+    struct SimpleHit {
+        uint32_t faceIndex;        // Which cage triangle was hit
+        float barycentricU;        // Barycentric coordinate U
+        float barycentricV;        // Barycentric coordinate V  
+        float distance;            // Hit distance
+        uint32_t sourceVertex;     // Which deformable vertex
+        uint32_t rayIndex;         // Which ray from this vertex
+        uint32_t padding[2];       // Ensure 32-byte alignment
+    };
 
     // ============================================================
     // === Helpers
@@ -188,4 +220,5 @@ private:
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags props) const;
 
     void Cleanup();
+    void CleanupShaders();
 };

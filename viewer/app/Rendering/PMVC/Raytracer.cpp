@@ -16,12 +16,71 @@
 
 #include "ScopedCmdBuffer.h"
 
+Raytracer::Raytracer(const std::shared_ptr<RenderPipelineManager>& pipelineManager,
+	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, uint32_t cubemapSize, VkFormat format) :
+	_pipelineManager(pipelineManager),
+	_resourceManager(resourceManager),
+	_device(device)
+{
+}
+
+Raytracer::~Raytracer()
+{
+}
+
+void Raytracer::Initialize()
+{
+}
+
+MeshOperationResult<MeshComputeWeightsOperationResult> Raytracer::ComputeCoordinates() {
+
+
+	Eigen::MatrixXd weights;
+	Eigen::MatrixXd M = weights;
+	Eigen::MatrixXd interpolatedWeights;
+	Eigen::MatrixXd psi;
+	std::vector<double> psiTri{ };
+	std::vector<Eigen::Vector4d> psiQuad{ };
+
+	weights.resize(_deformableMesh._vertices.rows(), _cageMesh._vertices.rows());
+
+	return MeshComputeWeightsOperationResult{ std::move(M),
+		std::move(weights),
+		std::move(interpolatedWeights),
+		std::move(psi),
+		std::move(psiTri),
+		std::move(psiQuad) };
+}
+
+
+
+/*#include <Rendering/PMVC/Raytracer.h>
+
+#include <Rendering/PMVC/CubemapRenderInstance.h>
+#include <Rendering/Commands/RenderCommandScheduler.h>
+#include <Rendering/Core/RenderProxyCollector.h>
+#include <Rendering/Core/RenderResourceManager.h>
+#include <Rendering/Scene/SceneData.h>
+#include <Mesh/PolygonMesh.h>
+#include <Mesh/ScreenPass.h>
+#include <Editor/Light.h>
+#include <random>
+#include <glm/gtc/constants.hpp>
+#include <glm/gtx/compatibility.hpp>
+
+#include <cstddef>
+
+#include "ScopedCmdBuffer.h"
+
 //static_assert(sizeof(Raytracer::GLSLHitRecord) == 64, "GLSLHitRecord must be tightly packed");
 //static_assert(sizeof(Raytracer::PushConstants) % 16 == 0, "PushConstants must be 16-byte aligned");
 
-Raytracer::Raytracer(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
-	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, uint32_t cubemapSize, VkFormat format) : _renderPipelineManager(renderPipelineManager),
-	_resourceManager(resourceManager), _device(device)
+Raytracer::Raytracer(const std::shared_ptr<RenderPipelineManager>& pipelineManager,
+	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, uint32_t queueFamilyIndex, uint32_t cubemapSize, VkFormat format) : 
+	_pipelineManager(pipelineManager),
+	_resourceManager(resourceManager), 
+	_queueFamilyIndex(queueFamilyIndex),
+	_device(device)
 {
 }
 
@@ -30,39 +89,37 @@ Raytracer::~Raytracer()
 	CleanupShaders();
 
 	// Clean up descriptor resources
-	if (_rtDescPool != VK_NULL_HANDLE) {
-		vkDestroyDescriptorPool(_device, _rtDescPool, nullptr);
+	if (_rtPipeline.descriptorPool != VK_NULL_HANDLE) {
+		vkDestroyDescriptorPool(_device, _rtPipeline.descriptorPool, nullptr);
 	}
-	if (_rtDescSetLayout != VK_NULL_HANDLE) {
-		vkDestroyDescriptorSetLayout(_device, _rtDescSetLayout, nullptr);
+	if (_rtPipeline.descriptorLayout != VK_NULL_HANDLE) {
+		vkDestroyDescriptorSetLayout(_device, _rtPipeline.descriptorLayout, nullptr);
 	}
 
 	// Clean up output image
-	if (_outputImage._imageView != VK_NULL_HANDLE) {
-		vkDestroyImageView(_device, _outputImage._imageView, nullptr);
+	if (_output.view != VK_NULL_HANDLE) {
+		vkDestroyImageView(_device, _output.view, nullptr);
 	}
-	if (_outputImage._image != VK_NULL_HANDLE) {
-		vkDestroyImage(_device, _outputImage._image, nullptr);
+	if (_output.image != VK_NULL_HANDLE) {
+		vkDestroyImage(_device, _output.image, nullptr);
 	}
-	if (_outputImage._memory != VK_NULL_HANDLE) {
-		vkFreeMemory(_device, _outputImage._memory, nullptr);
+	if (_output.memory != VK_NULL_HANDLE) {
+		vkFreeMemory(_device, _output.memory, nullptr);
 	}
 
 	// Clean up other resources...
-	if (m_rtPipeline != VK_NULL_HANDLE) {
-		vkDestroyPipeline(_device, m_rtPipeline, nullptr);
+	if (_rtPipeline.pipeline != VK_NULL_HANDLE) {
+		vkDestroyPipeline(_device, _rtPipeline.pipeline, nullptr);
 	}
-	if (m_rtPipelineLayout != VK_NULL_HANDLE) {
-		vkDestroyPipelineLayout(_device, m_rtPipelineLayout, nullptr);
+	if (_rtPipeline.layout != VK_NULL_HANDLE) {
+		vkDestroyPipelineLayout(_device, _rtPipeline.layout, nullptr);
 	}
 
 	// Clean up acceleration structures
-	if (m_blasAccel != VK_NULL_HANDLE) {
-		vkDestroyAccelerationStructureKHR(_device, m_blasAccel, nullptr);
+	if (_blas.handle != VK_NULL_HANDLE) {
+		vkDestroyAccelerationStructureKHR(_device, _blas.handle, nullptr);
 	}
-	if (m_blasMemory != VK_NULL_HANDLE) {
-		vkFreeMemory(_device, m_blasMemory, nullptr);
-	}
+	_blas.buffer.ReleaseResource(_device);
 
 	// Clean up command pool
 	if (_commandPool != VK_NULL_HANDLE) {
@@ -103,6 +160,7 @@ uint32_t Raytracer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags pr
 }
 
 void Raytracer::CleanupShaders() {
+	// Clean up shader modules if they exist
 	if (_raygenShader != VK_NULL_HANDLE) {
 		vkDestroyShaderModule(_device, _raygenShader, nullptr);
 		_raygenShader = VK_NULL_HANDLE;
@@ -121,7 +179,7 @@ void Raytracer::Initialize()
 {
 	LOG_INFO("Initializing Raytracer...");
 
-	CreateCommandPool(_queueFamilyIndex);
+	CreateCommandPool();
 
 	vkGetDeviceQueue(
 		_device,
@@ -327,7 +385,7 @@ void Raytracer::BuildAccelerationStructure(
 		sizeInfo.buildScratchSize,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
 
 	buildInfo.dstAccelerationStructure = outAS.handle;
 	buildInfo.scratchData.deviceAddress =
@@ -371,59 +429,11 @@ VkDeviceAddress Raytracer::GetBufferAddress(const Buffer& buffer) const
 
 	return vkGetBufferDeviceAddress(_device, &info);
 }
-/*void Raytracer::Initialize()
-{
-	// Add mesh validation
-	LOG_INFO("Cage mesh vertices: {}, faces: {}",
-		_cageMesh._vertices.rows(),
-		_cageMesh._faces.rows());
-	LOG_INFO("Deformable mesh vertices: {}, faces: {}",
-		_deformableMesh._vertices.rows(),
-		_deformableMesh._faces.rows());
 
-	if (_cageMesh._vertices.rows() == 0 || _cageMesh._faces.rows() == 0) {
-		throw std::runtime_error("Cage mesh is empty");
-	}
-	if (_deformableMesh._vertices.rows() == 0) {
-		throw std::runtime_error("Deformable mesh is empty");
-	}
-
-	// Fixed version:
-	CreateCommandPool(_device->GetQueueFamilies()._graphics.value());
-	assert(_commandPool != VK_NULL_HANDLE);
-
-	// Get queue AFTER command pool creation
-	vkGetDeviceQueue(
-		_device,
-		_device->GetQueueFamilies()._graphics.value(),
-		0,
-		&_queue);
-	assert(_queue != VK_NULL_HANDLE);  // Check here instead
-	GetRaytracingComponents();
-	UploadVertexAndIndexBuffers();  // Creates _vertexBuffer and _indexBuffer
-
-	CreateBottomLevelAS();  // Needs _vertexBuffer and _indexBuffer
-	CreateTopLevelAS();
-	// Load shaders BEFORE creating pipeline
-	LoadShaders();
-	CreateRaytraceDescriptorLayout();
-
-	// Create buffers for ray tracing
-	CreateRayTracingBuffers();  // MISSING CALL
-	CreateRayTracingDescriptorSet();  // MISSING CALL
-
-	// This should be the version that actually loads shaders
-	//CreateRaytracingPipeline();
-
-	// Create SBT after pipeline
-	// Note: CreateShaderBindingTable() should be called inside CreateRaytracingPipeline()
-	// after pipeline creation
-}*/
-
-void Raytracer::CreateCommandPool(uint32_t queueFamilyIndex) {
+void Raytracer::CreateCommandPool() {
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	poolInfo.queueFamilyIndex = queueFamilyIndex;
+	poolInfo.queueFamilyIndex = _queueFamilyIndex;
 	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
 	if (vkCreateCommandPool(_device, &poolInfo, nullptr, &_commandPool) != VK_SUCCESS) {
@@ -431,110 +441,7 @@ void Raytracer::CreateCommandPool(uint32_t queueFamilyIndex) {
 	}
 }
 
-void Raytracer::GetRaytracingComponents()
-{
-	VkPhysicalDeviceProperties2 prop2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
-	m_rtProperties.pNext = &m_asProperties;
-	prop2.pNext = &m_rtProperties;
-	vkGetPhysicalDeviceProperties2(_device->GetPhysicalDeviceHandle(), &prop2);
-
-}
-
-void Raytracer::UploadVertexAndIndexBuffers()
-{
-	const auto& positions = _cageMesh._vertices;
-	const auto& faces = _cageMesh._faces;
-
-	// -------------------------------------------------
-	// 1. Build FLATTENED vertex buffer
-	// -------------------------------------------------
-	std::vector<RTVertex> vertices;
-	vertices.reserve(faces.rows() * 3);
-
-	for (int tri = 0; tri < faces.rows(); ++tri)
-	{
-		for (int v = 0; v < 3; ++v)
-		{
-			int idx = faces(tri, v);
-			vertices.push_back({
-				glm::vec3(
-					float(positions(idx, 0)),
-					float(positions(idx, 1)),
-					float(positions(idx, 2))
-				)
-				});
-		}
-	}
-
-	VkDeviceSize vertexBufferSize = sizeof(RTVertex) * vertices.size();
-
-	// -------------------------------------------------
-	// 2. Build LINEAR index buffer
-	// -------------------------------------------------
-	std::vector<uint32_t> indices(vertices.size());
-	for (uint32_t i = 0; i < indices.size(); ++i)
-		indices[i] = i;
-
-	VkDeviceSize indexBufferSize = sizeof(uint32_t) * indices.size();
-
-	// -------------------------------------------------
-	// 3. Create staging buffers (CPU visible)
-	// -------------------------------------------------
-	auto stagingVertex = _resourceManager->CreateBufferAndCopy(
-		std::span(reinterpret_cast<const std::byte*>(vertices.data()), vertexBufferSize),
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	auto stagingIndex = _resourceManager->CreateBufferAndCopy(
-		std::span(reinterpret_cast<const std::byte*>(indices.data()), indexBufferSize),
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	// -------------------------------------------------
-	// 4. Create device-local RT buffers (GPU memory)
-	// -------------------------------------------------
-	_vertexBuffer = _resourceManager->AllocateDeviceBuffer(
-		vertexBufferSize,
-		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-	);
-
-	_indexBuffer = _resourceManager->AllocateDeviceBuffer(
-		indexBufferSize,
-		VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-	);
-
-	// -------------------------------------------------
-	// 5. Copy to GPU
-	// -------------------------------------------------
-	CopyBuffer(stagingVertex, _vertexBuffer, vertexBufferSize);
-	CopyBuffer(stagingIndex, _indexBuffer, indexBufferSize);
-
-	stagingVertex.ReleaseResource(_device);
-	stagingIndex.ReleaseResource(_device);
-
-	LOG_INFO("Uploaded vertex and index buffers: vertex buffer size={}, index buffer size={}",
-		vertexBufferSize, indexBufferSize);
-}
-
-VkDeviceAddress GetBufferDeviceAddress(const MemoryMappedBuffer& buffer) const {
-	VkBufferDeviceAddressInfo addressInfo{
-		.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-		.buffer = buffer._deviceBuffer
-	};
-	return vkGetBufferDeviceAddress(_device, &addressInfo);
-}
-
-void Raytracer::CopyBuffer(const MemoryMappedBuffer& src, MemoryMappedBuffer& dst, VkDeviceSize size)
+void Raytracer::CopyBuffer(const MemoryMappedBuffer& src, Buffer& dst, VkDeviceSize size)
 {
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -569,351 +476,6 @@ void Raytracer::CopyBuffer(const MemoryMappedBuffer& src, MemoryMappedBuffer& ds
 	vkFreeCommandBuffers(_device, _commandPool, 1, &cmd);
 }
 
-void Raytracer::CreateBottomLevelAS()
-{
-	const uint32_t vertexCount =
-		static_cast<uint32_t>(_cageMesh._faces.rows() * 3);
-
-	const uint32_t triangleCount =
-		static_cast<uint32_t>(_cageMesh._faces.rows());
-
-	VkAccelerationStructureGeometryKHR geometry{};
-	VkAccelerationStructureBuildRangeInfoKHR rangeInfo{};
-
-	PrimitiveToGeometry(
-		_vertexBuffer,
-		_indexBuffer,
-		vertexCount,
-		triangleCount,
-		geometry,
-		rangeInfo
-	);
-
-	CreateAccelerationStructure(
-		VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-		m_blasAccel,
-		m_blasMemory,
-		_vertexBuffer,
-		_indexBuffer,
-		vertexCount,
-		triangleCount,
-		VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR
-	);
-}
-
-void Raytracer::PrimitiveToGeometry(
-	MemoryMappedBuffer& vertexBuffer,
-	MemoryMappedBuffer& indexBuffer,
-	uint32_t vertexCount,
-	uint32_t triangleCount,
-	VkAccelerationStructureGeometryKHR& geometry,
-	VkAccelerationStructureBuildRangeInfoKHR& rangeInfo)
-{
-	// --- Get real GPU device addresses ---
-	VkBufferDeviceAddressInfo vertexAddrInfo{
-		VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO
-	};
-	vertexAddrInfo.buffer = vertexBuffer._deviceBuffer;
-	VkDeviceAddress vertexAddress =
-		vkGetBufferDeviceAddress(_device, &vertexAddrInfo);
-
-	VkBufferDeviceAddressInfo indexAddrInfo{
-		VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO
-	};
-	indexAddrInfo.buffer = indexBuffer._deviceBuffer;
-	VkDeviceAddress indexAddress =
-		vkGetBufferDeviceAddress(_device, &indexAddrInfo);
-
-	// --- Triangle data description ---
-	VkAccelerationStructureGeometryTrianglesDataKHR triangles{
-		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR
-	};
-	triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-	triangles.vertexData.deviceAddress = vertexAddress;
-	triangles.vertexStride = sizeof(RTVertex);  // MUST match vertex buffer
-	triangles.maxVertex = vertexCount - 1;
-	triangles.indexType = VK_INDEX_TYPE_UINT32;
-	triangles.indexData.deviceAddress = indexAddress;
-	triangles.transformData.deviceAddress = 0;
-
-
-	// --- Geometry description ---
-	geometry = VkAccelerationStructureGeometryKHR{
-		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR
-	};
-	geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-	geometry.geometry.triangles = triangles;
-	geometry.flags =
-		VK_GEOMETRY_OPAQUE_BIT_KHR |
-		VK_GEOMETRY_NO_DUPLICATE_ANY_HIT_INVOCATION_BIT_KHR;
-
-	// --- Build range info ---
-	rangeInfo.primitiveCount = triangleCount;
-	rangeInfo.firstVertex = 0;
-	rangeInfo.primitiveOffset = 0;
-	rangeInfo.transformOffset = 0;
-}
-
-void Raytracer::CreateAccelerationStructure(VkAccelerationStructureTypeKHR asType,
-	VkAccelerationStructureKHR& accelStruct,
-	VkDeviceMemory& accelMemory,
-	MemoryMappedBuffer& vertexBuffer,
-	MemoryMappedBuffer& indexBuffer,
-	uint32_t vertexCount,
-	uint32_t triangleCount,
-	VkBuildAccelerationStructureFlagsKHR flags)
-{
-	VkDevice device = _device; // get Vulkan device handle
-
-	auto alignUp = [](VkDeviceSize value, VkDeviceSize alignment) {
-		return (value + alignment - 1) & ~(alignment - 1);
-	};
-
-	VkBufferDeviceAddressInfo vAddrInfo{
-	VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO
-	};
-	vAddrInfo.buffer = vertexBuffer._deviceBuffer;
-	VkDeviceAddress vertexAddress =
-		vkGetBufferDeviceAddress(device, &vAddrInfo);
-
-	VkBufferDeviceAddressInfo iAddrInfo{
-		VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO
-	};
-	iAddrInfo.buffer = indexBuffer._deviceBuffer;
-	VkDeviceAddress indexAddress =
-		vkGetBufferDeviceAddress(device, &iAddrInfo);
-
-	VkAccelerationStructureGeometryKHR geometry;
-	VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo;
-
-	PrimitiveToGeometry(
-		vertexBuffer,
-		indexBuffer,
-		vertexCount,
-		triangleCount,
-		geometry,
-		buildRangeInfo
-	);
-
-	VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
-		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
-		.type = asType,
-		.flags = flags,
-		.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
-		.geometryCount = 1,
-		.pGeometries = &geometry
-	};
-
-	uint32_t maxPrimCount = buildRangeInfo.primitiveCount;
-
-	// --- Query sizes ---
-	VkAccelerationStructureBuildSizesInfoKHR sizeInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
-	vkGetAccelerationStructureBuildSizesKHR(device,
-		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
-		&buildInfo,
-		&maxPrimCount,
-		&sizeInfo);
-
-	// --- Create AS buffer ---
-	VkBufferCreateInfo bufferInfo{
-		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		.size = sizeInfo.accelerationStructureSize,
-		.usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
-	};
-
-	VkBuffer asBuffer;
-	vkCreateBuffer(device, &bufferInfo, nullptr, &asBuffer);
-
-	VkMemoryRequirements memReq;
-	vkGetBufferMemoryRequirements(device, asBuffer, &memReq);
-
-	VkMemoryAllocateFlagsInfo allocFlags{
-	VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO
-	};
-	allocFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-
-	VkMemoryAllocateInfo allocInfo{
-		VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO
-	};
-	allocInfo.allocationSize = memReq.size;
-	allocInfo.memoryTypeIndex =
-		FindMemoryType(memReq.memoryTypeBits,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	allocInfo.pNext = &allocFlags;
-
-	vkAllocateMemory(device, &allocInfo, nullptr, &accelMemory);
-	vkBindBufferMemory(device, asBuffer, accelMemory, 0);
-
-	// --- Create the acceleration structure ---
-	VkAccelerationStructureCreateInfoKHR asCreateInfo{
-		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
-		.buffer = asBuffer,
-		.size = sizeInfo.accelerationStructureSize,
-		.type = asType
-	};
-	vkCreateAccelerationStructureKHR(device, &asCreateInfo, nullptr, &accelStruct);
-
-	// --- Scratch buffer ---
-	VkDeviceSize scratchSize = alignUp(sizeInfo.buildScratchSize, m_asProperties.minAccelerationStructureScratchOffsetAlignment);
-
-	MemoryMappedBuffer scratchBuffer =
-		_resourceManager->CreateScratchBuffer(
-			scratchSize,
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-			m_asProperties.minAccelerationStructureScratchOffsetAlignment
-		);
-	VkBufferDeviceAddressInfo scratchAddressInfo{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
-	scratchAddressInfo.buffer = scratchBuffer._deviceBuffer;
-	VkDeviceAddress scratchAddress = vkGetBufferDeviceAddress(device, &scratchAddressInfo);
-
-	// --- Build the acceleration structure ---
-	buildInfo.dstAccelerationStructure = accelStruct;
-	buildInfo.scratchData.deviceAddress = scratchAddress;
-
-	VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
-	{
-		ScopedCmdBuffer cmd(_device, _commandPool);
-
-		vkCmdBuildAccelerationStructuresKHR(
-			cmd.Get(),
-			1,
-			&buildInfo,
-			&pBuildRangeInfo
-		);
-
-		cmd.SubmitAndWait(_queue);
-	}
-
-	// --- Cleanup scratch buffer ---
-	scratchBuffer.ReleaseResource(_device);
-}
-
-void Raytracer::CreateAccelerationStructure(VkAccelerationStructureTypeKHR asType,
-	VkAccelerationStructureKHR& accelStruct,
-	VkDeviceMemory& accelMemory,
-	VkAccelerationStructureGeometryKHR& geometry,
-	uint32_t primitiveCount,
-	VkBuildAccelerationStructureFlagsKHR flags)
-{
-	VkDevice device = _device;
-
-	auto alignUp = [](VkDeviceSize value, VkDeviceSize alignment) {
-		return (value + alignment - 1) & ~(alignment - 1);
-	};
-
-	// Build geometry info for TLAS
-	VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
-		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
-		.type = asType,
-		.flags = flags,
-		.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
-		.geometryCount = 1,
-		.pGeometries = &geometry
-	};
-
-	// Build range info for TLAS
-	VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{
-		.primitiveCount = primitiveCount,
-		.primitiveOffset = 0,
-		.firstVertex = 0,
-		.transformOffset = 0
-	};
-
-	// Query sizes
-	VkAccelerationStructureBuildSizesInfoKHR sizeInfo{
-		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR
-	};
-
-	vkGetAccelerationStructureBuildSizesKHR(device,
-		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
-		&buildInfo,
-		&primitiveCount,
-		&sizeInfo);
-
-	// Create AS buffer
-	VkBufferCreateInfo bufferInfo{
-		.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		.size = sizeInfo.accelerationStructureSize,
-		.usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
-				 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-		.sharingMode = VK_SHARING_MODE_EXCLUSIVE
-	};
-
-	VkBuffer asBuffer;
-	VK_CHECK(vkCreateBuffer(device, &bufferInfo, nullptr, &asBuffer));
-
-	// Allocate memory
-	VkMemoryRequirements memReq;
-	vkGetBufferMemoryRequirements(device, asBuffer, &memReq);
-
-	VkMemoryAllocateFlagsInfo allocFlags{
-		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
-		.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT
-	};
-
-	VkMemoryAllocateInfo allocInfo{
-		.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-		.pNext = &allocFlags,
-		.allocationSize = memReq.size,
-		.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits,
-										  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-	};
-
-	VK_CHECK(vkAllocateMemory(device, &allocInfo, nullptr, &accelMemory));
-	VK_CHECK(vkBindBufferMemory(device, asBuffer, accelMemory, 0));
-
-	// Create acceleration structure
-	VkAccelerationStructureCreateInfoKHR asCreateInfo{
-		.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
-		.buffer = asBuffer,
-		.size = sizeInfo.accelerationStructureSize,
-		.type = asType
-	};
-	VK_CHECK(vkCreateAccelerationStructureKHR(device, &asCreateInfo, nullptr, &accelStruct));
-
-	// Scratch buffer
-	VkDeviceSize scratchSize = alignUp(sizeInfo.buildScratchSize,
-		m_asProperties.minAccelerationStructureScratchOffsetAlignment);
-
-	MemoryMappedBuffer scratchBuffer = _resourceManager->CreateScratchBuffer(
-		scratchSize,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		m_asProperties.minAccelerationStructureScratchOffsetAlignment
-	);
-
-	VkBufferDeviceAddressInfo scratchAddressInfo{
-		.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-		.buffer = scratchBuffer._deviceBuffer
-	};
-	VkDeviceAddress scratchAddress = vkGetBufferDeviceAddress(device, &scratchAddressInfo);
-
-	// Build the acceleration structure
-	buildInfo.dstAccelerationStructure = accelStruct;
-	buildInfo.scratchData.deviceAddress = scratchAddress;
-
-	VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
-	{
-		ScopedCmdBuffer cmd(_device, _commandPool);
-
-		vkCmdBuildAccelerationStructuresKHR(
-			cmd.Get(),
-			1,
-			&buildInfo,
-			&pBuildRangeInfo
-		);
-
-		cmd.SubmitAndWait(_queue);
-	}
-
-	// Cleanup
-	scratchBuffer.ReleaseResource(_device);
-}
-
 void Raytracer::LoadShaders() {
 	try {
 		// Load pre-compiled SPIR-V shaders
@@ -934,7 +496,8 @@ void Raytracer::LoadShaders() {
 }
 
 std::vector<uint32_t> Raytracer::LoadSPIRV(const std::string& filename) {
-	std::filesystem::path fullPath = _shaderDir / filename;
+	const std::string shaderDir = "viewer/app/assets/shaders/";
+	std::filesystem::path fullPath = shaderDir + filename;
 
 	std::ifstream file(fullPath, std::ios::ate | std::ios::binary);
 	if (!file.is_open()) {
@@ -1001,7 +564,7 @@ void Raytracer::CreateRaytraceDescriptorLayout()
 		_device,
 		&layoutInfo,
 		nullptr,
-		&_rtDescSetLayout
+		&_rtPipeline.descriptorLayout
 	);
 
 	if (res != VK_SUCCESS)
@@ -1010,154 +573,75 @@ void Raytracer::CreateRaytraceDescriptorLayout()
 	}
 }
 
-void Raytracer::CreateRayTracingBuffers() {
+void Raytracer::CreateRayBuffers() {
 	// Initialize push constants
-	_pushConstants.vertexCount = static_cast<uint32_t>(_deformableMesh._vertices.rows());
+	_pushConstants.vertexCount = static_cast<uint32_t>(_deformableMesh._vertices.rows());  // Note: Check if it's _vertices or vertices
 	_pushConstants.raysPerVertex = 64;
 	_pushConstants.maxHitsPerRay = 8;
-	_pushConstants.vertexCount = static_cast<uint32_t>(_cageMesh._vertices.rows());
+	// This line below seems wrong - you're overwriting vertexCount with cage mesh vertex count
+	// _pushConstants.vertexCount = static_cast<uint32_t>(_cageMesh.vertices.rows());
 
 	LOG_INFO("Creating ray tracing buffers:");
 	LOG_INFO("  Deformable vertices: {}", _pushConstants.vertexCount);
 	LOG_INFO("  Rays per vertex: {}", _pushConstants.raysPerVertex);
 	LOG_INFO("  Max hits per ray: {}", _pushConstants.maxHitsPerRay);
-	LOG_INFO("  Cage vertices: {}", _pushConstants.vertexCount);
+	LOG_INFO("  Cage vertices: {}", static_cast<uint32_t>(_cageMesh._vertices.rows()));
 
 	// Validate inputs
-	if (_pushConstants.vertexCount == 0) {
+	if (_deformableMesh._vertices.rows() == 0) {
 		throw std::runtime_error("Deformable mesh has no vertices");
 	}
-	if (_pushConstants.vertexCount == 0) {
+	if (_cageMesh._vertices.rows() == 0) {
 		throw std::runtime_error("Cage mesh has no vertices");
 	}
 
-	// 1. Create buffer for deformable mesh vertices
-	const auto& deformableVerts = _deformableMesh._vertices;
-	size_t vertexBufferSize = deformableVerts.rows() * 3 * sizeof(float);
+	// Create ray directions buffer
+	size_t rayDirectionsSize = _deformableMesh._vertices.rows() *
+		_pushConstants.raysPerVertex *
+		3 * sizeof(float);
 
-	if (vertexBufferSize == 0) {
-		throw std::runtime_error("Deformable vertex buffer size is zero");
-	}
-
-	std::vector<float> vertexData;
-	vertexData.reserve(deformableVerts.rows() * 3);
-	for (int i = 0; i < deformableVerts.rows(); ++i) {
-		vertexData.push_back(static_cast<float>(deformableVerts(i, 0)));
-		vertexData.push_back(static_cast<float>(deformableVerts(i, 1)));
-		vertexData.push_back(static_cast<float>(deformableVerts(i, 2)));
-	}
-
-	// Create staging buffer (CPU-visible, coherent memory)
-	auto stagingVertices = _resourceManager->CreateBufferAndCopy(
-		std::span(reinterpret_cast<const std::byte*>(vertexData.data()), vertexBufferSize),
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	// Create device-local buffer (GPU memory)
-	_deformableVertexBuffer = _resourceManager->AllocateDeviceBuffer(
-		vertexBufferSize,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	_rayBuffers.rayDirections = _resourceManager->AllocateDeviceBuffer(
+		rayDirectionsSize,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
-	if (_deformableVertexBuffer._deviceBuffer == VK_NULL_HANDLE) {
-		throw std::runtime_error("Failed to create device buffer for deformable vertices");
+	if (_rayBuffers.rayDirections._deviceBuffer == VK_NULL_HANDLE) {
+		throw std::runtime_error("Failed to create ray directions buffer");
 	}
 
-	// Copy from staging (CPU) to device (GPU) memory
-	CopyBuffer(stagingVertices, _deformableVertexBuffer, vertexBufferSize);
-	stagingVertices.ReleaseResource(_device);
+	// Create hit buffer (GPU write -> CPU read)
+	size_t hitBufferSize = _deformableMesh._vertices.rows() *
+		_pushConstants.raysPerVertex *
+		_pushConstants.maxHitsPerRay *
+		sizeof(uint32_t) * 2;  // Assuming hit data includes index and distance
 
-	LOG_INFO("  Deformable vertex buffer created: {} (size: {} bytes)",
-		(void*)_deformableVertexBuffer._deviceBuffer, vertexBufferSize);
-
-	// 2. Create buffer for ray directions
-	SetupRayDirections();
-
-	// 3. Create cage index buffer
-	const auto& faces = _cageMesh._faces;
-	size_t indexBufferSize = faces.rows() * 3 * sizeof(uint32_t);
-
-	if (indexBufferSize == 0) {
-		throw std::runtime_error("Cage index buffer size is zero");
-	}
-
-	std::vector<uint32_t> indexData;
-	indexData.reserve(faces.rows() * 3);
-	for (int i = 0; i < faces.rows(); ++i) {
-		indexData.push_back(static_cast<uint32_t>(faces(i, 0)));
-		indexData.push_back(static_cast<uint32_t>(faces(i, 1)));
-		indexData.push_back(static_cast<uint32_t>(faces(i, 2)));
-	}
-
-	// Create staging buffer
-	auto stagingIndices = _resourceManager->CreateBufferAndCopy(
-		std::span(reinterpret_cast<const std::byte*>(indexData.data()), indexBufferSize),
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	// Create device-local buffer
-	_cageIndexBuffer = _resourceManager->AllocateDeviceBuffer(
-		indexBufferSize,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+	_rayBuffers.hitBuffer = _resourceManager->AllocateDeviceBuffer(
+		hitBufferSize,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
-	if (_cageIndexBuffer._deviceBuffer == VK_NULL_HANDLE) {
-		throw std::runtime_error("Failed to create cage index buffer");
+	if (_rayBuffers.hitBuffer._deviceBuffer == VK_NULL_HANDLE) {
+		throw std::runtime_error("Failed to create hit buffer");
 	}
 
-	// Copy from staging to device
-	CopyBuffer(stagingIndices, _cageIndexBuffer, indexBufferSize);
-	stagingIndices.ReleaseResource(_device);
-
-	LOG_INFO("  Cage index buffer created: {} (size: {} bytes)",
-		(void*)_cageIndexBuffer._deviceBuffer, indexBufferSize);
-
-	// 4. Create MVC weights buffer (zero-initialized)
-	size_t weightsBufferSize = _pushConstants.vertexCount *
-		_pushConstants.vertexCount *
+	// Create MVC weights buffer (GPU write -> CPU read)
+	size_t weightsBufferSize = _deformableMesh._vertices.rows() *
+		_cageMesh._vertices.rows() *
 		sizeof(float);
 
-	if (weightsBufferSize == 0) {
-		throw std::runtime_error("Weights buffer size is zero");
-	}
-
-	// Create zero data for staging
-	std::vector<float> zeroWeights(_pushConstants.vertexCount * _pushConstants.vertexCount, 0.0f);
-	auto stagingWeights = _resourceManager->CreateBufferAndCopy(
-		std::span(reinterpret_cast<const std::byte*>(zeroWeights.data()), weightsBufferSize),
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	// Create device-local buffer
-	_mvcWeightsBuffer = _resourceManager->AllocateDeviceBuffer(
+	_rayBuffers.mvcWeights = _resourceManager->AllocateDeviceBuffer(
 		weightsBufferSize,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
-	if (_mvcWeightsBuffer._deviceBuffer == VK_NULL_HANDLE) {
+	if (_rayBuffers.mvcWeights._deviceBuffer == VK_NULL_HANDLE) {
 		throw std::runtime_error("Failed to create MVC weights buffer");
 	}
 
-	// Copy from staging to device
-	CopyBuffer(stagingWeights, _mvcWeightsBuffer, weightsBufferSize);
-	stagingWeights.ReleaseResource(_device);
-
-	LOG_INFO("  MVC weights buffer created: {} (size: {} bytes)",
-		(void*)_mvcWeightsBuffer._deviceBuffer, weightsBufferSize);
-
-	// Validate all buffers
-	if (_rayDirectionsBuffer._deviceBuffer == VK_NULL_HANDLE) {
-		throw std::runtime_error("Failed to create ray directions buffer");
-	}
-	if (_hitBuffer._deviceBuffer == VK_NULL_HANDLE) {
-		throw std::runtime_error("Failed to create hit buffer");
-	}
+	// Zero-initialize the weights buffer (optional - can be done on GPU)
 
 	LOG_INFO("Successfully created ray tracing buffers");
 }
@@ -1209,22 +693,22 @@ void Raytracer::SetupRayDirections() {
 	);
 
 	// Create device-local buffer
-	_rayDirectionsBuffer = _resourceManager->AllocateDeviceBuffer(
+	_rayBuffers.rayDirections = _resourceManager->AllocateDeviceBuffer(
 		directionsBufferSize,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
-	if (_rayDirectionsBuffer._deviceBuffer == VK_NULL_HANDLE) {
+	if (_rayBuffers.rayDirections._deviceBuffer == VK_NULL_HANDLE) {
 		throw std::runtime_error("Failed to create ray directions buffer");
 	}
 
 	// Copy from staging to device
-	CopyBuffer(stagingDirections, _rayDirectionsBuffer, directionsBufferSize);
+	//CopyBuffer(stagingDirections, _rayBuffers.rayDirections, directionsBufferSize);TODO 
 	stagingDirections.ReleaseResource(_device);
 
 	LOG_INFO("  Ray directions buffer created: {}",
-		(void*)_rayDirectionsBuffer._deviceBuffer);
+		(void*)_rayBuffers.rayDirections._deviceBuffer);
 
 	// Create hit buffer
 	uint32_t maxTotalHits = _pushConstants.vertexCount *
@@ -1250,7 +734,7 @@ void Raytracer::SetupRayDirections() {
 	);
 
 	// Create device-local buffer
-	_hitBuffer = _resourceManager->AllocateDeviceBuffer(
+	_rayBuffers.hitBuffer = _resourceManager->AllocateDeviceBuffer(
 		hitBufferSize,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -1258,32 +742,21 @@ void Raytracer::SetupRayDirections() {
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
-	if (_hitBuffer._deviceBuffer == VK_NULL_HANDLE) {
+	if (_rayBuffers.hitBuffer._deviceBuffer == VK_NULL_HANDLE) {
 		throw std::runtime_error("Failed to create hit buffer");
 	}
 
 	// Copy from staging to device
-	CopyBuffer(stagingHitBuffer, _hitBuffer, hitBufferSize);
+	CopyBuffer(stagingHitBuffer, _rayBuffers.hitBuffer, hitBufferSize);
 	stagingHitBuffer.ReleaseResource(_device);
 
-	LOG_INFO("  Hit buffer created: {}", (void*)_hitBuffer._deviceBuffer);
+	LOG_INFO("  Hit buffer created: {}", (void*)_rayBuffers.hitBuffer._deviceBuffer);
 
 	LOG_INFO("Successfully set up ray directions");
 }
 
 void Raytracer::CreateRayTracingDescriptorSet() {
-
-	LOG_INFO("Buffer status before descriptor creation:");
-	LOG_INFO("  Deformable vertex buffer: {}",
-		(void*)_deformableVertexBuffer._deviceBuffer);
-	LOG_INFO("  Ray directions buffer: {}",
-		(void*)_rayDirectionsBuffer._deviceBuffer);
-	LOG_INFO("  Hit buffer: {}",
-		(void*)_hitBuffer._deviceBuffer);
-	LOG_INFO("  Cage index buffer: {}",
-		(void*)_cageIndexBuffer._deviceBuffer);
-	LOG_INFO("  MVC weights buffer: {}",
-		(void*)_mvcWeightsBuffer._deviceBuffer);
+	LOG_INFO("Creating ray tracing descriptor set...");
 
 	// Validate all buffers
 	auto validateBuffer = [](const MemoryMappedBuffer& buffer, const std::string& name) {
@@ -1294,12 +767,7 @@ void Raytracer::CreateRayTracingDescriptorSet() {
 		return true;
 	};
 
-	if (!validateBuffer(_deformableVertexBuffer, "Deformable vertex buffer")) return;
-	if (!validateBuffer(_rayDirectionsBuffer, "Ray directions buffer")) return;
-	if (!validateBuffer(_hitBuffer, "Hit buffer")) return;
-	if (!validateBuffer(_cageIndexBuffer, "Cage index buffer")) return;
-	if (!validateBuffer(_mvcWeightsBuffer, "MVC weights buffer")) return;
-	// Create descriptor set layout with all necessary bindings
+	// 1. CREATE DESCRIPTOR SET LAYOUT
 	std::vector<VkDescriptorSetLayoutBinding> bindings = {
 		// Binding 0: Acceleration structure
 		{
@@ -1329,43 +797,52 @@ void Raytracer::CreateRayTracingDescriptorSet() {
 			.descriptorCount = 1,
 			.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR
 		},
-		// Binding 4: Hit buffer
+		// Binding 4: Hit buffer (written by hit shader)
 		{
 			.binding = 4,
 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+			.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR
 		},
 		// Binding 5: Cage indices
 		{
 			.binding = 5,
 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+			.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR
 		},
-		// Binding 6: MVC weights buffer (NEW - for storing computed weights)
+		// Binding 6: MVC weights buffer (output)
 		{
 			.binding = 6,
 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR
+			.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR  // Written by raygen shader
+		},
+		// Binding 7: Atomic counter for hit buffer (NEW)
+		{
+			.binding = 7,
+			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			.descriptorCount = 1,
+			.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR
 		}
 	};
 
+	// Create descriptor set layout
 	VkDescriptorSetLayoutCreateInfo layoutInfo{
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		.bindingCount = static_cast<uint32_t>(bindings.size()),
 		.pBindings = bindings.data()
 	};
 
-	if (_rtDescSetLayout != VK_NULL_HANDLE) {
-		vkDestroyDescriptorSetLayout(_device, _rtDescSetLayout, nullptr);
-		_rtDescSetLayout = VK_NULL_HANDLE;
+	if (_rtPipeline.descriptorLayout != VK_NULL_HANDLE) {
+		vkDestroyDescriptorSetLayout(_device, _rtPipeline.descriptorLayout, nullptr);
+		_rtPipeline.descriptorLayout = VK_NULL_HANDLE;
 	}
 
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_rtDescSetLayout));
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_rtPipeline.descriptorLayout));
+	LOG_INFO("Created descriptor set layout with {} bindings", bindings.size());
 
-	// Create descriptor pool
+	// 2. CREATE DESCRIPTOR POOL
 	std::vector<VkDescriptorPoolSize> poolSizes = {
 		{
 			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
@@ -1377,49 +854,80 @@ void Raytracer::CreateRayTracingDescriptorSet() {
 		},
 		{
 			.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.descriptorCount = 5  // deformable vertices, ray directions, hit buffer, cage indices, MVC weights
+			.descriptorCount = 6  // deformable vertices, ray directions, hit buffer, cage indices, MVC weights, atomic counter
 		}
 	};
 
 	VkDescriptorPoolCreateInfo poolInfo{
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-		.maxSets = 1,  // We only need one descriptor set for ray tracing
+		.maxSets = 1,
 		.poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
 		.pPoolSizes = poolSizes.data()
 	};
 
-	if (_rtDescPool != VK_NULL_HANDLE) {
-		vkDestroyDescriptorPool(_device, _rtDescPool, nullptr);
-		_rtDescPool = VK_NULL_HANDLE;
+	if (_rtPipeline.descriptorPool != VK_NULL_HANDLE) {
+		vkDestroyDescriptorPool(_device, _rtPipeline.descriptorPool, nullptr);
+		_rtPipeline.descriptorPool = VK_NULL_HANDLE;
 	}
 
-	VK_CHECK(vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_rtDescPool));
+	VK_CHECK(vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_rtPipeline.descriptorPool));
+	LOG_INFO("Created descriptor pool");
 
-	// Allocate descriptor set
+	// 3. ALLOCATE DESCRIPTOR SET
 	VkDescriptorSetAllocateInfo allocInfo{
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-		.descriptorPool = _rtDescPool,
+		.descriptorPool = _rtPipeline.descriptorPool,
 		.descriptorSetCount = 1,
-		.pSetLayouts = &_rtDescSetLayout
+		.pSetLayouts = &_rtPipeline.descriptorLayout
 	};
 
-	VK_CHECK(vkAllocateDescriptorSets(_device, &allocInfo, &_rtDescSet));
+	VK_CHECK(vkAllocateDescriptorSets(_device, &allocInfo, &_rtPipeline.descriptorSet));
+	LOG_INFO("Allocated descriptor set");
 
-	// Write descriptor set updates
+	// 4. UPDATE DESCRIPTOR SET
 	std::vector<VkWriteDescriptorSet> descriptorWrites;
-	descriptorWrites.reserve(7);
+	std::vector<VkDescriptorImageInfo> imageInfos;
+	std::vector<VkDescriptorBufferInfo> bufferInfos;
 
-	// Binding 0: Acceleration structure
+	// Reserve space for all writes
+	descriptorWrites.reserve(8);
+	bufferInfos.reserve(7);  // 6 buffers + acceleration structure
+
+	// Helper lambda to add buffer writes
+	auto addBufferWrite = [&](uint32_t binding, const Buffer& buffer,
+		VkDeviceSize size, VkShaderStageFlags stageFlags) {
+		// Create buffer info
+		VkDescriptorBufferInfo bufferInfo{
+			.buffer = buffer._deviceBuffer,
+			.offset = 0,
+			.range = size
+		};
+		bufferInfos.push_back(bufferInfo);
+
+		// Create write descriptor
+		VkWriteDescriptorSet write{
+			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet = _rtPipeline.descriptorSet,
+			.dstBinding = binding,
+			.dstArrayElement = 0,
+			.descriptorCount = 1,
+			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+			.pBufferInfo = &bufferInfos.back()
+		};
+		descriptorWrites.push_back(write);
+	};
+
+	// Binding 0: Acceleration structure (special handling)
 	VkWriteDescriptorSetAccelerationStructureKHR accelStructureWrite{
 		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
 		.accelerationStructureCount = 1,
-		.pAccelerationStructures = &m_tlasAccel
+		.pAccelerationStructures = &_tlas.handle
 	};
 
 	VkWriteDescriptorSet accelWrite{
 		.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
 		.pNext = &accelStructureWrite,
-		.dstSet = _rtDescSet,
+		.dstSet = _rtPipeline.descriptorSet,
 		.dstBinding = 0,
 		.dstArrayElement = 0,
 		.descriptorCount = 1,
@@ -1427,160 +935,92 @@ void Raytracer::CreateRayTracingDescriptorSet() {
 	};
 	descriptorWrites.push_back(accelWrite);
 
-	// Note: Binding 1 (output image) will be updated later when the image is created
-	// For now, create a placeholder write
-	if (_outputImage._imageView != VK_NULL_HANDLE) {
+	// Binding 1: Output image (if created)
+	if (_output.view != VK_NULL_HANDLE) {
 		VkDescriptorImageInfo imageInfo{
-			.imageView = _outputImage._imageView,
+			.imageView = _output.view,
 			.imageLayout = VK_IMAGE_LAYOUT_GENERAL
 		};
+		imageInfos.push_back(imageInfo);
 
-		descriptorWrites.push_back({
+		VkWriteDescriptorSet imageWrite{
 			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstSet = _rtDescSet,
+			.dstSet = _rtPipeline.descriptorSet,
 			.dstBinding = 1,
 			.dstArrayElement = 0,
 			.descriptorCount = 1,
 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-			.pImageInfo = &imageInfo
-			});
-	}
-	auto addBufferWrite = [&](uint32_t binding, const MemoryMappedBuffer& buffer, VkDeviceSize size) {
-		VkDescriptorBufferInfo bufferInfo{
-			.buffer = buffer._deviceBuffer,
-			.offset = 0,
-			.range = size
+			.pImageInfo = &imageInfos.back()
 		};
-
-		descriptorWrites.push_back({
-			.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-			.dstSet = _rtDescSet,
-			.dstBinding = binding,
-			.dstArrayElement = 0,
-			.descriptorCount = 1,
-			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.pBufferInfo = &bufferInfo
-			});
-	};
-	// Binding 2: Deformable vertices
-	if (_deformableVertexBuffer._deviceBuffer != VK_NULL_HANDLE) {
-		VkDeviceSize vertexBufferSize = _pushConstants.vertexCount * 3 * sizeof(float);
-		addBufferWrite(2, _deformableVertexBuffer, vertexBufferSize);
+		descriptorWrites.push_back(imageWrite);
 	}
+	else {
+		LOG_WARN("Output image not created - binding 1 will be empty");
+	}
+
+	// Binding 2: Deformable vertices
+	VkDeviceSize vertexBufferSize = _pushConstants.vertexCount * 3 * sizeof(float);
+	addBufferWrite(2, _deformableGeometry.vertexBuffer, vertexBufferSize,
+		VK_SHADER_STAGE_RAYGEN_BIT_KHR);
 
 	// Binding 3: Ray directions
-	if (_rayDirectionsBuffer._deviceBuffer != VK_NULL_HANDLE) {
-		uint32_t totalRays = _pushConstants.vertexCount * _pushConstants.raysPerVertex;
-		VkDeviceSize directionsSize = totalRays * sizeof(glm::vec4);
-		addBufferWrite(3, _rayDirectionsBuffer, directionsSize);
-	}
+	uint32_t totalRays = _pushConstants.vertexCount * _pushConstants.raysPerVertex;
+	VkDeviceSize directionsSize = static_cast<VkDeviceSize>(totalRays) * sizeof(glm::vec4);
+	addBufferWrite(3, _rayBuffers.rayDirections, directionsSize,
+		VK_SHADER_STAGE_RAYGEN_BIT_KHR);
 
 	// Binding 4: Hit buffer
-	if (_hitBuffer._deviceBuffer != VK_NULL_HANDLE) {
-		uint32_t maxTotalHits = _pushConstants.vertexCount *
-			_pushConstants.raysPerVertex *
-			_pushConstants.maxHitsPerRay;
-		VkDeviceSize hitBufferSize = static_cast<VkDeviceSize>(maxTotalHits) * sizeof(GLSLHitRecord);
-		addBufferWrite(4, _hitBuffer, hitBufferSize);
-	}
+	uint32_t maxTotalHits = _pushConstants.vertexCount *
+		_pushConstants.raysPerVertex *
+		_pushConstants.maxHitsPerRay;
+	VkDeviceSize hitBufferSize = static_cast<VkDeviceSize>(maxTotalHits) * sizeof(SimpleHit);
+	addBufferWrite(4, _rayBuffers.hitBuffer, hitBufferSize,
+		VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
 
 	// Binding 5: Cage indices
-	if (_cageIndexBuffer._deviceBuffer != VK_NULL_HANDLE) {
-		VkDeviceSize indexBufferSize = _cageMesh._faces.rows() * 3 * sizeof(uint32_t);
-		addBufferWrite(5, _cageIndexBuffer, indexBufferSize);
-	}
+	VkDeviceSize indexBufferSize = static_cast<VkDeviceSize>(_cageMesh._faces.rows() * 3 * sizeof(uint32_t));
+	addBufferWrite(5, _cageGeometry.indexBuffer, indexBufferSize,
+		VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
 
 	// Binding 6: MVC weights buffer
-	if (_mvcWeightsBuffer._deviceBuffer != VK_NULL_HANDLE) {
-		VkDeviceSize weightsBufferSize = _pushConstants.vertexCount *
-			_pushConstants.vertexCount *
-			sizeof(float);
-		addBufferWrite(6, _mvcWeightsBuffer, weightsBufferSize);
+	VkDeviceSize weightsBufferSize = static_cast<VkDeviceSize>(_pushConstants.vertexCount *
+		_pushConstants.vertexCount *
+		sizeof(float));
+	addBufferWrite(6, _rayBuffers.mvcWeights, weightsBufferSize,
+		VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+
+	// Binding 7: Atomic counter buffer (create if not exists)
+	if (_rayBuffers.atomicCounterBuffer._deviceBuffer == VK_NULL_HANDLE) {
+		// Create atomic counter buffer
+		VkDeviceSize atomicBufferSize = sizeof(uint32_t);  // Single counter
+		_rayBuffers.atomicCounterBuffer = _resourceManager->AllocateDeviceBuffer(
+			atomicBufferSize,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		);
+
+		// Initialize to zero
+		uint32_t zero = 0;
+		auto stagingAtomic = _resourceManager->CreateBufferAndCopy(
+			std::span(reinterpret_cast<const std::byte*>(&zero), sizeof(zero)),
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+		);
+
+		CopyBuffer(stagingAtomic, _rayBuffers.atomicCounterBuffer, atomicBufferSize);
+		stagingAtomic.ReleaseResource(_device);
 	}
 
-	// Update the descriptor set
+	addBufferWrite(7, _rayBuffers.atomicCounterBuffer, sizeof(uint32_t),
+		VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
+
+	// Update all descriptors at once
 	vkUpdateDescriptorSets(_device,
 		static_cast<uint32_t>(descriptorWrites.size()),
 		descriptorWrites.data(),
 		0, nullptr);
 
-	LOG_INFO("Created ray tracing descriptor set with {} bindings", descriptorWrites.size());
+	LOG_INFO("Updated descriptor set with {} writes", descriptorWrites.size());
+	LOG_INFO("Successfully created ray tracing descriptor set");
 }
-
-void Raytracer::CreateTopLevelAS() {
-	// 1. Create instance for your BLAS
-	VkAccelerationStructureInstanceKHR instance{};
-
-	// Identity transform matrix
-	instance.transform = {
-		1.0f, 0.0f, 0.0f, 0.0f,
-		0.0f, 1.0f, 0.0f, 0.0f,
-		0.0f, 0.0f, 1.0f, 0.0f
-	};
-
-	// Get BLAS device address
-	VkAccelerationStructureDeviceAddressInfoKHR addressInfo{
-		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR
-	};
-	addressInfo.accelerationStructure = m_blasAccel;
-	instance.accelerationStructureReference =
-		vkGetAccelerationStructureDeviceAddressKHR(_device, &addressInfo);
-
-	instance.instanceCustomIndex = 0; // Used for shader indexing
-	instance.mask = 0xFF; // All rays hit this
-	instance.instanceShaderBindingTableRecordOffset = 0; // SBT offset
-	instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-
-	// 2. Create buffer for instances
-	MemoryMappedBuffer instanceBuffer = _resourceManager->CreateBufferAndCopy(
-		std::span(reinterpret_cast<const std::byte*>(&instance), sizeof(instance)),
-		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	// 3. Build TLAS
-	VkAccelerationStructureGeometryKHR geometry{
-		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR
-	};
-	geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-	geometry.geometry.instances.sType =
-		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
-	geometry.geometry.instances.arrayOfPointers = VK_FALSE;
-
-	VkBufferDeviceAddressInfo bufferInfo{
-		VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO
-	};
-	bufferInfo.buffer = instanceBuffer._deviceBuffer;
-	geometry.geometry.instances.data.deviceAddress =
-		vkGetBufferDeviceAddress(_device, &bufferInfo);
-
-	VkAccelerationStructureBuildRangeInfoKHR rangeInfo{};
-	rangeInfo.primitiveCount = 1; // One instance
-	rangeInfo.primitiveOffset = 0;
-	rangeInfo.firstVertex = 0;
-	rangeInfo.transformOffset = 0;
-
-	/* 4. Call CreateAccelerationStructure with TLAS type
-	CreateAccelerationStructure(
-		VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
-		m_tlasAccel,
-		m_tlasMemory,
-		geometry,
-		rangeInfo,
-		1, // 1 instance
-		VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR
-	);*/
-	CreateAccelerationStructure(
-		VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
-		m_tlasAccel,
-		m_tlasMemory,
-		geometry,
-		1, // 1 instance
-		VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR
-	);
-
-	instanceBuffer.ReleaseResource(_device);
-}
-
+*/

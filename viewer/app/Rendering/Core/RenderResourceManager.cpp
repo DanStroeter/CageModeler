@@ -198,7 +198,7 @@ MemoryMappedBuffer RenderResourceManager::CreateScratchBuffer(
 	VkDeviceSize size,
 	VkBufferUsageFlags usage,
 	VkMemoryPropertyFlags properties,
-	VkDeviceSize alignment /* = 0 */
+	VkDeviceSize alignment = 0
 ) const
 {
 	CHECK_VK_HANDLE(_device);
