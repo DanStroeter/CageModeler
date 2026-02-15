@@ -3,7 +3,7 @@
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_EXT_buffer_reference2 : require
 
-// STRUCTS FIRST
+// Structs must match C++ exactly
 struct RayPayload {
     uint vertexIndex;
     uint rayIndex;
@@ -22,61 +22,75 @@ struct HitRecord {
     uint hitSequence;
 };
 
-// NOW use structs
 layout(location = 0) rayPayloadEXT RayPayload payload;
 
+// Acceleration structure
 layout(binding = 0, set = 0) uniform accelerationStructureEXT cageAccel;
-layout(binding = 1, set = 0, rgba8) uniform writeonly image2D outputImage;  // MOVED writeonly before image2D
-layout(binding = 2, set = 0) buffer VertexBuffer {
+
+// Deformable vertices buffer (binding 1)
+layout(binding = 1, set = 0) buffer VertexBuffer {
     vec3 vertices[];
 } deformableVertices;
-layout(binding = 3, set = 0) buffer RayDirections {
-    vec4 directions[];
+
+// Ray directions buffer (binding 2)
+layout(binding = 2, set = 0) buffer RayDirections {
+    vec4 directions[];  // .xyz = direction, .w = original vertex index (debug)
 } rayDirs;
-layout(binding = 4, set = 0) buffer HitBuffer {
+
+// Hit buffer (binding 3) - written by hit shader
+layout(binding = 3, set = 0) buffer HitBuffer {
     HitRecord hits[];
 } hitBuffer;
 
+// Cage indices buffer (binding 4)
+layout(binding = 4, set = 0) buffer IndexBuffer {
+    uint indices[];
+} cageIndices;
+
 layout(push_constant) uniform PushConstants {
-    uint maxHitsPerRay;
-    uint skipEveryNthHit;
-    uint vertexCount;
-    uint raysPerVertex;
+    uint vertexCount;        // Number of deformable vertices
+    uint raysPerVertex;      // Rays per vertex
+    uint maxHitsPerRay;      // Maximum hits to store per ray
+    uint padding;            // Padding for 16-byte alignment
 } pc;
 
 void main() {
-    ivec2 launchIndex = ivec2(gl_LaunchIDEXT.xy);
+    // Calculate ray and vertex indices from launch ID
+    // We're dispatching (vertexCount * raysPerVertex) threads
     uint rayIndex = gl_LaunchIDEXT.x;
-    
     uint vertexIndex = rayIndex / pc.raysPerVertex;
     uint directionIndex = rayIndex % pc.raysPerVertex;
     
+    // Validate vertex index
     if (vertexIndex >= pc.vertexCount) {
         return;
     }
     
+    // Get ray origin (deformable vertex position) and direction
     vec3 vertexPos = deformableVertices.vertices[vertexIndex];
     vec3 rayDir = normalize(rayDirs.directions[rayIndex].xyz);
     
+    // Setup payload
     payload.vertexIndex = vertexIndex;
     payload.rayIndex = rayIndex;
     payload.hitCount = 0;
-    payload.tMax = 1000.0;
+    payload.tMax = 1000.0;  // Max trace distance
     
+    // Trace the ray - will hit the closest hit shader
     traceRayEXT(
-        cageAccel,
-        gl_RayFlagsOpaqueEXT,
-        0xFF,
-        0,
-        0,
-        0,
-        vertexPos,
-        0.001,
-        rayDir,
-        payload.tMax,
-        0
+        cageAccel,              // acceleration structure
+        gl_RayFlagsOpaqueEXT,   // ray flags
+        0xFF,                   // cull mask
+        0,                      // sbt record offset
+        0,                      // sbt record stride
+        0,                      // miss index
+        vertexPos,              // origin
+        0.001,                  // tMin (avoid self-intersection)
+        rayDir,                 // direction
+        payload.tMax,           // tMax
+        0                       // payload location
     );
     
-    vec4 color = vec4(float(payload.hitCount) / float(pc.maxHitsPerRay), 0.0, 0.0, 1.0);
-    imageStore(outputImage, launchIndex, color);
+    // After all recursive traces complete, we're done
+    // The hit buffer now contains all intersections
 }

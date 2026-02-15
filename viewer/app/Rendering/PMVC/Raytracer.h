@@ -148,20 +148,6 @@ private:
     RayBuffers _rayBuffers;
 
     // ============================================================
-    // === Output Image
-    // ============================================================
-    /*
-    struct OutputImage
-    {
-        VkImage image = VK_NULL_HANDLE;
-        VkImageView view = VK_NULL_HANDLE;
-        VkDeviceMemory memory = VK_NULL_HANDLE;
-    };
-
-    OutputImage _output;
-    */
-
-    // ============================================================
     // === Push Constants
     // ============================================================
 
@@ -204,12 +190,9 @@ private:
     void LoadShaders();
     std::vector<uint32_t> LoadSPIRV(const std::string& filename);
     VkShaderModule CreateShaderModule(const std::vector<uint32_t>& code);
-    
-    //void CopyBuffer(const MemoryMappedBuffer& src, Buffer& dst, VkDeviceSize size);
-    //void GetRaytracingComponents();
-    //void Trace();
-    //Eigen::MatrixXd ComputeMVC();
-    //void CreateOutputImage();
+   
+    void StartRayTrace();
+    void ResetHitBuffer();
 
     struct SimpleHit {
         uint32_t faceIndex;        // Which cage triangle was hit
@@ -233,4 +216,16 @@ private:
 
     //void Cleanup();
     //void CleanupShaders();
+
+    struct TraceSync {
+        VkFence fence = VK_NULL_HANDLE;
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+        bool isTracing = false;
+        uint64_t frameNumber = 0;
+    };
+
+    TraceSync _traceSync;
+    VkFence _traceCompleteFence = VK_NULL_HANDLE;
+    bool IsTraceComplete();
+    void WaitForTrace();
 };
