@@ -10,7 +10,6 @@
 #include <Mesh/GeometryUtils.h>
 #include <Editor/Light.h> 
 #include <Core/Subsystem.h> 
-#include <Rendering/RenderSubsystem.h> 
 #include <Eigen/Core> 
 #include <vector> 
 #include <cstdint> 
@@ -19,7 +18,6 @@
 // Forward declarations
 class RenderPipelineManager; 
 class RenderResourceManager; 
-class RenderSubsystem;
 
 class Raytracer final
 {
@@ -27,23 +25,14 @@ public:
     Raytracer(
         const std::shared_ptr<RenderPipelineManager>& pipelineManager,
         const std::shared_ptr<RenderResourceManager>& resourceManager,
-        const RenderResourceRef<Device> device,
-        uint32_t cubemapSize,
-        VkFormat format);
+        const RenderResourceRef<Device> device);
 
     ~Raytracer();
 
     void Initialize();
-
-    //void SetCage(const EigenMesh& mesh);
-    //void SetDeformableMesh(const EigenMesh& mesh);
-
     void SetCage(const EigenMesh& mesh) { _cageMesh = mesh; } 
     void SetMesh(const EigenMesh& mesh) { _deformableMesh = mesh; }
     MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates();
-
-    void Trace();
-    Eigen::MatrixXd ComputeMVC();
 
 private:
 
@@ -117,16 +106,30 @@ private:
 
     struct ShaderBindingTable
     {
-        MemoryMappedBuffer buffer;          // HOST_VISIBLE + DEVICE_ADDRESS
+        Buffer buffer;          // HOST_VISIBLE + DEVICE_ADDRESS
         VkStridedDeviceAddressRegionKHR raygen{};
         VkStridedDeviceAddressRegionKHR miss{};
         VkStridedDeviceAddressRegionKHR hit{};
         VkStridedDeviceAddressRegionKHR callable{};
     };
 
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rtProperties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR
+    };
+    VkPhysicalDeviceAccelerationStructurePropertiesKHR _asProperties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR
+    };
+
+    std::vector<uint8_t> _shaderHandles;
+
     VkShaderModule _raygenShader = VK_NULL_HANDLE;
     VkShaderModule _missShader = VK_NULL_HANDLE;
     VkShaderModule _hitShader = VK_NULL_HANDLE;
+
+    VkStridedDeviceAddressRegionKHR _raygenRegion{};
+    VkStridedDeviceAddressRegionKHR _missRegion{};
+    VkStridedDeviceAddressRegionKHR _hitRegion{};
+    VkStridedDeviceAddressRegionKHR _callableRegion{};
 
     ShaderBindingTable _sbt;
 
@@ -138,8 +141,8 @@ private:
     {
         Buffer rayDirections;               // DEVICE_LOCAL
         Buffer hitBuffer;       // GPU write -> CPU read
-        Buffer mvcWeights;      // GPU write -> CPU read
-        Buffer atomicCounterBuffer;
+        //Buffer mvcWeights;      // GPU write -> CPU read
+        //Buffer atomicCounterBuffer;
     };
 
     RayBuffers _rayBuffers;
@@ -147,7 +150,7 @@ private:
     // ============================================================
     // === Output Image
     // ============================================================
-
+    /*
     struct OutputImage
     {
         VkImage image = VK_NULL_HANDLE;
@@ -156,6 +159,7 @@ private:
     };
 
     OutputImage _output;
+    */
 
     // ============================================================
     // === Push Constants
@@ -176,7 +180,8 @@ private:
     // ============================================================
 
     void CreateCommandPool();
-    void CreateGeometryBuffers();
+    void CreateGeometryBuffers(EigenMesh& geometry, GeometryBuffers& geometryBuffers);
+
     void CreateAccelerationStructures();
     void CreateBLAS();
     void CreateTLAS();
@@ -185,22 +190,26 @@ private:
         uint32_t primitiveCount,
         VkAccelerationStructureTypeKHR type,
         AccelerationStructure& outAS);
-    void CopyBuffer(const MemoryMappedBuffer& src, Buffer& dst, VkDeviceSize size);
-    
+
+    //void CreateRayTracingPipelineLayout();
     void CreateRayTracingPipeline();
-    void CreateShaderBindingTable();
     void CreateRayBuffers();
-    void CreateOutputImage();
+    void GetRaytracingComponents();
+
+    void CreateRayTracingDescriptorSet();
     void UpdateDescriptorSet();
 
-    void CreateRaytraceDescriptorLayout();
-    void CreateRayTracingDescriptorSet();
-    void SetupRayDirections();
-
+    //Shaders
+    void CreateShaderBindingTable(const VkRayTracingPipelineCreateInfoKHR& pipelineInfo);
     void LoadShaders();
     std::vector<uint32_t> LoadSPIRV(const std::string& filename);
     VkShaderModule CreateShaderModule(const std::vector<uint32_t>& code);
+    
+    //void CopyBuffer(const MemoryMappedBuffer& src, Buffer& dst, VkDeviceSize size);
     //void GetRaytracingComponents();
+    //void Trace();
+    //Eigen::MatrixXd ComputeMVC();
+    //void CreateOutputImage();
 
     struct SimpleHit {
         uint32_t faceIndex;        // Which cage triangle was hit
@@ -216,9 +225,12 @@ private:
     // === Helpers
     // ============================================================
 
+    void SubmitReadbackCopy(uint32_t slot, VkSemaphore timeline, uint64_t waitValue, uint64_t signalValue);
+    void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
+
     VkDeviceAddress GetBufferAddress(const Buffer& buffer) const;
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags props) const;
 
-    void Cleanup();
-    void CleanupShaders();
+    //void Cleanup();
+    //void CleanupShaders();
 };
