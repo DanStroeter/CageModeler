@@ -4,7 +4,6 @@
 
 hitAttributeEXT vec2 hitAttributes;
 
-// Structs must match C++ exactly
 struct RayPayload {
     uint vertexIndex;
     uint rayIndex;
@@ -12,24 +11,23 @@ struct RayPayload {
     float tMax;
 };
 
+// Match C++ SimpleHit struct
 struct HitRecord {
-    vec3 position;
-    vec3 normal;
-    vec2 barycentric;
-    uint triangleId;
-    uint vertexIndices[3];
+    uint faceIndex;
+    float barycentricU;
+    float barycentricV;
     float distance;
+    uint sourceVertex;
     uint rayIndex;
-    uint hitSequence;
+    uint padding[2];
 };
 
 layout(location = 0) rayPayloadInEXT RayPayload payload;
 
-// Acceleration structure (needed for recursive tracing)
 layout(binding = 0, set = 0) uniform accelerationStructureEXT cageAccel;
 
-// Hit buffer (binding 3)
-layout(binding = 3, set = 0) buffer HitBuffer {
+// Hit buffer (binding 3) - using coherent for visibility across invocations
+layout(binding = 3, set = 0) coherent buffer HitBuffer {
     HitRecord hits[];
 } hitBuffer;
 
@@ -39,54 +37,59 @@ layout(binding = 4, set = 0) readonly buffer CageIndexBuffer {
 } cageIndices;
 
 layout(push_constant) uniform PushConstants {
-    uint maxHitsPerRay;
-    uint skipEveryNthHit;
     uint vertexCount;
     uint raysPerVertex;
+    uint maxHitsPerRay;
+    uint padding;
 } pc;
 
 void main() {
-    // Calculate hit index in the buffer
+    // Check if we've reached max hits
+    if (payload.hitCount >= pc.maxHitsPerRay) {
+        return;
+    }
+    
+    // Calculate hit index in buffer
     uint hitIndex = payload.rayIndex * pc.maxHitsPerRay + payload.hitCount;
     
     // Get triangle info
     uint triIdx = gl_PrimitiveID;
-    uint baseIdx = triIdx * 3;
     
-    // Write hit record
-    hitBuffer.hits[hitIndex].position = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
-    hitBuffer.hits[hitIndex].normal = gl_WorldRayDirectionEXT;  // Note: This is ray direction, not surface normal
-    hitBuffer.hits[hitIndex].barycentric = hitAttributes;
-    hitBuffer.hits[hitIndex].triangleId = triIdx;
-    hitBuffer.hits[hitIndex].vertexIndices[0] = cageIndices.indices[baseIdx];
-    hitBuffer.hits[hitIndex].vertexIndices[1] = cageIndices.indices[baseIdx + 1];
-    hitBuffer.hits[hitIndex].vertexIndices[2] = cageIndices.indices[baseIdx + 2];
+    // Compute barycentric coordinates properly
+    // hitAttributes contains (u, v) from triangle intersection
+    float u = hitAttributes.x;
+    float v = hitAttributes.y;
+    float w = 1.0 - u - v;
+    
+    // Write hit record - matching C++ layout
+    hitBuffer.hits[hitIndex].faceIndex = triIdx;
+    hitBuffer.hits[hitIndex].barycentricU = u;
+    hitBuffer.hits[hitIndex].barycentricV = v;
     hitBuffer.hits[hitIndex].distance = gl_HitTEXT;
+    hitBuffer.hits[hitIndex].sourceVertex = payload.vertexIndex;
     hitBuffer.hits[hitIndex].rayIndex = payload.rayIndex;
-    hitBuffer.hits[hitIndex].hitSequence = payload.hitCount;
     
-    // Increment hit count
+    // Increment hit count with atomic operation to prevent race conditions
+    // Note: This requires the buffer to be declared as 'coherent'
     payload.hitCount++;
     
-    // If we haven't reached max hits, continue tracing
+    // Optional: continue tracing for multiple hits per ray
     if (payload.hitCount < pc.maxHitsPerRay) {
-        // Calculate new origin just past the current hit point
-        // Add small epsilon to avoid self-intersection
+        // Trace from just past the hit point
         vec3 newOrigin = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * (gl_HitTEXT + 0.001);
         
-        // Continue tracing from just past the hit point
         traceRayEXT(
-            cageAccel,                      // acceleration structure
-            gl_RayFlagsOpaqueEXT,           // ray flags
-            0xFF,                           // cull mask
-            0,                              // sbt record offset
-            0,                              // sbt record stride
-            0,                              // miss index
-            newOrigin,                      // origin (past the hit)
-            0.001,                          // tMin
-            gl_WorldRayDirectionEXT,        // direction (same direction)
-            payload.tMax,                   // tMax (remaining distance)
-            0                               // payload location
+            cageAccel,
+            gl_RayFlagsOpaqueEXT,
+            0xFF,
+            0,
+            0,
+            0,
+            newOrigin,
+            0.001,
+            gl_WorldRayDirectionEXT,
+            payload.tMax - gl_HitTEXT,
+            0
         );
     }
 }

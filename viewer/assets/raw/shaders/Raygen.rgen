@@ -1,96 +1,47 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
-#extension GL_EXT_nonuniform_qualifier : require
-#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_scalar_block_layout : require
 
-// Structs must match C++ exactly
-struct RayPayload {
-    uint vertexIndex;
-    uint rayIndex;
-    uint hitCount;
-    float tMax;
+layout(set = 0, binding = 0) uniform accelerationStructureEXT tlas;
+layout(set = 0, binding = 1, scalar) buffer Vertices {
+    vec4 vertices[];
 };
 
-struct HitRecord {
-    vec3 position;
-    vec3 normal;
-    vec2 barycentric;
-    uint triangleId;
-    uint vertexIndices[3];
-    float distance;
-    uint rayIndex;
-    uint hitSequence;
+layout(set = 0, binding = 2, scalar) buffer RayDirections {
+    vec4 directions[];
 };
-
-layout(location = 0) rayPayloadEXT RayPayload payload;
-
-// Acceleration structure
-layout(binding = 0, set = 0) uniform accelerationStructureEXT cageAccel;
-
-// Deformable vertices buffer (binding 1)
-layout(binding = 1, set = 0) buffer VertexBuffer {
-    vec3 vertices[];
-} deformableVertices;
-
-// Ray directions buffer (binding 2)
-layout(binding = 2, set = 0) buffer RayDirections {
-    vec4 directions[];  // .xyz = direction, .w = original vertex index (debug)
-} rayDirs;
-
-// Hit buffer (binding 3) - written by hit shader
-layout(binding = 3, set = 0) buffer HitBuffer {
-    HitRecord hits[];
-} hitBuffer;
-
-// Cage indices buffer (binding 4)
-layout(binding = 4, set = 0) buffer IndexBuffer {
-    uint indices[];
-} cageIndices;
 
 layout(push_constant) uniform PushConstants {
-    uint vertexCount;        // Number of deformable vertices
-    uint raysPerVertex;      // Rays per vertex
-    uint maxHitsPerRay;      // Maximum hits to store per ray
-    uint padding;            // Padding for 16-byte alignment
+    uint vertexCount;
+    uint raysPerVertex;
+    uint maxHitsPerRay;
 } pc;
 
-void main() {
-    // Calculate ray and vertex indices from launch ID
-    // We're dispatching (vertexCount * raysPerVertex) threads
+layout(location = 0) rayPayloadEXT uint payload;
+
+void main()
+{
     uint rayIndex = gl_LaunchIDEXT.x;
+
     uint vertexIndex = rayIndex / pc.raysPerVertex;
-    uint directionIndex = rayIndex % pc.raysPerVertex;
-    
-    // Validate vertex index
-    if (vertexIndex >= pc.vertexCount) {
+
+    if (vertexIndex >= pc.vertexCount)
         return;
-    }
-    
-    // Get ray origin (deformable vertex position) and direction
-    vec3 vertexPos = deformableVertices.vertices[vertexIndex];
-    vec3 rayDir = normalize(rayDirs.directions[rayIndex].xyz);
-    
-    // Setup payload
-    payload.vertexIndex = vertexIndex;
-    payload.rayIndex = rayIndex;
-    payload.hitCount = 0;
-    payload.tMax = 1000.0;  // Max trace distance
-    
-    // Trace the ray - will hit the closest hit shader
+
+    vec3 origin = vertices[vertexIndex];
+    vec3 dir    = normalize(directions[rayIndex].xyz);
+
+    payload = 123456u;
+
     traceRayEXT(
-        cageAccel,              // acceleration structure
-        gl_RayFlagsOpaqueEXT,   // ray flags
-        0xFF,                   // cull mask
-        0,                      // sbt record offset
-        0,                      // sbt record stride
-        0,                      // miss index
-        vertexPos,              // origin
-        0.001,                  // tMin (avoid self-intersection)
-        rayDir,                 // direction
-        payload.tMax,           // tMax
-        0                       // payload location
+        tlas,
+        gl_RayFlagsOpaqueEXT,
+        0xFF,
+        0, 0, 0,
+        origin,
+        0.001,
+        dir,
+        10000.0,
+        0
     );
-    
-    // After all recursive traces complete, we're done
-    // The hit buffer now contains all intersections
 }
