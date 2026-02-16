@@ -30,6 +30,11 @@ Raytracer::~Raytracer()
 
 void Raytracer::StartRayTrace() {
 	LOG_INFO("Starting ray trace dispatch...");
+	// Check if we have pending results from previous trace
+	if (_hasPendingResults) {
+		LOG_WARN("Previous trace results still pending, waiting...");
+		WaitForReadbackComplete();
+	}
 
 	// Clean up any previous trace resources
 	if (_traceSync.isTracing) {
@@ -215,6 +220,7 @@ void Raytracer::Initialize()
 	LoadShaders();
 
 	CreateRayTracingPipeline();
+	CreateReadbackResources();
 }
 
 MeshOperationResult<MeshComputeWeightsOperationResult> Raytracer::ComputeCoordinates() {
@@ -224,6 +230,9 @@ MeshOperationResult<MeshComputeWeightsOperationResult> Raytracer::ComputeCoordin
 		LOG_INFO("Ray tracing done! Can read back results now");
 		// TODO: Read back hit buffer and compute weights
 	}
+	SubmitReadback();
+	std::vector<SimpleHit> results = GetHitResults();
+	WriteHitsToFile("RaytracingHits.txt", results);
 
 	Eigen::MatrixXd weights;
 	Eigen::MatrixXd M = weights;
@@ -294,83 +303,6 @@ void Raytracer::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size)
 
 	// Clean up
 	vkFreeCommandBuffers(_device, _commandPool, 1, &cmd);
-}
-
-void Raytracer::SubmitReadbackCopy(
-	uint32_t slot,
-	VkSemaphore timeline,
-	uint64_t waitValue,
-	uint64_t signalValue)
-{
-	//TODO structural reuse but needs to be adjusted for raytracing use case
-	/*
-	VkCommandBuffer cmd = _copyCommandBuffers[slot];
-
-	VK_CHECK(vkResetCommandBuffer(cmd, 0));
-
-	VkCommandBufferBeginInfo beginInfo{
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-	};
-	VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
-
-	VkBufferCopy lambdaCopy{
-		.srcOffset = 0,
-		.dstOffset = 0,
-		.size = _cageMesh._vertices.rows() * sizeof(float)
-	};
-
-	VkBufferCopy wsumCopy{
-		.srcOffset = 0,
-		.dstOffset = 0,
-		.size = sizeof(float)
-	};
-
-	vkCmdCopyBuffer(
-		cmd,
-		_slots[slot].lambda._deviceBuffer,
-		_slots[slot].lambdaStaging._deviceBuffer,
-		1, &lambdaCopy
-	);
-
-	vkCmdCopyBuffer(
-		cmd,
-		_slots[slot].wsum._deviceBuffer,
-		_slots[slot].wsumStaging._deviceBuffer,
-		1, &wsumCopy
-	);
-
-	VK_CHECK(vkEndCommandBuffer(cmd));
-
-	VkPipelineStageFlags waitStage =
-		VK_PIPELINE_STAGE_TRANSFER_BIT;
-
-	VkTimelineSemaphoreSubmitInfo timelineInfo{
-		.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
-		.waitSemaphoreValueCount = 1,
-		.pWaitSemaphoreValues = &waitValue,
-		.signalSemaphoreValueCount = 1,
-		.pSignalSemaphoreValues = &signalValue
-	};
-
-	VkSubmitInfo submit{};
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit.pNext = &timelineInfo;
-
-	submit.waitSemaphoreCount = 1;
-	submit.pWaitSemaphores = &timeline;
-	submit.pWaitDstStageMask = &waitStage;
-
-	submit.commandBufferCount = 1;
-	submit.pCommandBuffers = &cmd;
-
-	submit.signalSemaphoreCount = 1;
-	submit.pSignalSemaphores = &timeline;
-
-	VkQueue queue;
-	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
-	VK_CHECK(vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE));
-	*/
 }
 
 void Raytracer::CreateGeometryBuffers(EigenMesh& geometry, GeometryBuffers& geometryBuffers)
@@ -1158,4 +1090,298 @@ void Raytracer::CreateShaderBindingTable(const VkRayTracingPipelineCreateInfoKHR
 	};
 
 	LOG_INFO("Shader binding table created");
+}
+
+void Raytracer::CreateReadbackResources() {
+	LOG_INFO("Creating single-slot readback resources...");
+
+	// Calculate hit buffer size
+	uint32_t maxTotalHits = _pushConstants.vertexCount *
+		_pushConstants.raysPerVertex *
+		_pushConstants.maxHitsPerRay;
+	VkDeviceSize hitBufferSize = static_cast<VkDeviceSize>(maxTotalHits) * sizeof(SimpleHit);
+
+	LOG_INFO("  Hit buffer size: {} bytes (max {} hits)",
+		hitBufferSize, maxTotalHits);
+
+	_readback.size = hitBufferSize;
+
+	// 1. Device-local hit buffer (GPU writes here during tracing)
+	_readback.hitBuffer = _resourceManager->AllocateDeviceBuffer(
+		hitBufferSize,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,  // Can copy from
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	// 2. Host-visible staging buffer (for CPU readback)
+	_readback.stagingBuffer = _resourceManager->AllocateDeviceBuffer(
+		hitBufferSize,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT,  // Can copy to
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	// 3. Create copy command buffer
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = _commandPool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandBufferCount = 1;
+	VK_CHECK(vkAllocateCommandBuffers(_device, &allocInfo, &_readback.copyCmd));
+
+	// 4. Create fence for copy completion
+	VkFenceCreateInfo fenceInfo{};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;  // Start signaled
+	VK_CHECK(vkCreateFence(_device, &fenceInfo, nullptr, &_readback.copyCompleteFence));
+
+	LOG_INFO("Readback resources created successfully");
+}
+
+void Raytracer::SubmitReadback() {
+	// Wait for trace to complete
+	WaitForTrace();
+
+	// Reset copy fence
+	vkResetFences(_device, 1, &_readback.copyCompleteFence);
+
+	// Reset copy command buffer
+	vkResetCommandBuffer(_readback.copyCmd, 0);
+
+	// Begin copy command buffer
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	VK_CHECK(vkBeginCommandBuffer(_readback.copyCmd, &beginInfo));
+
+	// Copy hit buffer from device-local to staging
+	VkBufferCopy copyRegion{
+		.srcOffset = 0,
+		.dstOffset = 0,
+		.size = _readback.size
+	};
+
+	vkCmdCopyBuffer(
+		_readback.copyCmd,
+		_readback.hitBuffer._deviceBuffer,
+		_readback.stagingBuffer._deviceBuffer,
+		1, &copyRegion
+	);
+
+	VK_CHECK(vkEndCommandBuffer(_readback.copyCmd));
+
+	// Submit copy with fence
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &_readback.copyCmd;
+
+	VK_CHECK(vkQueueSubmit(_queue, 1, &submitInfo, _readback.copyCompleteFence));
+
+	_hasPendingResults = true;
+
+	LOG_INFO("Readback copy submitted");
+}
+
+std::vector<Raytracer::SimpleHit> Raytracer::GetHitResults() {
+	if (!_hasPendingResults) {
+		return {};  // No pending results
+	}
+
+	// Check if copy is complete
+	//VkResult result = vkGetFenceStatus(_device, _readback.copyCompleteFence);
+
+	LOG_INFO("Waiting for readback to complete...");
+	auto startTime = std::chrono::high_resolution_clock::now();
+
+	// Wait for the copy fence with a timeout (10 seconds as safety)
+	VkResult result = vkWaitForFences(_device, 1, &_readback.copyCompleteFence,
+		VK_TRUE, 10'000'000'000); // 10 second timeout
+
+	if (result != VK_SUCCESS) {
+		LOG_ERROR("Failed to wait for readback fence: {}", static_cast<int>(result));
+		return {};
+	}
+
+	auto waitTime = std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::high_resolution_clock::now() - startTime);
+	LOG_INFO("Readback ready after {} ms", waitTime.count());
+
+	// Map staging buffer if needed
+	if (!_readback.isMapped) {
+		VK_CHECK(vkMapMemory(
+			_device,
+			_readback.stagingBuffer._deviceMemory,
+			0,
+			_readback.size,
+			0,
+			&_readback.mappedData
+		));
+		_readback.isMapped = true;
+	}
+
+	// Count actual hits (assuming shader writes hits sequentially)
+	SimpleHit* hits = static_cast<SimpleHit*>(_readback.mappedData);
+	uint32_t maxHits = static_cast<uint32_t>(_readback.size / sizeof(SimpleHit));
+	uint32_t hitCount = 0;
+
+	// Find the end (either by counter or sentinel)
+	for (uint32_t i = 0; i < maxHits; i++) {
+		if (hits[i].faceIndex == 0xFFFFFFFF) {  // Sentinel
+			break;
+		}
+		hitCount++;
+	}
+
+	LOG_INFO("Retrieved {} hits from GPU", hitCount);
+
+	// Copy results
+	std::vector<SimpleHit> results(hits, hits + hitCount);
+
+	// Reset state
+	_hasPendingResults = false;
+
+	return results;
+}
+
+void Raytracer::WaitForReadbackComplete() {
+	if (!_hasPendingResults) return;
+
+	LOG_INFO("Waiting for readback to complete...");
+	VK_CHECK(vkWaitForFences(_device, 1, &_readback.copyCompleteFence, VK_TRUE, UINT64_MAX));
+	LOG_INFO("Readback complete");
+}
+
+
+void Raytracer::WriteHitsToFile(const std::string& filename, const std::vector<SimpleHit>& hits)
+{
+	std::ofstream file(filename);
+	if (!file.is_open()) {
+		throw std::runtime_error("Failed to open hit write file: " + filename);
+	}
+
+	auto now = std::chrono::system_clock::now();
+	auto time = std::chrono::system_clock::to_time_t(now);
+
+	file << "========================================\n";
+	file << "Ray Tracing Hit Results\n";
+	file << "Generated: " << std::ctime(&time);
+	file << "========================================\n\n";
+
+	// Write configuration
+	file << "===== CONFIGURATION =====\n";
+	file << "Deformable vertices: " << _pushConstants.vertexCount << "\n";
+	file << "Rays per vertex: " << _pushConstants.raysPerVertex << "\n";
+	file << "Max hits per ray: " << _pushConstants.maxHitsPerRay << "\n";
+	file << "Total possible hits: " << (_pushConstants.vertexCount *
+		_pushConstants.raysPerVertex *
+		_pushConstants.maxHitsPerRay) << "\n";
+	file << "Actual hits recorded: " << hits.size() << "\n\n";
+
+	// Group hits by vertex for better readability
+	std::map<uint32_t, std::vector<const SimpleHit*>> hitsByVertex;
+	for (const auto& hit : hits) {
+		hitsByVertex[hit.sourceVertex].push_back(&hit);
+	}
+
+	file << "===== HITS BY VERTEX =====\n";
+	file << "Vertices with hits: " << hitsByVertex.size() << "\n\n";
+
+	// Write hits per vertex
+	for (const auto& [vertexIdx, vertexHits] : hitsByVertex) {
+		file << "Vertex " << vertexIdx << " (" << vertexHits.size() << " hits):\n";
+
+		// Optional: write vertex position if available
+		if (vertexIdx < _deformableMesh._vertices.rows()) {
+			auto pos = _deformableMesh._vertices.row(vertexIdx);
+			file << "  Position: ("
+				<< pos(0) << ", " << pos(1) << ", " << pos(2) << ")\n";
+		}
+
+		// Write each hit
+		for (size_t i = 0; i < vertexHits.size(); ++i) {
+			const auto* hit = vertexHits[i];
+			file << "  Hit " << i << ":\n";
+			file << "    Face index: " << hit->faceIndex << "\n";
+
+			// Get cage triangle vertices if available
+			if (hit->faceIndex < _cageMesh._faces.rows()) {
+				auto face = _cageMesh._faces.row(hit->faceIndex);
+				file << "    Cage triangle: ("
+					<< face(0) << ", " << face(1) << ", " << face(2) << ")\n";
+			}
+
+			file << "    Barycentric U: " << hit->barycentricU << "\n";
+			file << "    Barycentric V: " << hit->barycentricV << "\n";
+			file << "    Barycentric W: " << (1.0f - hit->barycentricU - hit->barycentricV) << "\n";
+			file << "    Distance: " << hit->distance << "\n";
+			file << "    Ray index: " << hit->rayIndex << "\n";
+
+			// Add some analysis
+			if (hit->distance > 0) {
+				file << "    Confidence: " << (1.0f / hit->distance) << "\n";
+			}
+		}
+		file << "\n";
+	}
+
+	// Write statistics
+	file << "===== STATISTICS =====\n";
+
+	// Hit distribution
+	std::map<uint32_t, uint32_t> hitsPerFace;
+	for (const auto& hit : hits) {
+		hitsPerFace[hit.faceIndex]++;
+	}
+
+	file << "Faces hit: " << hitsPerFace.size() << " / " << _cageMesh._faces.rows() << "\n";
+
+	if (!hits.empty()) {
+		// Calculate average hits per vertex
+		double avgHitsPerVertex = static_cast<double>(hits.size()) / hitsByVertex.size();
+		file << "Average hits per vertex: " << avgHitsPerVertex << "\n";
+
+		// Find min/max distances
+		float minDist = std::numeric_limits<float>::max();
+		float maxDist = 0.0f;
+		float avgDist = 0.0f;
+
+		for (const auto& hit : hits) {
+			minDist = std::min(minDist, hit.distance);
+			maxDist = std::max(maxDist, hit.distance);
+			avgDist += hit.distance;
+		}
+		avgDist /= hits.size();
+
+		file << "Distance range: " << minDist << " - " << maxDist << "\n";
+		file << "Average distance: " << avgDist << "\n";
+
+		// Barycentric coordinate distribution
+		float avgU = 0.0f, avgV = 0.0f;
+		for (const auto& hit : hits) {
+			avgU += hit.barycentricU;
+			avgV += hit.barycentricV;
+		}
+		avgU /= hits.size();
+		avgV /= hits.size();
+
+		file << "Avg barycentric U: " << avgU << "\n";
+		file << "Avg barycentric V: " << avgV << "\n";
+		file << "Avg barycentric W: " << (1.0f - avgU - avgV) << "\n";
+	}
+
+	file << "\n===== RAW HIT DATA (CSV format) =====\n";
+	file << "Vertex,Face,U,V,Distance,RayIndex\n";
+	for (const auto& hit : hits) {
+		file << hit.sourceVertex << ","
+			<< hit.faceIndex << ","
+			<< hit.barycentricU << ","
+			<< hit.barycentricV << ","
+			<< hit.distance << ","
+			<< hit.rayIndex << "\n";
+	}
+
+	file.close();
+	LOG_INFO("Hits written to " + filename + " (" + std::to_string(hits.size()) + " hits)");
 }

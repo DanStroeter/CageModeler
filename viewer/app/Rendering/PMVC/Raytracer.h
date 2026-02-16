@@ -228,4 +228,25 @@ private:
     VkFence _traceCompleteFence = VK_NULL_HANDLE;
     bool IsTraceComplete();
     void WaitForTrace();
+
+    struct ReadbackData {
+        Buffer hitBuffer;        // Device-local for GPU writes
+        Buffer stagingBuffer;    // Host-visible for CPU read
+        VkDeviceSize size = 0;
+        void* mappedData = nullptr;
+        bool isMapped = false;
+
+        VkCommandBuffer copyCmd = VK_NULL_HANDLE;
+        VkFence copyCompleteFence = VK_NULL_HANDLE;
+    };
+
+    // Single slot instead of array
+    ReadbackData _readback;
+    bool _hasPendingResults = false;
+
+    void CreateReadbackResources();
+    void SubmitReadback();
+    void WaitForReadbackComplete();
+	std::vector<SimpleHit> GetHitResults();
+    void WriteHitsToFile(const std::string& filename, const std::vector<SimpleHit>& hits);
 };
