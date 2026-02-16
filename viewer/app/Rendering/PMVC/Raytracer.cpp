@@ -98,7 +98,7 @@ void Raytracer::StartRayTrace() {
 		&_pushConstants
 	);
 
-	// 9. Trace rays
+	/* 9. Trace rays
 	vkCmdTraceRaysKHR(
 		_traceSync.commandBuffer,
 		&_raygenRegion,
@@ -107,6 +107,21 @@ void Raytracer::StartRayTrace() {
 		&_callableRegion,
 		_pushConstants.vertexCount,
 		_pushConstants.raysPerVertex,
+		1
+	);*/
+
+	uint32_t totalRays =
+		_pushConstants.vertexCount *
+		_pushConstants.raysPerVertex;
+
+	vkCmdTraceRaysKHR(
+		_traceSync.commandBuffer,
+		&_raygenRegion,
+		&_missRegion,
+		&_hitRegion,
+		&_callableRegion,
+		totalRays,
+		1,
 		1
 	);
 
@@ -228,7 +243,6 @@ MeshOperationResult<MeshComputeWeightsOperationResult> Raytracer::ComputeCoordin
 	WaitForTrace();
 	if (IsTraceComplete()) {
 		LOG_INFO("Ray tracing done! Can read back results now");
-		// TODO: Read back hit buffer and compute weights
 	}
 	SubmitReadback();
 	std::vector<SimpleHit> results = GetHitResults();
@@ -626,6 +640,14 @@ void Raytracer::CreateRayBuffers() {
 	stagingHitBuffer.ReleaseResource(_device);
 
 	LOG_INFO("  Hit buffer created: {}", (void*)_rayBuffers.hitBuffer._deviceBuffer);
+
+	// Create buffer for atomic counter
+	_rayBuffers.atomicCounter = _resourceManager->AllocateDeviceBuffer(
+		sizeof(uint32_t),
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
 	LOG_INFO("Successfully set up ray directions");
 }
 
@@ -678,13 +700,13 @@ void Raytracer::CreateRayTracingDescriptorSet() {
 			.descriptorCount = 1,
 			.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR
 		},
-		/* Binding 5: Atomic counter for hit buffer(NEW) NEEDED for validation one hit per face only
+		// Binding 5: Atomic counter for hit buffer(NEW) NEEDED for validation one hit per face only
 		{
-			.binding = 7,
+			.binding = 5,
 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			.descriptorCount = 1,
 			.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR
-		}*/
+		}
 	};
 
 	// Create descriptor set layout
@@ -710,7 +732,7 @@ void Raytracer::CreateRayTracingDescriptorSet() {
 		},
 		{
 			.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.descriptorCount = 4  // deformable vertices, ray directions, hit buffer, cage indices, (atomic counter)
+			.descriptorCount = 5  // deformable vertices, ray directions, hit buffer, cage indices, (atomic counter)
 		}
 	};
 
@@ -748,7 +770,7 @@ void Raytracer::UpdateDescriptorSet() {
 
 	// Reserve space for all writes
 	descriptorWrites.reserve(6);  // TLAS + 5 buffers
-	bufferInfos.reserve(5);       // 5 storage buffers
+	bufferInfos.reserve(6);       // 6 storage buffers
 
 	// Helper lambda to add buffer writes
 	auto addBufferWrite = [&](uint32_t binding, const Buffer& buffer,
@@ -793,7 +815,8 @@ void Raytracer::UpdateDescriptorSet() {
 	descriptorWrites.push_back(accelWrite);
 
 	// Binding 1: Deformable vertices
-	VkDeviceSize vertexBufferSize = _pushConstants.vertexCount * 3 * sizeof(float);
+	VkDeviceSize vertexBufferSize = _pushConstants.vertexCount * sizeof(glm::vec4);
+		//_pushConstants.vertexCount * 4 * sizeof(float);
 	addBufferWrite(1, _deformableGeometry.vertexBuffer, vertexBufferSize,
 		VK_SHADER_STAGE_RAYGEN_BIT_KHR);
 
@@ -816,6 +839,11 @@ void Raytracer::UpdateDescriptorSet() {
 	addBufferWrite(4, _cageGeometry.indexBuffer, indexBufferSize,
 		VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
 
+	//Binding 5: Atomic counter buffer for hit buffer (NEW)
+	VkDeviceSize atomicCounterSize = sizeof(uint32_t);
+	addBufferWrite(5, _rayBuffers.atomicCounter, atomicCounterSize,
+		VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
+
 	// Update all descriptors at once
 	vkUpdateDescriptorSets(_device,
 		static_cast<uint32_t>(descriptorWrites.size()),
@@ -828,9 +856,9 @@ void Raytracer::UpdateDescriptorSet() {
 void Raytracer::LoadShaders() {
 	try {
 		// Load pre-compiled SPIR-V shaders
-		auto raygenCode = LoadSPIRV("Raygen.rgen.spv");
-		auto missCode = LoadSPIRV("Miss.rmiss.spv");
-		auto hitCode = LoadSPIRV("Hit.rchit.spv");
+		auto raygenCode = LoadSPIRV("RaygenDebug.rgen.spv");
+		auto missCode = LoadSPIRV("MissDebug.rmiss.spv");
+		auto hitCode = LoadSPIRV("HitDebug.rchit.spv");
 
 		_raygenShader = CreateShaderModule(raygenCode);
 		_missShader = CreateShaderModule(missCode);
@@ -1106,22 +1134,6 @@ void Raytracer::CreateReadbackResources() {
 
 	_readback.size = hitBufferSize;
 
-	// 1. Device-local hit buffer (GPU writes here during tracing)
-	_readback.hitBuffer = _resourceManager->AllocateDeviceBuffer(
-		hitBufferSize,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,  // Can copy from
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-	);
-
-	// 2. Host-visible staging buffer (for CPU readback)
-	_readback.stagingBuffer = _resourceManager->AllocateDeviceBuffer(
-		hitBufferSize,
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT,  // Can copy to
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
 	// 3. Create copy command buffer
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -1149,11 +1161,40 @@ void Raytracer::SubmitReadback() {
 	// Reset copy command buffer
 	vkResetCommandBuffer(_readback.copyCmd, 0);
 
+	_readback.stagingBuffer = _resourceManager->CreateBufferAndMapMemory(
+		std::span<std::byte>((std::byte*)_readback.mappedData, _pushConstants.vertexCount *
+			_pushConstants.raysPerVertex *
+			_pushConstants.maxHitsPerRay * sizeof(SimpleHit)),
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
 	// Begin copy command buffer
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	VK_CHECK(vkBeginCommandBuffer(_readback.copyCmd, &beginInfo));
+
+	VkBufferMemoryBarrier barrier{};
+	barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+	barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.buffer = _rayBuffers.hitBuffer._deviceBuffer;
+	barrier.offset = 0;
+	barrier.size = _readback.size;
+
+	vkCmdPipelineBarrier(
+		_readback.copyCmd,
+		VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0, nullptr,
+		1, &barrier,
+		0, nullptr
+	);
 
 	// Copy hit buffer from device-local to staging
 	VkBufferCopy copyRegion{
@@ -1164,7 +1205,7 @@ void Raytracer::SubmitReadback() {
 
 	vkCmdCopyBuffer(
 		_readback.copyCmd,
-		_readback.hitBuffer._deviceBuffer,
+		_rayBuffers.hitBuffer._deviceBuffer,
 		_readback.stagingBuffer._deviceBuffer,
 		1, &copyRegion
 	);
@@ -1208,21 +1249,8 @@ std::vector<Raytracer::SimpleHit> Raytracer::GetHitResults() {
 		std::chrono::high_resolution_clock::now() - startTime);
 	LOG_INFO("Readback ready after {} ms", waitTime.count());
 
-	// Map staging buffer if needed
-	if (!_readback.isMapped) {
-		VK_CHECK(vkMapMemory(
-			_device,
-			_readback.stagingBuffer._deviceMemory,
-			0,
-			_readback.size,
-			0,
-			&_readback.mappedData
-		));
-		_readback.isMapped = true;
-	}
-
 	// Count actual hits (assuming shader writes hits sequentially)
-	SimpleHit* hits = static_cast<SimpleHit*>(_readback.mappedData);
+	SimpleHit* hits = static_cast<SimpleHit*>(_readback.stagingBuffer._mappedData);
 	uint32_t maxHits = static_cast<uint32_t>(_readback.size / sizeof(SimpleHit));
 	uint32_t hitCount = 0;
 
@@ -1252,7 +1280,6 @@ void Raytracer::WaitForReadbackComplete() {
 	VK_CHECK(vkWaitForFences(_device, 1, &_readback.copyCompleteFence, VK_TRUE, UINT64_MAX));
 	LOG_INFO("Readback complete");
 }
-
 
 void Raytracer::WriteHitsToFile(const std::string& filename, const std::vector<SimpleHit>& hits)
 {

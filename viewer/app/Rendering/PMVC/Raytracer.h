@@ -142,7 +142,7 @@ private:
         Buffer rayDirections;               // DEVICE_LOCAL
         Buffer hitBuffer;       // GPU write -> CPU read
         //Buffer mvcWeights;      // GPU write -> CPU read
-        //Buffer atomicCounterBuffer;
+        Buffer atomicCounter;
     };
 
     RayBuffers _rayBuffers;
@@ -208,7 +208,6 @@ private:
     // === Helpers
     // ============================================================
 
-    void SubmitReadbackCopy(uint32_t slot, VkSemaphore timeline, uint64_t waitValue, uint64_t signalValue);
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
 
     VkDeviceAddress GetBufferAddress(const Buffer& buffer) const;
@@ -230,11 +229,12 @@ private:
     void WaitForTrace();
 
     struct ReadbackData {
-        Buffer hitBuffer;        // Device-local for GPU writes
-        Buffer stagingBuffer;    // Host-visible for CPU read
+        //Buffer hitBuffer;        // Device-local for GPU writes
+        MemoryMappedBuffer stagingBuffer;    // Host-visible for CPU read
         VkDeviceSize size = 0;
+        //int sizeNum = 0;
         void* mappedData = nullptr;
-        bool isMapped = false;
+        //bool isMapped = false;
 
         VkCommandBuffer copyCmd = VK_NULL_HANDLE;
         VkFence copyCompleteFence = VK_NULL_HANDLE;
