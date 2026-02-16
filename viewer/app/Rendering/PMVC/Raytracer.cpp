@@ -398,7 +398,7 @@ void Raytracer::CreateGeometryBuffers(EigenMesh& geometry, GeometryBuffers& geom
 			indices.push_back(indices.size());
 		}
 	}
-
+	
 	VkDeviceSize vertexSize = vertices.size() * sizeof(glm::vec3);
 	VkDeviceSize indexSize = indices.size() * sizeof(uint32_t);
 
