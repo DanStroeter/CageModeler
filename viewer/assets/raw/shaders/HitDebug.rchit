@@ -1,46 +1,28 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
-#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_nonuniform_qualifier : enable
 
-struct SimpleHit {
-    uint  faceIndex;
+struct HitData {
+    uint faceIndex;
     float barycentricU;
     float barycentricV;
     float distance;
-    uint  sourceVertex;
-    uint  rayIndex;
-    uint  padding0;
-    uint  padding1;
+    uint sourceVertex;
+    uint rayIndex;
+    uint padding[2];
 };
 
-layout(set = 0, binding = 3, scalar) buffer HitBuffer {
-    SimpleHit hits[];
-};
+layout(location = 0) rayPayloadInEXT HitData payload;
 
-layout(push_constant) uniform PushConstants {
-    uint vertexCount;
-    uint raysPerVertex;
-    uint maxHitsPerRay;
-} pc;
-
-layout(location = 0) rayPayloadInEXT uint payload;
-
-hitAttributeEXT vec2 attribs;
+hitAttributeEXT vec2 barycentrics;
 
 void main()
 {
-    uint rayIndex = payload;
-
-    uint vertexIndex = rayIndex / pc.raysPerVertex;
-
-    uint writeIndex = rayIndex;  // 1 hit per ray for debug
-
-    hits[writeIndex].faceIndex    = gl_PrimitiveID;
-    hits[writeIndex].barycentricU = attribs.x;
-    hits[writeIndex].barycentricV = attribs.y;
-    hits[writeIndex].distance     = gl_HitTEXT;
-    hits[writeIndex].sourceVertex = vertexIndex;
-    hits[writeIndex].rayIndex     = payload;
-    hits[writeIndex].padding0     = 0;
-    hits[writeIndex].padding1     = 0;
+    // Get hit information
+    payload.faceIndex = gl_PrimitiveID;
+    payload.barycentricU = barycentrics.x;
+    payload.barycentricV = barycentrics.y;
+    payload.distance = gl_HitTEXT;
+    
+    // Note: sourceVertex and rayIndex were already set in raygen
 }

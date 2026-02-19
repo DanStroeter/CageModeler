@@ -1,9 +1,20 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 
-layout(location = 0) rayPayloadInEXT uint payload;
+struct HitData {
+    uint faceIndex;
+    float barycentricU;
+    float barycentricV;
+    float distance;
+    uint sourceVertex;
+    uint rayIndex;
+    uint padding[2];
+};
+
+layout(location = 0) rayPayloadInEXT HitData payload;
 
 void main()
 {
-    // Do nothing on miss
+    // Leave payload.faceIndex as 0xFFFFFFFF to indicate miss
+    // Other fields are ignored
 }

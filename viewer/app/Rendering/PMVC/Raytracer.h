@@ -15,7 +15,6 @@
 #include <cstdint> 
 #include <filesystem>
 
-// Forward declarations
 class RenderPipelineManager; 
 class RenderResourceManager; 
 
@@ -61,10 +60,13 @@ private:
 
     struct GeometryBuffers
     {
-        Buffer vertexBuffer;        // DEVICE_LOCAL
-        Buffer indexBuffer;         // DEVICE_LOCAL
+        Buffer vertexBuffer;       
+        Buffer indexBuffer;         
         uint32_t vertexCount = 0;
         uint32_t indexCount = 0;
+
+        Buffer asVertexBuffer;   
+        Buffer asIndexBuffer;
     };
 
     GeometryBuffers _cageGeometry;
@@ -77,7 +79,7 @@ private:
     struct AccelerationStructure
     {
         VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
-        Buffer buffer;                     // DEVICE_LOCAL
+        Buffer buffer;                     
         VkDeviceAddress deviceAddress = 0;
     };
 
@@ -106,7 +108,7 @@ private:
 
     struct ShaderBindingTable
     {
-        Buffer buffer;          // HOST_VISIBLE + DEVICE_ADDRESS
+        Buffer buffer;          
         VkStridedDeviceAddressRegionKHR raygen{};
         VkStridedDeviceAddressRegionKHR miss{};
         VkStridedDeviceAddressRegionKHR hit{};
@@ -139,9 +141,9 @@ private:
 
     struct RayBuffers
     {
-        Buffer rayDirections;               // DEVICE_LOCAL
-        Buffer hitBuffer;       // GPU write -> CPU read
-        //Buffer mvcWeights;      // GPU write -> CPU read
+        Buffer rayDirections;             
+        Buffer hitBuffer;       
+        //Buffer mvcWeights;   
         Buffer atomicCounter;
     };
 
@@ -229,18 +231,14 @@ private:
     void WaitForTrace();
 
     struct ReadbackData {
-        //Buffer hitBuffer;        // Device-local for GPU writes
-        MemoryMappedBuffer stagingBuffer;    // Host-visible for CPU read
+        MemoryMappedBuffer stagingBuffer; 
         VkDeviceSize size = 0;
-        //int sizeNum = 0;
         void* mappedData = nullptr;
-        //bool isMapped = false;
 
         VkCommandBuffer copyCmd = VK_NULL_HANDLE;
         VkFence copyCompleteFence = VK_NULL_HANDLE;
     };
 
-    // Single slot instead of array
     ReadbackData _readback;
     bool _hasPendingResults = false;
 
