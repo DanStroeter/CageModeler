@@ -57,7 +57,7 @@ void main()
     // vec4 origin = vertexBuffer.vertices[vertexIdx];
     // vec4 direction = rayDirectionBuffer.directions[globalRayIndex];
     
-    // --- VALIDATION WRITE ---
+    // --- VALIDATION WRITE ---cd 
     // Atomically increment counter and get index for this hit
     uint hitIndex = atomicAdd(hitBuffer.atomicCounter, 1);
     
