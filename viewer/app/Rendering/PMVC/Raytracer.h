@@ -34,48 +34,55 @@ public:
     MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates();
 
 private:
+    // --- Start trace ---
+    void StartRayTrace();
 
-    // ============================================================
-    // === Core Device / Managers
-    // ============================================================
-
+    // --- Device and Managers --- 
     RenderResourceRef<Device>                _device;
     std::shared_ptr<RenderResourceManager>   _resourceManager;
     std::shared_ptr<RenderPipelineManager>   _pipelineManager;
 
+	// --- Device Properties ---
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rtProperties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR
+    };
+    VkPhysicalDeviceAccelerationStructurePropertiesKHR _asProperties{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR
+    };
+
+    void GetRaytracingComponents();
+
+	// --- Queue and Command Pool ---
     uint32_t _queueFamilyIndex = 0;
     VkQueue  _queue = VK_NULL_HANDLE;
     VkCommandPool _commandPool = VK_NULL_HANDLE;
 
-    // ============================================================
-    // === Scene Data
-    // ============================================================
+    void CreateCommandPool();
 
-    EigenMesh _cageMesh;
-    EigenMesh _deformableMesh;
-
-    // ============================================================
-    // === Geometry Buffers (GPU-only)
-    // ============================================================
-
-    struct GeometryBuffers
+    // --- Scene Data ---
+    struct CageBuffers
     {
         Buffer vertexBuffer;       
         Buffer indexBuffer;         
         uint32_t vertexCount = 0;
         uint32_t indexCount = 0;
-
-        Buffer asVertexBuffer;   
-        Buffer asIndexBuffer;
     };
 
-    GeometryBuffers _cageGeometry;
-    GeometryBuffers _deformableGeometry;
+    struct RayOriginBuffer
+    {
+        Buffer vertexBuffer;
+        uint32_t vertexCount = 0;
+    };
 
-    // ============================================================
-    // === Acceleration Structures
-    // ============================================================
+    EigenMesh _cageMesh;
+    EigenMesh _deformableMesh;
+    CageBuffers _cageGeometry;
+    RayOriginBuffer _deformableGeometry;
 
+    void CreateCageBuffers(EigenMesh& geometry, CageBuffers& geometryBuffers);
+    void CreateRayOriginBuffer(EigenMesh& geometry, RayOriginBuffer& geometryBuffers);
+
+    // --- Acceleration Structures ---
     struct AccelerationStructure
     {
         VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
@@ -86,10 +93,16 @@ private:
     AccelerationStructure _blas;
     AccelerationStructure _tlas;
 
-    // ============================================================
-    // === Ray Tracing Pipeline
-    // ============================================================
+    void CreateAccelerationStructures();
+    void CreateBLAS();
+    void CreateTLAS();
+    void BuildAccelerationStructure(
+        VkAccelerationStructureGeometryKHR& geometry,
+        uint32_t primitiveCount,
+        VkAccelerationStructureTypeKHR type,
+        AccelerationStructure& outAS);
 
+    // --- Ray Tracing Pipeline ---
     struct RTPipeline
     {
         VkPipeline       pipeline = VK_NULL_HANDLE;
@@ -102,10 +115,11 @@ private:
 
     RTPipeline _rtPipeline;
 
-    // ============================================================
-    // === Shader Binding Table (CPU-written, GPU-read)
-    // ============================================================
+    void CreateRayTracingPipeline();
+    void CreateRayTracingDescriptorSet();
+    void UpdateDescriptorSet();
 
+    // --- Shaders and Shader Binding Table ---
     struct ShaderBindingTable
     {
         Buffer buffer;          
@@ -115,136 +129,81 @@ private:
         VkStridedDeviceAddressRegionKHR callable{};
     };
 
-    VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rtProperties{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR
-    };
-    VkPhysicalDeviceAccelerationStructurePropertiesKHR _asProperties{
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR
-    };
-
     std::vector<uint8_t> _shaderHandles;
-
     VkShaderModule _raygenShader = VK_NULL_HANDLE;
     VkShaderModule _missShader = VK_NULL_HANDLE;
     VkShaderModule _hitShader = VK_NULL_HANDLE;
-
     VkStridedDeviceAddressRegionKHR _raygenRegion{};
     VkStridedDeviceAddressRegionKHR _missRegion{};
     VkStridedDeviceAddressRegionKHR _hitRegion{};
     VkStridedDeviceAddressRegionKHR _callableRegion{};
-
     ShaderBindingTable _sbt;
 
-    // ============================================================
-    // === Ray Tracing Working Buffers
-    // ============================================================
-
-    struct RayBuffers
-    {
-        Buffer rayDirections;             
-        Buffer hitBuffer;       
-        //Buffer mvcWeights;   
-        Buffer atomicCounter;
-    };
-
-    RayBuffers _rayBuffers;
-
-    // ============================================================
-    // === Push Constants
-    // ============================================================
-
-    struct PushConstants
-    {
-        uint32_t vertexCount = 0;
-        uint32_t raysPerVertex = 256;
-        uint32_t maxHitsPerRay = 8;
-        uint32_t padding = 0;
-    };
-
-    PushConstants _pushConstants;
-
-    // ============================================================
-    // === Initialization Steps
-    // ============================================================
-
-    void CreateCommandPool();
-    void CreateGeometryBuffers(EigenMesh& geometry, GeometryBuffers& geometryBuffers);
-
-    void CreateAccelerationStructures();
-    void CreateBLAS();
-    void CreateTLAS();
-    void BuildAccelerationStructure(
-        VkAccelerationStructureGeometryKHR& geometry,
-        uint32_t primitiveCount,
-        VkAccelerationStructureTypeKHR type,
-        AccelerationStructure& outAS);
-
-    //void CreateRayTracingPipelineLayout();
-    void CreateRayTracingPipeline();
-    void CreateRayBuffers();
-    void GetRaytracingComponents();
-
-    void CreateRayTracingDescriptorSet();
-    void UpdateDescriptorSet();
-
-    //Shaders
     void CreateShaderBindingTable(const VkRayTracingPipelineCreateInfoKHR& pipelineInfo);
     void LoadShaders();
     std::vector<uint32_t> LoadSPIRV(const std::string& filename);
     VkShaderModule CreateShaderModule(const std::vector<uint32_t>& code);
-   
-    void StartRayTrace();
-    void ResetHitBuffer();
 
-    struct SimpleHit {
-        uint32_t faceIndex;        // Which cage triangle was hit
-        float barycentricU;        // Barycentric coordinate U
-        float barycentricV;        // Barycentric coordinate V  
-        float distance;            // Hit distance
-        uint32_t sourceVertex;     // Which deformable vertex
-        uint32_t rayIndex;         // Which ray from this vertex
-        uint32_t padding[2];       // Ensure 32-byte alignment
+    // Ray Tracing Buffers
+    struct RayBuffers
+    {
+        Buffer rayDirections;             
+        Buffer hitBuffer;  
+        Buffer atomicCounter;
+    };
+    struct HitBufferData {
+        uint32_t rayIndex;
     };
 
-    // ============================================================
-    // === Helpers
-    // ============================================================
+    RayBuffers _rayBuffers;
 
-    void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
+    void CreateRayBuffers();
 
-    VkDeviceAddress GetBufferAddress(const Buffer& buffer) const;
-    uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags props) const;
+    // --- Push Constants ---
+    struct PushConstants
+    {
+        uint32_t vertexCount;
+        uint32_t raysPerVertex;
+        uint32_t maxHitsPerRay;
+        uint32_t padding;
+    };
 
-    //void Cleanup();
-    //void CleanupShaders();
+    PushConstants _pushConstants{0, 6, 1, 0};
 
+    // --- Sync ---
     struct TraceSync {
         VkFence fence = VK_NULL_HANDLE;
         VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
         bool isTracing = false;
-        uint64_t frameNumber = 0;
     };
 
     TraceSync _traceSync;
-    VkFence _traceCompleteFence = VK_NULL_HANDLE;
-    bool IsTraceComplete();
+
     void WaitForTrace();
 
+    // --- Readback ---
     struct ReadbackData {
         MemoryMappedBuffer stagingBuffer; 
         VkDeviceSize size = 0;
-        void* mappedData = nullptr;
+        HitBufferData* mappedData;
 
         VkCommandBuffer copyCmd = VK_NULL_HANDLE;
         VkFence copyCompleteFence = VK_NULL_HANDLE;
     };
 
     ReadbackData _readback;
-    bool _hasPendingResults = false;
 
     void CreateReadbackResources();
     void SubmitReadback();
     void WaitForReadbackComplete();
-	std::vector<SimpleHit> GetHitResults();
-    void WriteHitsToFile(const std::string& filename, const std::vector<SimpleHit>& hits);
+	std::vector<HitBufferData> GetHitResults();
+    void WriteHitsToFile(const std::string& filename, const std::vector<HitBufferData>& hits);
+
+    // --- Helper Functions ---
+    void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
+    VkDeviceAddress GetBufferAddress(const Buffer& buffer) const;
+
+    // Cleanup
+    //void Cleanup();
+    //void CleanupShaders();
 };

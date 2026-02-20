@@ -2,86 +2,81 @@
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_scalar_block_layout : enable
 
-struct HitData {
-    uint faceIndex;
-    float barycentricU;
-    float barycentricV;
-    float distance;
-    uint sourceVertex;
-    uint rayIndex;
-    uint padding[2];  // Ensure 32-byte alignment
-};
-
-layout(set = 0, binding = 0) uniform accelerationStructureEXT tlas;
-
-layout(set = 0, binding = 1, std430) readonly buffer DeformableVerts {
-    vec4 vertices[];  // xyz = position, w = vertex index
-} deformableVerts;
-
-layout(set = 0, binding = 2, std430) readonly buffer RayDirections {
-    vec4 directions[];  // xyz = direction, w = ray index within vertex
-} rayDirs;
-
-layout(set = 0, binding = 3, std430) buffer HitBuffer {
-    uint atomicCounter;
-    HitData hits[];  // variable-sized array after counter
-} hitBuffer;
-
-layout(set = 0, binding = 4, std430) readonly buffer CageIndices {
-    uvec3 indices[];
-} cageIndices;
-
-layout(push_constant) uniform PushConstants {
+// Push constants matching your C++ structure
+layout(push_constant) uniform PushConstants 
+{
     uint vertexCount;
     uint raysPerVertex;
     uint maxHitsPerRay;
+    uint padding;
 } pc;
 
-layout(location = 0) rayPayloadEXT HitData payload;
+// Binding 0: Acceleration structure (not directly accessed in shader)
+// This is implicitly used by traceRayEXT
+
+// Binding 1: Deformable vertices (origins)
+layout(set = 0, binding = 1, std430) readonly buffer VertexBuffer 
+{
+    vec4 vertices[];
+} vertexBuffer;
+
+// Binding 2: Ray directions
+layout(set = 0, binding = 2, std430) readonly buffer RayDirectionBuffer 
+{
+    vec4 directions[];
+} rayDirectionBuffer;
+
+// Binding 3: Hit buffer with atomic counter at start
+// HitBufferData = uint32_t rayIndex;
+layout(set = 0, binding = 3, std430) buffer HitBuffer 
+{
+    uint atomicCounter;
+    uint rayIndices[];  // Each entry is just a rayIndex (uint32_t)
+} hitBuffer;
+
+// Binding 4: Atomic counter (redundant since it's part of hitBuffer)
+
+// Ray payload (minimal for this test)
+layout(location = 0) rayPayloadEXT vec4 payload;
 
 void main()
 {
-    uint rayIndex = gl_LaunchIDEXT.x;
+    // Calculate ray index from launch ID
     uint globalRayIndex = gl_LaunchIDEXT.x;
+    uint totalRays = pc.vertexCount * pc.raysPerVertex;
     
+    // Bounds checking
+    if (globalRayIndex >= totalRays)
+        return;
+    
+    // Calculate vertex and local ray index (optional, for debugging)
     uint vertexIdx = globalRayIndex / pc.raysPerVertex;
     uint localRayIdx = globalRayIndex % pc.raysPerVertex;
     
-    if (vertexIdx >= pc.vertexCount) {
-        return;  // Out of bounds
-    }
+    // Get ray origin and direction (optional, not needed for validation)
+    // vec4 origin = vertexBuffer.vertices[vertexIdx];
+    // vec4 direction = rayDirectionBuffer.directions[globalRayIndex];
     
-    // Get vertex position and ray direction
-    vec3 origin = deformableVerts.vertices[vertexIdx].xyz;
-    vec3 dir = rayDirs.directions[localRayIdx].xyz;
+    // --- VALIDATION WRITE ---
+    // Atomically increment counter and get index for this hit
+    uint hitIndex = atomicAdd(hitBuffer.atomicCounter, 1);
     
-    // Initialize payload
-    payload.faceIndex = 0xFFFFFFFF;
-    payload.barycentricU = 0.0;
-    payload.barycentricV = 0.0;
-    payload.distance = 0.0;
-    payload.sourceVertex = vertexIdx;
-    payload.rayIndex = localRayIdx;
+    // Store just the rayIndex as per HitBufferData structure
+    hitBuffer.rayIndices[hitIndex] = globalRayIndex;
     
-    traceRayEXT(
-        tlas,
-        gl_RayFlagsOpaqueEXT,
-        0xFF,
-        0,           // sbtRecordOffset
-        0,           // sbtRecordStride
-        0,           // missIndex
-        origin,
-        0.001,       // tmin
-        dir,
-        10000.0,     // tmax
-        0            // payload location
-    );
-    
-    // If we got a hit, write it to the hit buffer using atomic counter
-    if (payload.faceIndex != 0xFFFFFFFF) {
-        uint hitIndex = atomicAdd(hitBuffer.atomicCounter, 1);
-        if (hitIndex < pc.vertexCount * pc.raysPerVertex * pc.maxHitsPerRay) {
-            hitBuffer.hits[hitIndex] = payload;
-        }
-    }
+    // Optionally trace a ray (commented out for pure validation)
+    /*
+    // Trace ray
+    traceRayEXT(TOP_LEVEL,        // acceleration structure
+                gl_RayFlagsNoneEXT, // ray flags
+                0xFF,              // cull mask
+                0,                 // sbt record offset
+                0,                 // sbt record stride
+                0,                 // miss index
+                origin.xyz,        // origin
+                0.0,               // tmin
+                direction.xyz,     // direction
+                1000.0,            // tmax
+                0);                // payload location
+    */
 }
