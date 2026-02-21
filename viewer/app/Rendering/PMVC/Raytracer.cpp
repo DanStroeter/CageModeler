@@ -890,9 +890,9 @@ void Raytracer::CreateShaderBindingTable(const VkRayTracingPipelineCreateInfoKHR
 
 void Raytracer::LoadShaders() {
 	try {
-		auto raygenCode = LoadSPIRV("Raygen.rgen.spv");
-		auto missCode = LoadSPIRV("Miss.rmiss.spv");
-		auto hitCode = LoadSPIRV("Hit.rchit.spv");
+		auto raygenCode = LoadSPIRV("RaygenDebug.rgen.spv");
+		auto missCode = LoadSPIRV("MissDebug.rmiss.spv");
+		auto hitCode = LoadSPIRV("HitDebug.rchit.spv");
 
 		LOG_INFO("Shader sizes - Raygen: {} bytes, Miss: {} bytes, Hit: {} bytes",
 			raygenCode.size() * sizeof(uint32_t),
@@ -1238,7 +1238,7 @@ void Raytracer::WriteHitsToFile(const std::string& filename, const std::vector<H
 	file << "========================================\n\n";
 
 	file << "===== CONFIGURATION =====\n";
-	file << "Vertex count: 1\n";
+	file << "Vertex count: " << _pushConstants.vertexCount << "\n";
 	file << "Rays per vertex: " << _pushConstants.raysPerVertex << "\n";
 	file << "Max hits per ray: " << _pushConstants.maxHitsPerRay << "\n";
 	file << "Total possible hits: "
@@ -1248,11 +1248,11 @@ void Raytracer::WriteHitsToFile(const std::string& filename, const std::vector<H
 	file << "Vector hit size: " << hits.size() << "\n\n";
 
 	file << "===== Rays =====\n";
-	file << "Every ray index should have" << _pushConstants.raysPerVertex * _pushConstants.maxHitsPerRay << " entires.\n";;
+	file << "Every ray index should have " << _pushConstants.raysPerVertex * _pushConstants.maxHitsPerRay << " entires.\n";;
 
 	for (size_t i = 0; i < hits.size(); ++i)
 	{
-		const auto& hit = hits[i];
+		const auto& hit = hits[i]; 
 
 		file << "  Ray index: " << hit.rayIndex << "\n";
 		file << "\n";
