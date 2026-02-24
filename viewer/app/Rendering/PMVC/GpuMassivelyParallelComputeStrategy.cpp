@@ -322,6 +322,15 @@ void GpuMPComputeStrategy::ConsumeAllSlots()
 	}
 }
 
+Eigen::MatrixXd GpuMPComputeStrategy::Readback()
+{
+	for (int i = 0; i < _lambdaResults.rows(); ++i) {
+		_lambdaResults.row(i) /= _wsumResults[i];
+	}
+	//WriteWeightsToFile("GpuAtomicComputeStrategy_Readback.txt");
+	return _lambdaResults;
+}
+
 void GpuMPComputeStrategy::CreatePipelineAndLayouts() {
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
