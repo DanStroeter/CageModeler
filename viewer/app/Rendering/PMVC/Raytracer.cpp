@@ -141,6 +141,12 @@ void Raytracer::StartRayTrace()
 
 	const uint32_t totalRays = _pushConstants.raysPerVertex * _pushConstants.maxHitsPerRay * _pushConstants.vertexCount;
 
+	if (vkCreateRayTracingPipelinesKHR == nullptr ||
+		vkCmdTraceRaysKHR == nullptr) {
+
+		LOG_ERROR("Ray tracing functions not available!");
+	}
+
 	vkCmdTraceRaysKHR(
 		_traceSync.commandBuffer,
 		&_raygenRegion,
@@ -167,7 +173,10 @@ void Raytracer::StartRayTrace()
 
 	_traceSync.isTracing = true;
 	
-	LOG_INFO("Ray trace dispatch submitted");
+	//wait for idle
+	vkDeviceWaitIdle(_device);
+
+	LOG_INFO("Ray trace dispatch submitted!");
 }
 
 // --- Device Properties ---

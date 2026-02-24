@@ -42,7 +42,7 @@ void App::Start()
 	bool cubemapstart = true;
 
 	//_editor->OnNewProjectCreated();
-	while (_isRunning)
+	while (_isRunning) //_isRunning
 	{
 		auto newTime = std::chrono::high_resolution_clock::now();
 		const auto frameTime = newTime - currentTime;
