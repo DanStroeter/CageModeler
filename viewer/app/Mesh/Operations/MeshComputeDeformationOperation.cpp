@@ -109,7 +109,7 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 			/*vertexData[i]._vertices =
 				_params._weightsData._weights *
 				_params._deformedCage._vertices;*/
-			const auto& C0 = _params._cage._vertices;
+			/*const auto& C0 = _params._cage._vertices;
 			const auto& V0 = _params._mesh._vertices;
 
 			// Deformed cage
@@ -128,7 +128,8 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 			Eigen::MatrixXd proj1 = W * C1;
 
 			// 4) Final vertices
-			vertexData[i]._vertices = proj1 + offset;
+			vertexData[i]._vertices = proj1 + offset;*/
+			vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices;
 		}
 		else if (_params._deformationType == DeformationType::Somigliana)
 		{
