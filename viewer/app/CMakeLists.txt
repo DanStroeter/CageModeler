@@ -78,9 +78,10 @@ add_executable(${PROJECT_NAME}
     Rendering/PMVC/GpuSerialComputeStrategy.h
     Rendering/PMVC/GpuAtomicComputeStrategy.cpp
     Rendering/PMVC/Raytracer.cpp
+    Rendering/PMVC/SphereWeightCalculator.h
     
     Rendering/PMVC/ScopedCmdBuffer.cpp
-    ${IMGUI_BINDINGS} "Rendering/PMVC/DebugCubemapComputeStrategy.h" "Rendering/PMVC/DebugCubemapComputeStrategy.cpp" "Rendering/PMVC/GpuSerialComputeStrategy.cpp" "Rendering/PMVC/Raytracer.h" "Rendering/PMVC/Raytracer.cpp" "Rendering/PMVC/GpuMassivelyParallelComputeStrategy.h" "Rendering/PMVC/GpuMassivelyParallelComputeStrategy.cpp")
+    ${IMGUI_BINDINGS} "Rendering/PMVC/DebugCubemapComputeStrategy.h" "Rendering/PMVC/DebugCubemapComputeStrategy.cpp" "Rendering/PMVC/GpuSerialComputeStrategy.cpp" "Rendering/PMVC/Raytracer.h" "Rendering/PMVC/Raytracer.cpp" "Rendering/PMVC/GpuMassivelyParallelComputeStrategy.h" "Rendering/PMVC/GpuMassivelyParallelComputeStrategy.cpp" "Rendering/PMVC/SphereWeightCalculator.h")
 
 
 target_compile_definitions(

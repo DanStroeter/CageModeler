@@ -600,7 +600,7 @@ std::vector<glm::vec3> CubemapRenderInstance::BuildDeformableVertexPositions() c
 	return vertices;
 }
 
-void SphereWeightCalculator::SphereWeightInitialization(uint32_t size, RenderResourceRef<Device> device, std::shared_ptr<RenderResourceManager> resourceManager, VkCommandPool commandPool) {
+/*void SphereWeightCalculator::SphereWeightInitialization(uint32_t size, RenderResourceRef<Device> device, std::shared_ptr<RenderResourceManager> resourceManager, VkCommandPool commandPool) {
 	const uint32_t faceSize = size;
 	const uint32_t faceCount = 6;
 
@@ -801,6 +801,7 @@ void SphereWeightCalculator::SphereWeightInitialization(uint32_t size, RenderRes
 	//LOG_DEBUG("Total solid angle = " + std::to_string(sum));
 }
 
+/*
 float SphereWeightCalculator::ComputeSphereWeight(
 	int px,
 	int py,
@@ -864,6 +865,46 @@ float SphereWeightCalculator::ComputeSphereWeight(
 
 	return weight;
 }
+*/
+
+/*float SphereWeightCalculator::ComputeSphereWeight(
+	int px,
+	int py,
+	int faceSize,
+	int face)
+{
+	auto Area = [](float x, float y)
+	{
+		return std::atan2(
+			x * y,
+			std::sqrt(x * x + y * y + 1.0f)
+		);
+	};
+
+	float invSize = 1.0f / faceSize;
+
+	float u0 = 2.0f * (px + 0) * invSize - 1.0f;
+	float v0 = 2.0f * (py + 0) * invSize - 1.0f;
+	float u1 = 2.0f * (px + 1) * invSize - 1.0f;
+	float v1 = 2.0f * (py + 1) * invSize - 1.0f;
+
+	float weight =
+		Area(u0, v0)
+		- Area(u0, v1)
+		- Area(u1, v0)
+		+ Area(u1, v1);
+
+	return weight;
+}
+float SphereWeightCalculator::ComputeSphereWeight(
+	//int /*px*/
+	//int /*py*/,
+	//int /*faceSize*/,
+	//int /*face*/)
+/*{
+	// Debug mode: uniform weight
+	return 1.0f;
+}*/
 
 static double SecondsSince(
 	const std::chrono::high_resolution_clock::time_point& start)

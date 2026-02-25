@@ -10,21 +10,12 @@
 #include <glm/vec3.hpp>
 #include <Mesh/GeometryUtils.h>
 #include <Rendering/PMVC/CubemapManager.h>
+//#include <Rendering/PMVC/CubemapRenderInstance.h>
+#include <Rendering/PMVC/SphereWeightCalculator.h>
 
 
 class CubemapManager;
 struct CubemapWorkRange;
-
-class SphereWeightCalculator {
-public:
-	VkImage        _solidAngleImage = VK_NULL_HANDLE;
-	VkDeviceMemory _solidAngleMemory = VK_NULL_HANDLE;
-	VkImageView    _solidAngleArrayView = VK_NULL_HANDLE;
-	VkSampler      _solidAngleSampler = VK_NULL_HANDLE;
-	SphereWeightCalculator() = default;
-	void SphereWeightInitialization(uint32_t size, RenderResourceRef<Device> device, std::shared_ptr<RenderResourceManager> resourceManager, VkCommandPool commandPool);
-	float ComputeSphereWeight(int px, int py, int faceSize, int face);
-};
 
 struct CubemapRenderTarget
 {

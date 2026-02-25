@@ -371,7 +371,7 @@ Eigen::MatrixXd GpuAtomicComputeStrategy::Readback()
 	for (int i = 0; i < _lambdaResults.rows(); ++i) {
 		_lambdaResults.row(i) /= _wsumResults[i];
 	}
-	//WriteWeightsToFile("GpuAtomicComputeStrategy_Readback.txt");
+	WriteWeightsToFile("GpuAtomicComputeStrategy_Readback.txt");
 	return _lambdaResults;
 }
 
@@ -636,22 +636,37 @@ void GpuAtomicComputeStrategy::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSi
 	vkFreeCommandBuffers(_device, _computeCommandPool, 1, &cmd);
 }
 
-/*void GpuAtomicComputeStrategy::WriteWeightsToFile(const std::string& filename)
+void GpuAtomicComputeStrategy::WriteWeightsToFile(const std::string& filename)
 {
 	std::ofstream file(filename);
-	if (!file.is_open()) throw std::runtime_error("Failed to open weight write file!");
+	if (!file.is_open())
+		throw std::runtime_error("Failed to open weight write file!");
 
-	file << "===== LAMBDA BUFFER (cubemaps=" << _lambdaResults.size()
-		<< ", verts=" << (_lambdaResults.empty() ? 0 : _lambdaResults[0].size()) << ") =====\n";
-	for (size_t cub = 0; cub < _lambdaResults.size(); ++cub) {
-		float sum = 0.0f;
-		for (size_t v = 0; v < _lambdaResults[cub].size(); ++v) {
-			file << "lambda[" << cub << "][" << v << "] = " << _lambdaResults[cub][v] << "\n";
-			sum += _lambdaResults[cub][v];
+	const Eigen::Index rows = _lambdaResults.rows();
+	const Eigen::Index cols = _lambdaResults.cols();
+
+	file << "===== LAMBDA BUFFER (rows=" << rows
+		<< ", cols=" << cols << ") =====\n";
+
+	for (Eigen::Index r = 0; r < rows; ++r)
+	{
+		double sum = 0.0;
+
+		for (Eigen::Index c = 0; c < cols; ++c)
+		{
+			const double value = _lambdaResults(r, c);
+			file << "lambda[" << r << "][" << c << "] = " << value << "\n";
+			sum += value;
 		}
+
 		file << "Lambda sum: " << sum << "\n";
-		file << "Sum normalize: " << _wsumResults[cub] << "\n";
+
+		if (static_cast<size_t>(r) < _wsumResults.size())
+			file << "Sum normalize: " << _wsumResults[r] << "\n";
+		else
+			file << "Sum normalize: (missing)\n";
 	}
+
 	file.close();
 	LOG_INFO("Weights written to " + filename);
-}*/
+}

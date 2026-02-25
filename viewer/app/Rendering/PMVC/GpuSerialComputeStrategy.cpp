@@ -390,7 +390,7 @@ Eigen::MatrixXd GpuSerialComputeStrategy::Readback()
 			_lambdaResults[i][j] /= _wsumResults[i];
 		}
 	}
-	WriteWeightsToFile("GpuSerialComputeStrategy_Readback.txt");
+	//WriteWeightsToFile("GpuSerialComputeStrategy_Readback.txt");
 	return toEigenMatrix(_lambdaResults);
 }
 
