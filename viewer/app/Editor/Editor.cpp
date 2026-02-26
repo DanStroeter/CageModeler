@@ -138,13 +138,13 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCancelled(); },
 		[this] { OnNewProjectCreated(); });
 
-	_projectModel->_deformationType = DeformationType::PMVCRayracing;
+	_projectModel->_deformationType = DeformationType::MVC;
 	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
 	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
-	_projectModel->_meshFilepath = "assets/meshes/sphere.obj";
-	_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
+	_projectModel->_meshFilepath = "assets/meshes/armadilloman.obj";
+	_projectModel->_cageFilepath = "assets/meshes/armadilloman_cages_triangulated.obj";
 	_projectModel->_embeddingFilepath = "assets/meshes/bishop_cages_triangulated_embedding.msh";
-	_projectModel->_deformedCageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
+	_projectModel->_deformedCageFilepath = "assets/meshes/armadilloman_cages_triangulated.obj";
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 

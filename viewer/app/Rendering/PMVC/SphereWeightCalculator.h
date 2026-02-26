@@ -426,6 +426,7 @@ public:
         RenderResourceRef<Device> device,
         std::shared_ptr<RenderResourceManager> resourceManager,
         VkCommandPool commandPool) {
+        /*
         const uint32_t faceSize = size;
         const uint32_t faceCount = 6;
 
@@ -441,6 +442,34 @@ public:
                         face * faceSize * faceSize +
                             y * faceSize + x
                     ] = TexelCoordSolidAngle(face, x, y, faceSize);
+                }
+            }
+        }
+        */
+        const uint32_t faceSize = size;
+        const uint32_t faceCount = 6;
+
+        // Calculate cube pixel area (constant for all pixels at this resolution)
+        float cubePixelArea = (2.0f / size) * (2.0f / size);  // Area on cube face [-1,1] range
+
+        // ------------------------------------------------------------
+        // 1) CPU: precompute solid-angle WEIGHT RATIOS
+        // ------------------------------------------------------------
+        std::vector<float> weights(faceCount * faceSize * faceSize);
+
+        for (uint32_t face = 0; face < faceCount; ++face) {
+            for (uint32_t y = 0; y < faceSize; ++y) {
+                for (uint32_t x = 0; x < faceSize; ++x) {
+                    // Get solid angle in steradians
+                    float solidAngle = TexelCoordSolidAngle(face, x, y, faceSize);
+
+                    // Convert to ratio (sphere area / cube area)
+                    float ratio = solidAngle / cubePixelArea;
+
+                    weights[
+                        face * faceSize * faceSize +
+                            y * faceSize + x
+                    ] = ratio;  // Store the ratio instead of solid angle
                 }
             }
         }
