@@ -550,7 +550,7 @@ void GpuAtomicComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, co
 	weightInfo.imageView = _sphereWeightCalculator._solidAngleArrayView;
 	weightInfo.sampler = _sphereWeightCalculator._solidAngleSampler;
 
-	std::array<VkWriteDescriptorSet, 5> writes{};
+	std::array<VkWriteDescriptorSet, 6> writes{};
 
 	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 		_computeDescriptorSets[slotIndex], 0, 0, 1,

@@ -116,7 +116,7 @@ private:
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
     void WriteWeightsToFile(const std::string& filename);
 
-    int _targetCount = 6;
+    int _targetCount = 3;
 
     VkSampler _barySampler;
 
