@@ -10,7 +10,7 @@
 #include <Rendering/PMVC/CubemapRenderInstance.h>
 #include <Rendering/PMVC/SphereWeightCalculator.h>
 
-class SphereWeightCalculator;
+//class SphereWeightCalculator;
 
 class GpuMPComputeStrategy final : public ICubemapComputeStrategy
 {
@@ -24,7 +24,7 @@ public:
         const std::shared_ptr<RenderResourceManager>& resourceManager,
         const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
         EigenMesh& cageMesh,
-        EigenMesh& deformableMesh, 
+        EigenMesh& deformableMesh,
         bool offset)
         : _device(device)
         , _transferQueueFamily(transferQueueFamily)
@@ -37,12 +37,11 @@ public:
         , _deformableMesh(deformableMesh)
         , _offset(offset)
     {
-		_targetCount = _deformableMesh._vertices.rows();
     }
 
     uint32_t RequiredRenderTargetCount() const override;
-    void Initialize() override {};
-    void Initialize(uint32_t targetCount);
+
+    void Initialize() override;
 
     void DispatchAfterRender(
         uint32_t deformableIndex,
@@ -52,27 +51,7 @@ public:
         uint64_t signalValue,
         const CubemapRenderTarget& target);
 
-    void SubmitAllComputes(
-        VkSemaphore waitSemaphore,
-        uint64_t waitValue,
-        VkSemaphore signalSemaphore,
-        uint64_t signalValue);
-
     Eigen::MatrixXd Readback();
-
-    void RecordReadbackCopy(uint32_t slot);
-
-    void ConsumeAllSlots();
-
-    void SubmitAllReadbackCopies(
-        VkSemaphore waitSemaphore,
-        uint64_t waitValue,
-        VkSemaphore signalSemaphore,
-        uint64_t signalValue);
-
-    void RecordCompute(
-        uint32_t slot,
-        const CubemapRenderTarget& target);
 
     void ConsumeSlot(
         uint32_t deformableIndex,
@@ -90,7 +69,7 @@ private:
     void CreatePipelineAndLayouts();
     void AllocateResources();
 
-    const uint32_t kDispatchGroupSize = 16; // maybe 8
+    const uint32_t kDispatchGroupSize = 8;
 
     RenderResourceRef<Device> _device;
     uint32_t _transferQueueFamily = 0;
@@ -134,13 +113,14 @@ private:
     SphereWeightCalculator _sphereWeightCalculator;
 
     void CreateSampler();
-
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
     void WriteWeightsToFile(const std::string& filename);
 
-    int _targetCount = 6;
+    int _targetCount = 3;
 
     VkSampler _barySampler;
 
-	bool _offset = false;
+    bool _offset = false;
+    void CreateDepthSampler();
+    VkSampler _depthSampler;
 };
