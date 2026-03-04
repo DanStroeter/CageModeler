@@ -1,0 +1,76 @@
+#version 450
+#extension GL_EXT_shader_atomic_float : require
+
+// Rendered barycentric + triangle index image
+layout(binding = 0) uniform sampler2DArray uBaryTex;
+
+// Triangle vertex index list (3 indices per triangle)
+layout(std430, binding = 1) readonly buffer VertexList {
+    uint vertexList[];
+};
+
+// Output λ values (one buffer per dispatch / cubemap)
+layout(std430, binding = 2) buffer LambdaOut {
+    float lambda[];
+};
+
+// Output wsum (single float per dispatch / cubemap)
+layout(std430, binding = 3) buffer WSumOut {
+    float wsum[];
+};
+
+// Solid angle lookup (per face)
+layout(binding = 4) uniform sampler2DArray uSolidAngleTex;
+
+// Depth cubemap (NEW)
+layout(binding = 5) uniform sampler2DArray uDepthTex;
+
+// Push constants
+layout(push_constant) uniform Params {
+    ivec2 uFaceSize;       // cubemap face resolution
+    int   uNumTriangles;    // number of triangles in cage mesh
+} params;
+
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+void main()
+{
+ uint x    = gl_GlobalInvocationID.x;
+    uint y    = gl_GlobalInvocationID.y;
+    uint face = gl_GlobalInvocationID.z;
+
+    if (x >= uint(params.uFaceSize.x) ||
+        y >= uint(params.uFaceSize.y) ||
+        face >= 6u)
+    {
+        return;
+    }
+
+    vec4 tex = texelFetch(uBaryTex, ivec3(x, y, face), 0);
+    uint tri = uint(tex.a * float(params.uNumTriangles) + 0.5);
+    if (tri >= uint(params.uNumTriangles))
+        return;
+
+    // Sample raw depth from cubemap face. 1.0 means no geometry hit (clear value).
+    float depth = texelFetch(uDepthTex, ivec3(x, y, face), 0).r;
+    if (depth >= 0.999999)
+        return;
+
+    // Prefer nearer samples. This keeps a simple [0..1] weighting without requiring
+    // extra near/far push constants for depth linearization.
+    float depthWeight = 1.0 - depth;
+    float solidAngle = texelFetch(uSolidAngleTex, ivec3(x, y, face), 0).r;
+    float w = solidAngle * depthWeight;
+    if (w <= 0.0)
+        return;
+
+    uint i0 = vertexList[tri * 3 + 0];
+    uint i1 = vertexList[tri * 3 + 1];
+    uint i2 = vertexList[tri * 3 + 2];
+
+    atomicAdd(lambda[i0], tex.r * w);
+    atomicAdd(lambda[i1], tex.g * w);
+    atomicAdd(lambda[i2], tex.b * w);
+    atomicAdd(wsum[0], w);
+}

@@ -20,7 +20,14 @@ enum class DeformationType : uint8_t
 	Green,
 	QGC,
 	Somigliana,
-	PMVCLipman,
+	PMVCSerialOffset,
+	PMVCSeriaNoOffset,
+	PMVCRingOffset,
+	PMVCRingNoOffset,
+	PMVCAllOffset,
+	PMVCAllNoOffset,
+	PMVCCpuOffset,
+	PMVCCpuNoOffset,
 	PMVCRayracing
 };
 

@@ -440,8 +440,8 @@ void GpuSerialComputeStrategy::CreateDepthSampler() {
 	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 
 	// For depth, you might want linear filtering
-	samplerInfo.magFilter = VK_FILTER_LINEAR;
-	samplerInfo.minFilter = VK_FILTER_LINEAR;
+	samplerInfo.magFilter = VK_FILTER_NEAREST;
+	samplerInfo.minFilter = VK_FILTER_NEAREST;
 
 	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 	samplerInfo.minLod = 0.0f;
@@ -453,7 +453,7 @@ void GpuSerialComputeStrategy::CreateDepthSampler() {
 	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 
 	samplerInfo.anisotropyEnable = VK_FALSE;
-
+	
 	// Enable comparison for shadow mapping if needed
 	//samplerInfo.compareEnable = VK_TRUE;  // Set to true if doing shadow comparison
 	//samplerInfo.compareOp = VK_COMPARE_OP_LESS;  // Or appropriate comparison
@@ -605,7 +605,7 @@ void GpuSerialComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, co
 	imageInfo.sampler = _barySampler;
 
 	VkDescriptorImageInfo depthImageInfo{};
-	depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 	depthImageInfo.imageView = target.depthView;  // You need to add this to CubemapRenderTarget
 	depthImageInfo.sampler = _depthSampler;
 
