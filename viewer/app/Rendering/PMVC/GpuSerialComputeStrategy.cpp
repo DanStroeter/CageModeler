@@ -52,6 +52,7 @@ void GpuSerialComputeStrategy::Initialize()
 		_computeCommandPool
 	);
 	CreateSampler();
+	CreateDepthSampler();
 }
 
 //TODO maybe needs to be checked
@@ -413,14 +414,16 @@ void GpuSerialComputeStrategy::CreatePipelineAndLayouts() {
 		// wsum output
 		{3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
 		// 
-		{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
+		{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		// 
+		 { 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
 	};
 
 	_computeLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
 
 	ComputePipelineObjectProxy proxy;
 	proxy._renderPipelineManager = _renderPipelineManager;
-	proxy._shaderModule = "assets/shaders/PMVCComputeAtmoic.comp.spv";
+	proxy._shaderModule = "assets/shaders/PMVCComputeAtmoicDepth.comp.spv";
 	proxy._descriptorSetLayouts = { _computeLayout };
 
 	VkPushConstantRange range{};
@@ -431,6 +434,69 @@ void GpuSerialComputeStrategy::CreatePipelineAndLayouts() {
 
 	_computePipeline = proxy.Build();
 }
+
+void GpuSerialComputeStrategy::CreateDepthSampler() {
+	VkSamplerCreateInfo samplerInfo{};
+	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+	// For depth, you might want linear filtering
+	samplerInfo.magFilter = VK_FILTER_LINEAR;
+	samplerInfo.minFilter = VK_FILTER_LINEAR;
+
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	samplerInfo.minLod = 0.0f;
+	samplerInfo.maxLod = 0.0f;
+	samplerInfo.mipLodBias = 0.0f;
+
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+	samplerInfo.anisotropyEnable = VK_FALSE;
+
+	// Enable comparison for shadow mapping if needed
+	//samplerInfo.compareEnable = VK_TRUE;  // Set to true if doing shadow comparison
+	//samplerInfo.compareOp = VK_COMPARE_OP_LESS;  // Or appropriate comparison
+
+	samplerInfo.unnormalizedCoordinates = VK_FALSE;
+	samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+
+	vkCreateSampler(_device, &samplerInfo, nullptr, &_depthSampler);
+}
+
+void GpuSerialComputeStrategy::CreateSampler() {
+	VkSamplerCreateInfo samplerInfo{};
+	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+
+	// NO filtering
+	samplerInfo.magFilter = VK_FILTER_NEAREST;
+	samplerInfo.minFilter = VK_FILTER_NEAREST;
+
+	// NO mipmapping
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+	samplerInfo.minLod = 0.0f;
+	samplerInfo.maxLod = 0.0f;
+	samplerInfo.mipLodBias = 0.0f;
+
+	// Clamp (doesn’t really matter since texelFetch ignores addressing)
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+	// No anisotropy
+	samplerInfo.anisotropyEnable = VK_FALSE;
+
+	// No comparison
+	samplerInfo.compareEnable = VK_FALSE;
+
+	// Normalized coordinates irrelevant for texelFetch
+	samplerInfo.unnormalizedCoordinates = VK_FALSE;
+
+	// Border color unused
+	samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+	vkCreateSampler(_device, &samplerInfo, nullptr, &_barySampler);
+}
+
 
 void GpuSerialComputeStrategy::AllocateResources()
 {
@@ -537,6 +603,13 @@ void GpuSerialComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, co
 	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	imageInfo.imageView = target.cubemapView;
 	imageInfo.sampler = _barySampler;
+
+	VkDescriptorImageInfo depthImageInfo{};
+	depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	depthImageInfo.imageView = target.depthView;  // You need to add this to CubemapRenderTarget
+	depthImageInfo.sampler = _depthSampler;
+
+	
 	VkDescriptorBufferInfo vertexListInfo{
 		_vertexListBuffer._deviceBuffer, 0, VK_WHOLE_SIZE
 	};
@@ -554,7 +627,7 @@ void GpuSerialComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, co
 	weightInfo.imageView = _sphereWeightCalculator._solidAngleArrayView;
 	weightInfo.sampler = _sphereWeightCalculator._solidAngleSampler;
 
-	std::array<VkWriteDescriptorSet, 5> writes{};
+	std::array<VkWriteDescriptorSet, 6> writes{};
 
 	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 		_computeDescriptorSets[slotIndex], 0, 0, 1,
@@ -575,41 +648,12 @@ void GpuSerialComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, co
 	writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 		_computeDescriptorSets[slotIndex], 4, 0, 1,
 		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &weightInfo };
+	writes[5] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_computeDescriptorSets[slotIndex], 5, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &depthImageInfo };
+
 
 	vkUpdateDescriptorSets(_device, writes.size(), writes.data(), 0, nullptr);
-}
-
-void GpuSerialComputeStrategy::CreateSampler() {
-	VkSamplerCreateInfo samplerInfo{};
-	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-
-	// NO filtering
-	samplerInfo.magFilter = VK_FILTER_NEAREST;
-	samplerInfo.minFilter = VK_FILTER_NEAREST;
-
-	// NO mipmapping
-	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-	samplerInfo.minLod = 0.0f;
-	samplerInfo.maxLod = 0.0f;
-	samplerInfo.mipLodBias = 0.0f;
-
-	// Clamp (doesn’t really matter since texelFetch ignores addressing)
-	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-
-	// No anisotropy
-	samplerInfo.anisotropyEnable = VK_FALSE;
-
-	// No comparison
-	samplerInfo.compareEnable = VK_FALSE;
-
-	// Normalized coordinates irrelevant for texelFetch
-	samplerInfo.unnormalizedCoordinates = VK_FALSE;
-
-	// Border color unused
-	samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-	vkCreateSampler(_device, &samplerInfo, nullptr, &_barySampler);
 }
 
 void GpuSerialComputeStrategy::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size)

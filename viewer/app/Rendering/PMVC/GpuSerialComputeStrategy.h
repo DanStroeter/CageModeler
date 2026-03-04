@@ -109,10 +109,12 @@ private:
     SphereWeightCalculator _sphereWeightCalculator;
 
     void CreateSampler();
+    void CreateDepthSampler();
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
     void WriteWeightsToFile(const std::string& filename);
 
     int _targetCount = 1;
 
     VkSampler _barySampler;
+    VkSampler _depthSampler;
 };

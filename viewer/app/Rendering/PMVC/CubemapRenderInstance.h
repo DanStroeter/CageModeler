@@ -26,10 +26,10 @@ struct CubemapRenderTarget
 
 	VkImage        depthImage;
 	VkDeviceMemory depthMemory;
+	VkImageView    depthView;
 	std::array<VkImageView, 6> depthViews;
-
+	
 	std::array<VkFramebuffer, 6> framebuffers;
-
 };
 
 struct CubemapRenderUnit
