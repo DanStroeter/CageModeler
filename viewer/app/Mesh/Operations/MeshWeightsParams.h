@@ -76,9 +76,37 @@ struct DeformationTypeHelpers
 		{
 			return "Somigliana";
 		}
-		else if (IsPMVC(deformationType))
+		else if (deformationType == DeformationType::PMVCAllNoOffset)
 		{
-			return "PMVCLipman";
+			return "PMVCAllNoOffset";
+		}
+		else if (deformationType == DeformationType::PMVCAllOffset)
+		{
+			return "PMVCAllOffset";
+		}
+		else if (deformationType == DeformationType::PMVCCpuNoOffset)
+		{
+			return "PMVCCpuNoOffset";
+		}
+		else if (deformationType == DeformationType::PMVCCpuOffset)
+		{
+			return "PMVCCpuOffset";
+		}
+		else if (deformationType == DeformationType::PMVCRingNoOffset)
+		{
+			return "PMVCRingNoOffset";
+		}
+		else if (deformationType == DeformationType::PMVCRingOffset)
+		{
+			return "PMVCRingOffset";
+		}
+		else if (deformationType == DeformationType::PMVCSerialNoOffset)
+		{
+			return "PMVCSerialNoOffset";
+		}
+		else if (deformationType == DeformationType::PMVCSerialOffset)
+		{
+			return "PMVCSerialOffset";
 		}
 		else if (deformationType == DeformationType::Raytracing)
 		{

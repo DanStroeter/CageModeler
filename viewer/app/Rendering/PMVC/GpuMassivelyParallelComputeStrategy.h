@@ -134,6 +134,7 @@ private:
     SphereWeightCalculator _sphereWeightCalculator;
 
     void CreateSampler();
+
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
     void WriteWeightsToFile(const std::string& filename);
 

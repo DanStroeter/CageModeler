@@ -14,6 +14,7 @@
 #include <Rendering/PMVC/ScopedCmdBuffer.h>
 #include <Rendering/PMVC/GpuSerialComputeStrategy.h>
 #include <Rendering/PMVC/GpuMassivelyParallelComputeStrategy.h>
+#include <Mesh/Operations/MeshWeightsParams.h>
 
 CubemapRenderInstance::~CubemapRenderInstance() {
 	//TODO: cleanup

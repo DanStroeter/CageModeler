@@ -12,6 +12,7 @@
 #include <Rendering/PMVC/CubemapManager.h>
 //#include <Rendering/PMVC/CubemapRenderInstance.h>
 #include <Rendering/PMVC/SphereWeightCalculator.h>
+#include <Mesh/Operations/MeshWeightsParams.h>
 
 
 class CubemapManager;

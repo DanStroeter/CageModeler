@@ -121,4 +121,6 @@ private:
     VkSampler _barySampler;
 
 	bool _offset = false;
+    void CreateDepthSampler();
+    VkSampler _depthSampler;
 };

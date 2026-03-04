@@ -22,6 +22,9 @@ layout(std430, binding = 3) buffer WSumOut {
 // Solid angle lookup (per face)
 layout(binding = 4) uniform sampler2DArray uSolidAngleTex;
 
+// Depth cubemap (NEW)
+layout(binding = 5) uniform sampler2DArray uDepthTex;
+
 // Push constants
 layout(push_constant) uniform Params {
     ivec2 uFaceSize;       // cubemap face resolution

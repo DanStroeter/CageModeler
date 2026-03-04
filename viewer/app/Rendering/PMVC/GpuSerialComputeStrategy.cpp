@@ -423,7 +423,13 @@ void GpuSerialComputeStrategy::CreatePipelineAndLayouts() {
 
 	ComputePipelineObjectProxy proxy;
 	proxy._renderPipelineManager = _renderPipelineManager;
-	proxy._shaderModule = "assets/shaders/PMVCComputeAtmoicDepth.comp.spv";
+	if (_offset) {
+		proxy._shaderModule = "assets/shaders/PMVCComputeAtmoic.comp.spv";
+	}
+	else
+	{
+		proxy._shaderModule = "assets/shaders/PMVCComputeAtmoicDepth.comp.spv";
+	}
 	proxy._descriptorSetLayouts = { _computeLayout };
 
 	VkPushConstantRange range{};
