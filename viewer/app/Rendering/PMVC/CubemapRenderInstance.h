@@ -69,7 +69,7 @@ public:
 		CubemapManager& cubemapManager,
 		int cubemapSize,
 		VkFormat format,
-		ComputeType computeType,
+		DeformationType deformationType,
 
 		RenderResourceRef<Device> device,
 		RenderResourceRef<DescriptorPool> descriptorPool,
@@ -97,16 +97,20 @@ public:
 	void ComputeCoordinatesGPUMP(
 		const CubemapWorkRange& range,
 		Eigen::MatrixXd& weights);
+	void ComputeCoordinates(const CubemapWorkRange& range, Eigen::MatrixXd& weights);
 
 private:
 	//CubemapManager& _cubemapManager;
 
 	std::unique_ptr<ICubemapComputeStrategy> _computeStage;
 	
+	//offset
+	float _offset;
+
 	//parameters 
 	unsigned int _cubemapSize;
 	VkFormat _format;
-	ComputeType _computeType;
+	DeformationType _deformationType;
 
 	//init functions
 	void Initialize();
@@ -120,6 +124,9 @@ private:
 	void RecordAndSubmitCubemapRender(uint32_t cubemapIdx, const glm::vec3& camPos, 
 		CubemapRenderTarget& target, VkSemaphore timeline, uint64_t signalValue); //TODO submit cubemap at once not in 6 parts
 	std::vector<glm::vec3> BuildDeformableVertexPositions() const;
+
+	void ComputeCoordinatesCpu(
+		const CubemapWorkRange& range, Eigen::MatrixXd& weights);
 
 	//render resources
 	CubemapRenderUnit _cubemapRenderUnit;

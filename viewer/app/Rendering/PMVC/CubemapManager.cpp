@@ -376,7 +376,7 @@ void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
 	}
 }
 
-MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCoordinates() {
+MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCoordinates(DeformationType deformationType) {
 	assert(_device && "Device is null");
 	assert(_descriptorPool && "DescriptorPool is null");
 	assert(_resourceManager && "ResourceManager is null");
@@ -384,11 +384,15 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	assert(_matricesLayout && "MatricesLayout is null");
 	CreateVertexBufferFromMesh();
 	CreateIndexBufferFromMesh();
+
+
+
+
 	CubemapRenderInstance instance(
 		*this,
 		_cubemapSize,
 		_format,
-		ComputeType::GPUSERIAL,
+		deformationType,
 
 		_device,
 		_descriptorPool,
@@ -411,7 +415,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	range.first = 0;
 	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
 	Eigen::MatrixXd weights;
-	instance.ComputeCoordinatesGPUSerial(range, weights);
+	instance.ComputeCoordinates(range, weights);
 	Eigen::MatrixXd M = weights;
 	Eigen::MatrixXd interpolatedWeights;
 	Eigen::MatrixXd psi;

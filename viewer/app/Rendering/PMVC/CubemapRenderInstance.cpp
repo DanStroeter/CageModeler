@@ -23,7 +23,7 @@ CubemapRenderInstance::CubemapRenderInstance()
 {
 	_cubemapSize = 32;
 	_format = VK_FORMAT_R32G32B32A32_SFLOAT;
-	_computeType = ComputeType::CPU;
+	_deformationType = DeformationType::PMVCSerialNoOffset;
 	Initialize();
 }
 
@@ -31,7 +31,7 @@ CubemapRenderInstance::CubemapRenderInstance(
 	CubemapManager& cubemapManager,
 	int cubemapSize,
 	VkFormat format,
-	ComputeType computeType,
+	DeformationType deformationType,
 
 	RenderResourceRef<Device> device,
 	RenderResourceRef<DescriptorPool> descriptorPool,
@@ -50,31 +50,42 @@ CubemapRenderInstance::CubemapRenderInstance(
 	MemoryMappedBuffer indexBuffer,
 	MemoryMappedBuffer vertexBuffer
 ): _cubemapSize(cubemapSize)
-	, _format(format)
-	, _computeType(computeType)
-	, _device(std::move(device))
-	, _descriptorPool(std::move(descriptorPool))
-	, _resourceManager(std::move(resourceManager))
-	, _renderPipelineManager(std::move(renderPipelineManager))
-	, _cageMesh(std::move(cageMesh))
-	, _deformableMesh(std::move(deformableMesh))
-	, _graphicsCommandPool(graphicsCommandPool)
-	, _renderPass(renderPass)
-	, _cubemapPipelineHandle(cubemapPipelineHandle)
-	, _matricesLayout(std::move(matricesLayout))
-	, _indexBuffer(std::move(indexBuffer))
-	, _vertexBuffer(std::move(vertexBuffer))
+, _format(format)
+, _deformationType(deformationType)
+, _device(std::move(device))
+, _descriptorPool(std::move(descriptorPool))
+, _resourceManager(std::move(resourceManager))
+, _renderPipelineManager(std::move(renderPipelineManager))
+, _cageMesh(std::move(cageMesh))
+, _deformableMesh(std::move(deformableMesh))
+, _graphicsCommandPool(graphicsCommandPool)
+, _renderPass(renderPass)
+, _cubemapPipelineHandle(cubemapPipelineHandle)
+, _matricesLayout(std::move(matricesLayout))
+, _indexBuffer(std::move(indexBuffer))
+, _vertexBuffer(std::move(vertexBuffer))
 {
 	Initialize();
 }
 
 void CubemapRenderInstance::Initialize() {
-	switch (_computeType)
-	{
-	case ComputeType::CPU:
-		_computeStage = std::make_unique<CpuComputeStrategy>();
-		break;
-	case ComputeType::GPUATOMIC:
+	_offset = DeformationTypeHelpers::PMVCOffset(_deformationType);
+
+	if (DeformationType::PMVCSerialOffset == _deformationType || DeformationType::PMVCSerialNoOffset == _deformationType) {
+		_computeStage = std::make_unique<GpuSerialComputeStrategy>(
+			_device,
+			_device->GetQueueFamilies()._graphics.value(),
+			_cubemapSize,
+			_format,
+			_descriptorPool,
+			_resourceManager,
+			_renderPipelineManager,
+			_cageMesh,
+			_deformableMesh, 
+			_offset
+		);
+	}
+	else if (DeformationType::PMVCRingOffset == _deformationType || DeformationType::PMVCRingNoOffset == _deformationType) {
 		_computeStage = std::make_unique<GpuAtomicComputeStrategy>(
 			_device,
 			_device->GetQueueFamilies()._graphics.value(),
@@ -84,50 +95,40 @@ void CubemapRenderInstance::Initialize() {
 			_resourceManager,
 			_renderPipelineManager,
 			_cageMesh,
-			_deformableMesh
+			_deformableMesh,
+			_offset
 		);
-		break;
-	case ComputeType::DEBUGCUBEMAPS:
+	}
+	else if (DeformationType::PMVCAllOffset == _deformationType || DeformationType::PMVCAllNoOffset == _deformationType) {
+		_computeStage = std::make_unique<GpuMPComputeStrategy>(
+			_device,
+			_device->GetQueueFamilies()._graphics.value(),
+			_cubemapSize,
+			_format,
+			_descriptorPool,
+			_resourceManager,
+			_renderPipelineManager,
+			_cageMesh,
+			_deformableMesh,
+			_offset
+		);
+	}
+	else if (DeformationType::PMVCCpuOffset == _deformationType || DeformationType::PMVCCpuNoOffset == _deformationType) {
+		_computeStage = std::make_unique<CpuComputeStrategy>();
+		/*
 		VkQueue transferQueue;
 		vkGetDeviceQueue(
 			_device,
 			_device->GetQueueFamilies()._graphics.value(),
 			0,
 			&transferQueue);
-		_computeStage = std::make_unique<DebugCubemapComputeStrategy>(
+		_computeStage = std::make_unique<GpuMPComputeStrategy>(
 			_device,
 			_device->GetPhysicalDeviceHandle(),
 			transferQueue,
 			_device->GetQueueFamilies()._graphics.value(),
 			_cubemapSize,
-			_format);
-		break;
-	case ComputeType::GPUSERIAL:
-			_computeStage = std::make_unique<GpuSerialComputeStrategy>(
-				_device,
-				_device->GetQueueFamilies()._graphics.value(),
-				_cubemapSize,
-				_format,
-				_descriptorPool,
-				_resourceManager,
-				_renderPipelineManager,
-				_cageMesh,
-				_deformableMesh
-			);
-			break;
-		case ComputeType::GPUMP:
-			_computeStage = std::make_unique<GpuMPComputeStrategy>(
-				_device,
-				_device->GetQueueFamilies()._graphics.value(),
-				_cubemapSize,
-				_format,
-				_descriptorPool,
-				_resourceManager,
-				_renderPipelineManager,
-				_cageMesh,
-				_deformableMesh
-			);
-			break;
+			_format);*/
 	}
 
 	uint32_t graphicsQueueFamilyIndex = _device->GetQueueFamilies()._graphics.value();
@@ -499,8 +500,8 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 
 		vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineObj._handle);
-		
-		VkBuffer vb[] = { _vertexBuffer._deviceBuffer};
+
+		VkBuffer vb[] = { _vertexBuffer._deviceBuffer };
 		VkDeviceSize offs[] = { 0 };
 		vkCmdBindVertexBuffers(cmd, 0, 1, vb, offs);
 		vkCmdBindIndexBuffer(
@@ -599,7 +600,7 @@ std::vector<glm::vec3> CubemapRenderInstance::BuildDeformableVertexPositions() c
 	std::vector<glm::vec3> vertices;
 	vertices.reserve(_deformableMesh._vertices.rows());
 
-	for (int i = 0; i <_deformableMesh._vertices.rows(); ++i)
+	for (int i = 0; i < _deformableMesh._vertices.rows(); ++i)
 	{
 		const auto& v = _deformableMesh._vertices.row(i);
 
@@ -618,6 +619,126 @@ static double SecondsSince(
 {
 	using namespace std::chrono;
 	return duration<double>(high_resolution_clock::now() - start).count();
+}
+
+glm::mat4 CubemapRenderInstance::ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos)
+{
+	switch (faceIndex)
+	{
+	case 0: return glm::lookAt(pos, pos + glm::vec3(1, 0, 0), glm::vec3(0, -1, 0)); // +X
+	case 1: return glm::lookAt(pos, pos + glm::vec3(-1, 0, 0), glm::vec3(0, -1, 0)); // -X
+	case 2: return glm::lookAt(pos, pos + glm::vec3(0, 1, 0), glm::vec3(0, 0, 1));  // +Y
+	case 3: return glm::lookAt(pos, pos + glm::vec3(0, -1, 0), glm::vec3(0, 0, -1)); // -Y
+	case 4: return glm::lookAt(pos, pos + glm::vec3(0, 0, 1), glm::vec3(0, -1, 0)); // +Z
+	case 5: return glm::lookAt(pos, pos + glm::vec3(0, 0, -1), glm::vec3(0, -1, 0)); // -Z
+	default: return glm::mat4(1.0f);
+	}
+}
+
+uint32_t CubemapRenderInstance::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const
+{
+	VkPhysicalDeviceMemoryProperties memProperties;
+	vkGetPhysicalDeviceMemoryProperties(_device->GetPhysicalDeviceHandle(), &memProperties);
+
+	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+		if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+			return i;
+	}
+	throw std::runtime_error("Failed to find suitable memory type!");
+}
+
+void CubemapRenderInstance::ComputeCoordinatesGPUMP(
+	const CubemapWorkRange& range,
+	Eigen::MatrixXd& weights)
+{
+	LOG_DEBUG("ComputeCoordinatesGPUAtomic (batched, no slots)");
+
+	auto* computeStage =
+		static_cast<GpuMPComputeStrategy*>(_computeStage.get());
+
+	const auto vertices = BuildDeformableVertexPositions();
+
+	const uint32_t end = std::min<uint32_t>(
+		range.first + range.count,
+		static_cast<uint32_t>(vertices.size())
+	);
+
+	const uint32_t cubemapCount = end - range.first;
+
+	VkSemaphore timeline = _timelines[0];
+	uint64_t timelineValue = 0;
+
+	// ============================================================
+	// Phase 1: Render ALL cubemaps
+	// ============================================================
+	uint64_t renderDone = ++timelineValue;
+
+	for (uint32_t i = 0; i < cubemapCount; ++i)
+	{
+		const uint32_t cubemapIdx = range.first + i;
+		CubemapRenderTarget& target =
+			_cubemapRenderUnit.targets[i];
+
+		RecordAndSubmitCubemapRender(
+			cubemapIdx,
+			vertices[cubemapIdx],
+			target,
+			timeline,
+			renderDone
+		);
+	}
+
+	// ============================================================
+	// Phase 2: Record ALL compute command buffers
+	// ============================================================
+	for (uint32_t i = 0; i < cubemapCount; ++i)
+	{
+		computeStage->RecordCompute(
+			i,
+			_cubemapRenderUnit.targets[i]
+		);
+	}
+
+	uint64_t computeDone = ++timelineValue;
+
+	computeStage->SubmitAllComputes(
+		timeline,
+		renderDone,
+		timeline,
+		computeDone
+	);
+
+	// ============================================================
+	// Phase 3: Submit ALL readback copies
+	// ============================================================
+	uint64_t copyDone = ++timelineValue;
+
+	computeStage->SubmitAllReadbackCopies(
+		timeline,
+		computeDone,
+		timeline,
+		copyDone
+	);
+
+	// ============================================================
+	// Phase 4: Wait ONCE (everything complete)
+	// ============================================================
+	VkSemaphoreWaitInfo wait{};
+	wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+	wait.semaphoreCount = 1;
+	wait.pSemaphores = &timeline;
+	wait.pValues = &copyDone;
+
+	vkWaitSemaphores(_device, &wait, UINT64_MAX);
+
+	// ============================================================
+	// Phase 5: Consume ALL slots (CPU-side)
+	// ============================================================
+	computeStage->ConsumeAllSlots();
+
+	weights = computeStage->Readback();
+
+	LOG_DEBUG("ComputeCoordinatesGPUAtomic (batched): done");
 }
 
 void CubemapRenderInstance::ComputeCoordinatesGPUAtomic(
@@ -886,122 +1007,24 @@ void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
 	LOG_DEBUG("ComputeCoordinatesGPUSerial: done");
 }
 
-glm::mat4 CubemapRenderInstance::ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos)
+void CubemapRenderInstance::ComputeCoordinatesCpu(
+	const CubemapWorkRange& range, Eigen::MatrixXd& weights)
 {
-	switch (faceIndex)
-	{
-	case 0: return glm::lookAt(pos, pos + glm::vec3(1, 0, 0), glm::vec3(0, -1, 0)); // +X
-	case 1: return glm::lookAt(pos, pos + glm::vec3(-1, 0, 0), glm::vec3(0, -1, 0)); // -X
-	case 2: return glm::lookAt(pos, pos + glm::vec3(0, 1, 0), glm::vec3(0, 0, 1));  // +Y
-	case 3: return glm::lookAt(pos, pos + glm::vec3(0, -1, 0), glm::vec3(0, 0, -1)); // -Y
-	case 4: return glm::lookAt(pos, pos + glm::vec3(0, 0, 1), glm::vec3(0, -1, 0)); // +Z
-	case 5: return glm::lookAt(pos, pos + glm::vec3(0, 0, -1), glm::vec3(0, -1, 0)); // -Z
-	default: return glm::mat4(1.0f);
-	}
+
 }
 
-uint32_t CubemapRenderInstance::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const
-{
-	VkPhysicalDeviceMemoryProperties memProperties;
-	vkGetPhysicalDeviceMemoryProperties(_device->GetPhysicalDeviceHandle(), &memProperties);
-
-	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-		if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-			return i;
+void CubemapRenderInstance::ComputeCoordinates(
+	const CubemapWorkRange& range, Eigen::MatrixXd& weights) {
+	if (DeformationType::PMVCSerialOffset == _deformationType || DeformationType::PMVCSerialNoOffset == _deformationType) {
+		ComputeCoordinatesGPUSerial(range, weights);
 	}
-	throw std::runtime_error("Failed to find suitable memory type!");
-}
-
-void CubemapRenderInstance::ComputeCoordinatesGPUMP(
-	const CubemapWorkRange& range,
-	Eigen::MatrixXd& weights)
-{
-	LOG_DEBUG("ComputeCoordinatesGPUAtomic (batched, no slots)");
-
-	auto* computeStage =
-		static_cast<GpuMPComputeStrategy*>(_computeStage.get());
-
-	const auto vertices = BuildDeformableVertexPositions();
-
-	const uint32_t end = std::min<uint32_t>(
-		range.first + range.count,
-		static_cast<uint32_t>(vertices.size())
-	);
-
-	const uint32_t cubemapCount = end - range.first;
-
-	VkSemaphore timeline = _timelines[0];
-	uint64_t timelineValue = 0;
-
-	// ============================================================
-	// Phase 1: Render ALL cubemaps
-	// ============================================================
-	uint64_t renderDone = ++timelineValue;
-
-	for (uint32_t i = 0; i < cubemapCount; ++i)
-	{
-		const uint32_t cubemapIdx = range.first + i;
-		CubemapRenderTarget& target =
-			_cubemapRenderUnit.targets[i];
-
-		RecordAndSubmitCubemapRender(
-			cubemapIdx,
-			vertices[cubemapIdx],
-			target,
-			timeline,
-			renderDone
-		);
+	else if (DeformationType::PMVCRingOffset == _deformationType || DeformationType::PMVCRingNoOffset == _deformationType) {
+		ComputeCoordinatesGPUAtomic(range, weights);
 	}
-
-	// ============================================================
-	// Phase 2: Record ALL compute command buffers
-	// ============================================================
-	for (uint32_t i = 0; i < cubemapCount; ++i)
-	{
-		computeStage->RecordCompute(
-			i,
-			_cubemapRenderUnit.targets[i]
-		);
+	else if (DeformationType::PMVCAllOffset == _deformationType || DeformationType::PMVCAllNoOffset == _deformationType) {
+		ComputeCoordinatesGPUMP(range, weights);
 	}
-
-	uint64_t computeDone = ++timelineValue;
-
-	computeStage->SubmitAllComputes(
-		timeline,
-		renderDone,
-		timeline,
-		computeDone
-	);
-
-	// ============================================================
-	// Phase 3: Submit ALL readback copies
-	// ============================================================
-	uint64_t copyDone = ++timelineValue;
-
-	computeStage->SubmitAllReadbackCopies(
-		timeline,
-		computeDone,
-		timeline,
-		copyDone
-	);
-
-	// ============================================================
-	// Phase 4: Wait ONCE (everything complete)
-	// ============================================================
-	VkSemaphoreWaitInfo wait{};
-	wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-	wait.semaphoreCount = 1;
-	wait.pSemaphores = &timeline;
-	wait.pValues = &copyDone;
-
-	vkWaitSemaphores(_device, &wait, UINT64_MAX);
-
-	// ============================================================
-	// Phase 5: Consume ALL slots (CPU-side)
-	// ============================================================
-	computeStage->ConsumeAllSlots();
-
-	weights = computeStage->Readback();
-
-	LOG_DEBUG("ComputeCoordinatesGPUAtomic (batched): done");
+	else if (DeformationType::PMVCCpuOffset == _deformationType || DeformationType::PMVCCpuNoOffset == _deformationType) {
+		ComputeCoordinatesCpu(range, weights);
+	}
 }

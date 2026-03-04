@@ -22,7 +22,8 @@ public:
         const std::shared_ptr<RenderResourceManager>& resourceManager,
         const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
         EigenMesh& cageMesh,
-        EigenMesh& deformableMesh)
+        EigenMesh& deformableMesh,
+        bool offset)
         : _device(device)
         , _transferQueueFamily(transferQueueFamily)
         , _faceSize(faceSize)
@@ -32,6 +33,7 @@ public:
         , _renderPipelineManager(renderPipelineManager)
         , _cageMesh(cageMesh)
         , _deformableMesh(deformableMesh)
+        , _offset(offset)
     {
     }
 
@@ -114,6 +116,8 @@ private:
     void WriteWeightsToFile(const std::string& filename);
 
     int _targetCount = 1;
+
+	bool _offset = false;
 
     VkSampler _barySampler;
     VkSampler _depthSampler;

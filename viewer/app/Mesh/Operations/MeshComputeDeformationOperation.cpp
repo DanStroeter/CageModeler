@@ -135,12 +135,15 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 			//WriteWeightsToFile("mvc", _params._weightsData._weights.transpose());
 			vertexData[i]._vertices = _params._weightsData._weights.transpose() * _params._deformedCage._vertices;
 		}
-		else if (_params._deformationType == DeformationType::PMVCRayracing || _params._deformationType == DeformationType::PMVCLipman) {
-			
-			/* Rest data(never modified)
+		else if (DeformationTypeHelpers::PMVCNoOffset(_params._deformationType)) {
+			vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices;
+		}
+		else if (DeformationTypeHelpers::PMVCOffset(_params._deformationType)) {
+
+			//Rest data(never modified)
 			const auto& C0 = _params._cage._vertices;
 			const auto& V0 = _params._mesh._vertices;
-			
+
 
 			// Deformed cage
 			const auto& C1 = _params._deformedCage._vertices;
@@ -159,10 +162,13 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 
 			// 4) Final vertices
 			vertexData[i]._vertices = proj1 + offset;
-			
+
 			//WriteWeightsToFile("pmvc", _params._weightsData._weights);
-			*/
-			vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices;
+		}
+		else if (_params._deformationType == DeformationType::Raytracing)
+		{
+			LOG_ERROR("PMVCRaytracing not implemented yet!");
+			return ExecutionResult("Failed to compute PMVC deformation");
 		}
 		else if (_params._deformationType == DeformationType::Somigliana)
 		{

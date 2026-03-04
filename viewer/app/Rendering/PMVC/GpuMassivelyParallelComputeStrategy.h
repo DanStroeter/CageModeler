@@ -24,7 +24,8 @@ public:
         const std::shared_ptr<RenderResourceManager>& resourceManager,
         const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
         EigenMesh& cageMesh,
-        EigenMesh& deformableMesh)
+        EigenMesh& deformableMesh, 
+        bool offset)
         : _device(device)
         , _transferQueueFamily(transferQueueFamily)
         , _faceSize(faceSize)
@@ -34,6 +35,7 @@ public:
         , _renderPipelineManager(renderPipelineManager)
         , _cageMesh(cageMesh)
         , _deformableMesh(deformableMesh)
+        , _offset(offset)
     {
 		_targetCount = _deformableMesh._vertices.rows();
     }
@@ -138,4 +140,6 @@ private:
     int _targetCount = 6;
 
     VkSampler _barySampler;
+
+	bool _offset = false;
 };

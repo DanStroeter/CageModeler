@@ -50,7 +50,7 @@ public:
 	~CubemapManager();
 	void Initialize();
 
-	MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates();
+	MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates(DeformationType deformationType);
 	void DebugRenderCubemaps();
 	void DebugComputeCoordinates();
 

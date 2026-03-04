@@ -138,7 +138,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCancelled(); },
 		[this] { OnNewProjectCreated(); });
 
-	_projectModel->_deformationType = DeformationType::PMVCLipman;
+	_projectModel->_deformationType = DeformationType::PMVCSerialNoOffset;
 	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
 	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
 	_projectModel->_meshFilepath = "assets/meshes/armadilloman.obj";
@@ -638,20 +638,22 @@ void Editor::OnNewProjectCreated()
 
 		std::future<WeightsResult> future;
 
-		if (_projectModel->_deformationType == DeformationType::PMVCLipman) {
+		if (DeformationTypeHelpers::IsPMVC(_projectModel->_deformationType)) {
 
 			auto promise = std::make_shared<std::promise<WeightsResult>>();
 			future = promise->get_future();
-
 			_mainThreadQueue->Push(
 				[this, projectResult, promise]() mutable {
 				_cubemapRenderer->SetCage(projectResult.GetValue()->_cage);
 				_cubemapRenderer->SetMesh(projectResult.GetValue()->_mesh);
 				_cubemapRenderer->Initialize();
 
-				promise->set_value(_cubemapRenderer->ComputeCoordinates());
+				promise->set_value(_cubemapRenderer->ComputeCoordinates(projectResult.GetValue()->_deformationType));
 			}
 			);
+		}
+		else if (_projectModel->_deformationType == DeformationType::Raytracing) {
+
 		}
 		else {
 			std::promise<WeightsResult> promise;
@@ -660,7 +662,7 @@ void Editor::OnNewProjectCreated()
 		}
 
 		auto weightsResult = future.get();
-		if (weightsResult.HasError() && _projectModel.get()->_deformationType != DeformationType::PMVCLipman)
+		if (weightsResult.HasError() && !DeformationTypeHelpers::IsPMVC(_projectModel.get()->_deformationType))
 		{
 			// Update the status with an error.
 			_mainThreadQueue->Push([this, error = std::move(weightsResult.GetError())]() mutable
