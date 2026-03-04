@@ -170,7 +170,6 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
 		VK_IMAGE_USAGE_SAMPLED_BIT |
 		VK_IMAGE_USAGE_STORAGE_BIT |
-		VK_IMAGE_LAYOUT_GENERAL |
 		VK_IMAGE_USAGE_TRANSFER_SRC_BIT; //TODO: only added for debugging prints for image remove after done(needed for CPU compute?)
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -259,8 +258,7 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-		VK_IMAGE_USAGE_SAMPLED_BIT |
-		VK_IMAGE_LAYOUT_GENERAL;
+		VK_IMAGE_USAGE_SAMPLED_BIT;
 	depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	VK_CHECK(vkCreateImage(_device, &depthInfo, nullptr, &target.depthImage));
@@ -292,16 +290,16 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	}
 
 	VkImageViewCreateInfo depthViewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-	cubeViewInfo.image = target.depthImage;
-	cubeViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-	cubeViewInfo.format = _format;
-	cubeViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-	cubeViewInfo.subresourceRange.baseMipLevel = 0;
-	cubeViewInfo.subresourceRange.levelCount = 1;
-	cubeViewInfo.subresourceRange.baseArrayLayer = 0;
-	cubeViewInfo.subresourceRange.layerCount = 6;
+	depthViewInfo.image = target.depthImage;
+	depthViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+	depthViewInfo.format = depthFormat;
+	depthViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	depthViewInfo.subresourceRange.baseMipLevel = 0;
+	depthViewInfo.subresourceRange.levelCount = 1;
+	depthViewInfo.subresourceRange.baseArrayLayer = 0;
+	depthViewInfo.subresourceRange.layerCount = 6;
 
-	VK_CHECK(vkCreateImageView(_device, &cubeViewInfo, nullptr, &target.cubemapView));
+	VK_CHECK(vkCreateImageView(_device, &depthViewInfo, nullptr, &target.depthView));
 
 	// ---------------------------------------------------------------------
 	// Create framebuffers
