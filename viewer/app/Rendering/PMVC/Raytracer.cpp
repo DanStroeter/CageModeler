@@ -1159,10 +1159,13 @@ void Raytracer::CreateReadbackResources()
 	VK_CHECK(vkCreateFence(_device, &fenceInfo, nullptr, &_readback.copyCompleteFence));
 
 	// Staging buffer
+	std::vector<std::byte> readbackStorage(static_cast<size_t>(hitBufferSize));
+
 	_readback.stagingBuffer = _resourceManager->CreateBufferAndMapMemory(
 		//std::span<std::byte>((std::byte*)_readback.mappedData,
 			//static_cast<size_t>(hitBufferSize)),
-		std::span<std::byte>{},
+		//std::span<std::byte>{},
+		std::span(readbackStorage),
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
