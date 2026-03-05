@@ -28,6 +28,13 @@ Raytracer::~Raytracer()
 
 void Raytracer::Initialize()
 {
+	const auto queueFamilies = _device->GetQueueFamilies();
+	if (!queueFamilies._graphics.has_value())
+	{
+		throw std::runtime_error("Raytracer requires a graphics queue family for ray tracing dispatch");
+	}
+
+	_queueFamilyIndex = queueFamilies._graphics.value();
 	GetRaytracingComponents();
 	CreateCommandPool();
 	vkGetDeviceQueue(
@@ -819,14 +826,26 @@ void Raytracer::CreateShaderBindingTable(const VkRayTracingPipelineCreateInfoKHR
 	uint32_t handleAlignment = _rtProperties.shaderGroupHandleAlignment;
 	uint32_t baseAlignment = _rtProperties.shaderGroupBaseAlignment;
 
-	uint32_t raygenSize = alignUp(handleSize, handleAlignment);
-	uint32_t missSize = alignUp(handleSize, handleAlignment);
-	uint32_t hitSize = alignUp(handleSize, handleAlignment);
+	//uint32_t raygenSize = alignUp(handleSize, handleAlignment);
+	//uint32_t missSize = alignUp(handleSize, handleAlignment);
+	//uint32_t hitSize = alignUp(handleSize, handleAlignment);
 
+	uint32_t handleSizeAligned = alignUp(handleSize, handleAlignment);
+	uint32_t raygenStride = alignUp(handleSizeAligned, baseAlignment);
+	uint32_t raygenSize = raygenStride;
+
+	uint32_t missStride = handleSizeAligned;
+	uint32_t missSize = alignUp(missStride, baseAlignment);
+
+	uint32_t hitStride = handleSizeAligned;
+	uint32_t hitSize = alignUp(hitStride, baseAlignment);
 	// Calculate offsets
 	uint32_t raygenOffset = 0;
-	uint32_t missOffset = alignUp(raygenSize, baseAlignment);
-	uint32_t hitOffset = alignUp(missOffset + missSize, baseAlignment);
+	//uint32_t missOffset = alignUp(raygenSize, baseAlignment);
+	//uint32_t hitOffset = alignUp(missOffset + missSize, baseAlignment);
+	uint32_t missOffset = raygenOffset + raygenSize;
+	uint32_t hitOffset = missOffset + missSize;
+
 
 	size_t sbtSize = hitOffset + hitSize;
 
@@ -865,19 +884,19 @@ void Raytracer::CreateShaderBindingTable(const VkRayTracingPipelineCreateInfoKHR
 
 	_raygenRegion = {
 		.deviceAddress = sbtAddress + raygenOffset,
-		.stride = raygenSize,
+		.stride = raygenStride,
 		.size = raygenSize
 	};
 
 	_missRegion = {
 		.deviceAddress = sbtAddress + missOffset,
-		.stride = missSize,
+		.stride = missStride,
 		.size = missSize
 	};
 
 	_hitRegion = {
 		.deviceAddress = sbtAddress + hitOffset,
-		.stride = hitSize,
+		.stride = hitStride,
 		.size = hitSize
 	};
 
