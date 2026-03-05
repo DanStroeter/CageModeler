@@ -82,7 +82,9 @@ public:
 
 		VkCommandPool graphicsCommandPool,
 		VkRenderPass renderPass,
+		VkRenderPass renderPassCpu,
 		PipelineHandle cubemapPipelineHandle,
+		PipelineHandle cubemapPipelineHandleCpu,
 
 		RenderResourceRef<DescriptorSetLayout> matricesLayout,
 
@@ -150,7 +152,9 @@ private:
 	EigenMesh _deformableMesh;
 	VkCommandPool _graphicsCommandPool;
 	VkRenderPass _renderPass;
+	VkRenderPass _renderPassCpu;
 	PipelineHandle _cubemapPipelineHandle;
+	PipelineHandle _cubemapPipelineHandleCpu;
 	RenderResourceRef<DescriptorSetLayout>  _matricesLayout;
 	MemoryMappedBuffer _indexBuffer;
 	MemoryMappedBuffer _vertexBuffer;
