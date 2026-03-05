@@ -37,7 +37,7 @@ struct CubemapRenderUnit
 {
 	std::vector<CubemapRenderTarget> targets;
 
-	std::array<VkCommandBuffer, 6> graphicsCmd;
+	std::vector<std::array<VkCommandBuffer, 6>> graphicsCmdPerTarget;
 
 	MemoryMappedBuffer matricesUBO;
 	VkDescriptorSet    matricesDescriptorSet;
@@ -122,7 +122,7 @@ private:
 	void UpdateMatricesDescriptorSet();
 	void CreateSyncObjects();
 
-	void RecordAndSubmitCubemapRender(uint32_t cubemapIdx, const glm::vec3& camPos, 
+	void RecordAndSubmitCubemapRender(uint32_t cubemapIdx, uint32_t targetIndex, const glm::vec3& camPos,
 		CubemapRenderTarget& target, VkSemaphore timeline, uint64_t signalValue); //TODO submit cubemap at once not in 6 parts
 	std::vector<glm::vec3> BuildDeformableVertexPositions() const;
 

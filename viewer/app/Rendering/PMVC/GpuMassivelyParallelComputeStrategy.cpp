@@ -375,7 +375,7 @@ Eigen::MatrixXd GpuMPComputeStrategy::Readback()
 	for (int i = 0; i < _lambdaResults.rows(); ++i) {
 		_lambdaResults.row(i) /= _wsumResults[i];
 	}
-	WriteWeightsToFile("GpuMPComputeStrategy_Readback.txt");
+	//WriteWeightsToFile("GpuMPComputeStrategy_Readback.txt");
 	return _lambdaResults;
 }
 

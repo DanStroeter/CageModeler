@@ -135,8 +135,6 @@ void CubemapRenderInstance::Initialize() {
 	uint32_t graphicsQueueFamilyIndex = _device->GetQueueFamilies()._graphics.value();
 	CreateCommandPool(graphicsQueueFamilyIndex);
 
-	_cubemapRenderUnit = CreateCubemapRenderUnit();
-
 	const uint32_t targetCount = _computeStage->RequiredRenderTargetCount();
 	_computeStage->Initialize();
 
@@ -145,6 +143,8 @@ void CubemapRenderInstance::Initialize() {
 	{
 		_cubemapRenderUnit.targets.push_back(CreateCubemapRenderTarget());
 	}
+
+	_cubemapRenderUnit = CreateCubemapRenderUnit();
 	UpdateMatricesDescriptorSet();
 	CreateSyncObjects();
 	//_sphereWeightCalculator = SphereWeightCalculator();
@@ -331,7 +331,7 @@ CubemapRenderUnit CubemapRenderInstance::CreateCubemapRenderUnit() const
 {
 	VkDeviceSize matricesUBOSize = sizeof(CubemapMatricesUBO);
 	CubemapRenderUnit unit{};
-
+	unit.targets = _cubemapRenderUnit.targets;
 	// ------------------------------------------------------------
 	// Create uniform buffer
 	// ------------------------------------------------------------
@@ -367,7 +367,7 @@ CubemapRenderUnit CubemapRenderInstance::CreateCubemapRenderUnit() const
 	// ------------------------------------------------------------
 	// Allocate command buffers (one per face)
 	// ------------------------------------------------------------
-	std::array<VkCommandBuffer, 6> buffers{};
+	/*std::array<VkCommandBuffer, 6> buffers{};
 
 	VkCommandBufferAllocateInfo alloc{
 		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -381,14 +381,39 @@ CubemapRenderUnit CubemapRenderInstance::CreateCubemapRenderUnit() const
 		&alloc,
 		buffers.data()));
 
-	//unit.beginCmd = buffers[0];
+	//unit.beginCmd = buffers[0];*/
+	const uint32_t targetCount =
+		static_cast<uint32_t>(unit.targets.size());
+	unit.graphicsCmdPerTarget.resize(targetCount);
 
-	for (uint32_t i = 0; i < 6; ++i)
+	/*for (uint32_t i = 0; i < 6; ++i)
 		unit.graphicsCmd[i] = buffers[i];
-
+		*/
 	//unit.endCmd = buffers[7];
 
+	if (targetCount > 0)
+	{
+		std::vector<VkCommandBuffer> flatBuffers(targetCount * 6);
 
+		VkCommandBufferAllocateInfo alloc{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+			.commandPool = _graphicCommandPool,
+			.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+			.commandBufferCount = static_cast<uint32_t>(flatBuffers.size())
+		};
+		VK_CHECK(vkAllocateCommandBuffers(
+			_device,
+			&alloc,
+			flatBuffers.data()));
+		for (uint32_t target = 0; target < targetCount; ++target)
+		{
+			for (uint32_t face = 0; face < 6; ++face)
+			{
+				unit.graphicsCmdPerTarget[target][face] =
+					flatBuffers[target * 6 + face];
+			}
+		}
+	}
 	/*VkCommandBufferAllocateInfo cmdAllocInfo{
 		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO
 	};
@@ -437,11 +462,14 @@ void CubemapRenderInstance::UpdateMatricesDescriptorSet()
 
 void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 	uint32_t cubemapIdx,
+	uint32_t targetIndex,
 	const glm::vec3& camPos,
 	CubemapRenderTarget& target,
 	VkSemaphore timeline,
 	uint64_t signalValue)
 {
+	assert(targetIndex < _cubemapRenderUnit.graphicsCmdPerTarget.size());
+
 	VkClearValue clearValues[2]{};
 	clearValues[0].color = { {0.f, 0.f, 0.f, 1.f} };
 	clearValues[1].depthStencil = { 1.f, 0 };
@@ -473,7 +501,7 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 	// =====================================================================
 	for (uint32_t face = 0; face < 6; ++face)
 	{
-		VkCommandBuffer cmd = _cubemapRenderUnit.graphicsCmd[face];
+		VkCommandBuffer cmd = _cubemapRenderUnit.graphicsCmdPerTarget[targetIndex][face];
 		VK_CHECK(vkResetCommandBuffer(cmd, 0));
 		VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
 
@@ -537,7 +565,7 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 		cmdInfos[i] = {
 			VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
 			nullptr,
-			_cubemapRenderUnit.graphicsCmd[i]
+			_cubemapRenderUnit.graphicsCmdPerTarget[targetIndex][i]
 		};
 	}
 
@@ -652,6 +680,8 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 	const CubemapWorkRange& range,
 	Eigen::MatrixXd& weights)
 {
+	auto waitStart = std::chrono::high_resolution_clock::now();
+	auto waitTemp = std::chrono::high_resolution_clock::now();
 	LOG_DEBUG("ComputeCoordinatesGPUAtomic (batched, no slots)");
 
 	auto* computeStage =
@@ -667,13 +697,39 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 	const uint32_t cubemapCount = end - range.first;
 
 	VkSemaphore timeline = _timelines[0];
-	uint64_t timelineValue = 0;
+	uint64_t& timelineValue = _slotDoneValue[0];
 
+	if (timelineValue > 0)
+	{
+		VkSemaphoreWaitInfo waitInfo{};
+		waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+		waitInfo.semaphoreCount = 1;
+		waitInfo.pSemaphores = &timeline;
+		waitInfo.pValues = &timelineValue;
+		VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
+	}
+
+	if (timelineValue > 0)
+	{
+		VkSemaphoreWaitInfo waitInfo{};
+		waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+		waitInfo.semaphoreCount = 1;
+		waitInfo.pSemaphores = &timeline;
+		waitInfo.pValues = &timelineValue;
+		VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
+	}
 	// ============================================================
 	// Phase 1: Render ALL cubemaps
 	// ============================================================
 	uint64_t renderDone = timelineValue;
 
+	double waitSeconds = SecondsSince(waitTemp);
+	LOG_DEBUG("Init complete");
+	LOG_DEBUG(
+		"Total time={:.6f} ms",
+		waitSeconds * 1000.0);
+
+	waitTemp = std::chrono::high_resolution_clock::now();
 	for (uint32_t i = 0; i < cubemapCount; ++i)
 	{
 		const uint32_t cubemapIdx = range.first + i;
@@ -682,16 +738,22 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 		renderDone = ++timelineValue;
 		RecordAndSubmitCubemapRender(
 			cubemapIdx,
+			i,
 			vertices[cubemapIdx],
 			target,
 			timeline,
 			renderDone
 		);
 	}
-
+	LOG_DEBUG("Cubemap Renders submitted");
+	waitSeconds = SecondsSince(waitTemp);
+	LOG_DEBUG(
+		"Total time={:.6f} ms",
+		waitSeconds * 1000.0);
 	// ============================================================
 	// Phase 2: Record ALL compute command buffers
 	// ============================================================
+	waitTemp = std::chrono::high_resolution_clock::now();
 	for (uint32_t i = 0; i < cubemapCount; ++i)
 	{
 		computeStage->RecordCompute(
@@ -700,28 +762,41 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 			range.first + i
 		);
 	}
+	LOG_DEBUG("Cubemap Renders recorded");
+	waitSeconds = SecondsSince(waitTemp);
+	LOG_DEBUG(
+		"Total time={:.6f} ms",
+		waitSeconds * 1000.0);
 
 	uint64_t computeDone = ++timelineValue;
-
+	waitTemp = std::chrono::high_resolution_clock::now();
 	computeStage->SubmitAllComputes(
 		timeline,
 		renderDone,
 		timeline,
 		computeDone
 	);
-
+	LOG_DEBUG("Computes submitted");
+	waitSeconds = SecondsSince(waitTemp);
+	LOG_DEBUG(
+		"Total time={:.6f} ms",
+		waitSeconds * 1000.0);
 	// ============================================================
 	// Phase 3: Submit ALL readback copies
 	// ============================================================
 	uint64_t copyDone = ++timelineValue;
-
+	waitTemp = std::chrono::high_resolution_clock::now();
 	computeStage->SubmitAllReadbackCopies(
 		timeline,
 		computeDone,
 		timeline,
 		copyDone
 	);
-
+	LOG_DEBUG("Readback submitted");
+	waitSeconds = SecondsSince(waitTemp);
+	LOG_DEBUG(
+		"Total time={:.6f} ms",
+		waitSeconds * 1000.0);
 	// ============================================================
 	// Phase 4: Wait ONCE (everything complete)
 	// ============================================================
@@ -732,15 +807,29 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 	wait.pValues = &copyDone;
 
 	vkWaitSemaphores(_device, &wait, UINT64_MAX);
-
+	//timelineValue = copyDone;
+	timelineValue = copyDone;
 	// ============================================================
 	// Phase 5: Consume ALL slots (CPU-side)
 	// ============================================================
+	waitTemp = std::chrono::high_resolution_clock::now();
 	computeStage->ConsumeAllSlots();
-
+	LOG_DEBUG("Slots consumed");
+	waitSeconds = SecondsSince(waitTemp);
+	LOG_DEBUG(
+		"Total time={:.6f} ms",
+		waitSeconds * 1000.0);
+	waitTemp = std::chrono::high_resolution_clock::now();
 	weights = computeStage->Readback();
-
+	waitSeconds = SecondsSince(waitTemp);
+	LOG_DEBUG(
+		"Total time={:.6f} ms",
+		waitSeconds * 1000.0);
 	LOG_DEBUG("ComputeCoordinatesGPUAtomic (batched): done");
+	waitSeconds = SecondsSince(waitStart);
+	LOG_DEBUG(
+		"Total time={:.6f} ms",
+		waitSeconds * 1000.0);
 }
 
 void CubemapRenderInstance::ComputeCoordinatesGPUAtomic(
@@ -817,6 +906,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUAtomic(
 
 		RecordAndSubmitCubemapRender(
 			cubemapIdx,
+			slot,
 			vertices[cubemapIdx],
 			target,
 			timeline,
@@ -944,6 +1034,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
 
 		RecordAndSubmitCubemapRender(
 			cubemapIdx,
+			slot,
 			vertices[cubemapIdx],
 			target,
 			timeline,
