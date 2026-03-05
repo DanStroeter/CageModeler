@@ -372,7 +372,7 @@ Eigen::MatrixXd GpuAtomicComputeStrategy::Readback()
 	for (int i = 0; i < _lambdaResults.rows(); ++i) {
 		_lambdaResults.row(i) /= _wsumResults[i];
 	}
-	WriteWeightsToFile("GpuAtomicComputeStrategy_Readback.txt");
+	//WriteWeightsToFile("GpuAtomicComputeStrategy_Readback.txt");
 	return _lambdaResults;
 }
 
