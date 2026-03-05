@@ -146,7 +146,8 @@ void Raytracer::StartRayTrace()
 		&_pushConstants
 	);
 
-	const uint32_t totalRays = _pushConstants.raysPerVertex * _pushConstants.maxHitsPerRay * _pushConstants.vertexCount;
+	//const uint32_t totalRays = _pushConstants.raysPerVertex * _pushConstants.maxHitsPerRay * _pushConstants.vertexCount;
+	const uint32_t totalRays = _pushConstants.vertexCount* _pushConstants.raysPerVertex;
 
 	if (vkCreateRayTracingPipelinesKHR == nullptr ||
 		vkCmdTraceRaysKHR == nullptr) {
@@ -1159,8 +1160,9 @@ void Raytracer::CreateReadbackResources()
 
 	// Staging buffer
 	_readback.stagingBuffer = _resourceManager->CreateBufferAndMapMemory(
-		std::span<std::byte>((std::byte*)_readback.mappedData,
-			static_cast<size_t>(hitBufferSize)),
+		//std::span<std::byte>((std::byte*)_readback.mappedData,
+			//static_cast<size_t>(hitBufferSize)),
+		std::span<std::byte>{},
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
@@ -1236,7 +1238,12 @@ std::vector<Raytracer::HitBufferData> Raytracer::GetHitResults()
 {
 	WaitForReadbackComplete();
 
-	uint32_t hitCount = _readback.size;
+	//uint32_t hitCount = _readback.size;
+	const uint32_t hitCount = static_cast<uint32_t>(_readback.size / sizeof(HitBufferData));
+	//const uint32_t hitCount = _pushConstants.vertexCount *
+	//_pushConstants.raysPerVertex*
+		//_pushConstants.maxHitsPerRay; TODO
+
 
 	HitBufferData* hits = static_cast<HitBufferData*>(_readback.stagingBuffer._mappedData);
 

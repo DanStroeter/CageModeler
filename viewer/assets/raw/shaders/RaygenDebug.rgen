@@ -26,15 +26,17 @@ layout(set = 0, binding = 2, std430) readonly buffer RayDirectionBuffer
     vec4 directions[];
 } rayDirectionBuffer;
 
-// Binding 3: Hit buffer with atomic counter at start
-// HitBufferData = uint32_t rayIndex;
-layout(set = 0, binding = 3, std430) buffer HitBuffer 
+// Binding 3: Hit buffer (HitBufferData = uint32_t rayIndex)
+layout(set = 0, binding = 3, std430) buffer HitBuffer
 {
-    uint atomicCounter;
     uint rayIndices[];  // Each entry is just a rayIndex (uint32_t)
 } hitBuffer;
 
-// Binding 4: Atomic counter (redundant since it's part of hitBuffer)
+// Binding 4: Atomic counter used to append into hitBuffer
+layout(set = 0, binding = 4, std430) buffer CounterBuffer
+{
+        uint atomicCounter;
+    } counterBuffer;
 
 // Ray payload (minimal for this test)
 layout(location = 0) rayPayloadEXT vec4 payload;
@@ -59,11 +61,16 @@ void main()
     
     // --- VALIDATION WRITE ---cd 
     // Atomically increment counter and get index for this hit
-    uint hitIndex = atomicAdd(hitBuffer.atomicCounter, 1);
+    uint hitIndex = atomicAdd(counterBuffer.atomicCounter, 1);
     
     // Store just the rayIndex as per HitBufferData structure
-    hitBuffer.rayIndices[hitIndex] = globalRayIndex;
-    
+    //hitBuffer.rayIndices[hitIndex] = globalRayIndex;
+    uint hitIndex = atomicAdd(hitCounter.value, 1);
+    if (hitIndex < totalRays)
+    {
+        // Store just the rayIndex as per HitBufferData structure
+        hitBuffer.rayIndices[hitIndex] = globalRayIndex;
+    }
     // Optionally trace a ray (commented out for pure validation)
     /*
     // Trace ray

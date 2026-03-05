@@ -185,7 +185,7 @@ private:
     struct ReadbackData {
         MemoryMappedBuffer stagingBuffer; 
         VkDeviceSize size = 0;
-        HitBufferData* mappedData;
+        HitBufferData* mappedData = nullptr;
 
         VkCommandBuffer copyCmd = VK_NULL_HANDLE;
         VkFence copyCompleteFence = VK_NULL_HANDLE;
