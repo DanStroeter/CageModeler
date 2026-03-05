@@ -189,7 +189,7 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	VK_CHECK(vkBindImageMemory(_device, target.cubemapImage, target.cubemapMemory, 0));
 
 
-	VkCommandBufferAllocateInfo allocInfoCB{
+	/*VkCommandBufferAllocateInfo allocInfoCB{
 	.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
 	.commandPool = _graphicCommandPool, // or graphics pool
 	.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
@@ -205,7 +205,7 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	};
 
 	VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
-
+	*/
 	// ---------------------------------------------------------------------
 	// Create per-face color views
 	// ---------------------------------------------------------------------
@@ -261,7 +261,8 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-		VK_IMAGE_USAGE_SAMPLED_BIT;
+		VK_IMAGE_USAGE_SAMPLED_BIT |
+		VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	VK_CHECK(vkCreateImage(_device, &depthInfo, nullptr, &target.depthImage));
@@ -1116,6 +1117,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
 void CubemapRenderInstance::ComputeCoordinatesCpu(
 	const CubemapWorkRange& range, Eigen::MatrixXd& weights)
 {
+	LOG_DEBUG("Start cpu");
 	auto* computeStage = static_cast<CpuComputeStrategy*>(_computeStage.get());
 	const auto vertices = BuildDeformableVertexPositions();
 
@@ -1137,7 +1139,7 @@ void CubemapRenderInstance::ComputeCoordinatesCpu(
 		waitInfo.pValues = &timelineValue;
 		VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
 	}
-
+	LOG_DEBUG("Start render");
 	uint64_t renderDone = timelineValue;
 	for (uint32_t i = 0; i < cubemapCount; ++i)
 	{
@@ -1156,7 +1158,7 @@ void CubemapRenderInstance::ComputeCoordinatesCpu(
 
 		computeStage->RecordReadback(i, target, cubemapIdx);
 	}
-
+	LOG_DEBUG("Readback start");
 	const uint64_t readbackDone = ++timelineValue;
 	computeStage->SubmitAllReadbacks(
 		timeline,
@@ -1164,7 +1166,7 @@ void CubemapRenderInstance::ComputeCoordinatesCpu(
 		timeline,
 		readbackDone
 	);
-
+	
 	VkSemaphoreWaitInfo wait{};
 	wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
 	wait.semaphoreCount = 1;
@@ -1172,7 +1174,7 @@ void CubemapRenderInstance::ComputeCoordinatesCpu(
 	wait.pValues = &readbackDone;
 	VK_CHECK(vkWaitSemaphores(_device, &wait, UINT64_MAX));
 	timelineValue = readbackDone;
-
+	LOG_DEBUG("Compute start");
 	computeStage->ConsumeAllSlots();
 	weights = computeStage->Readback();
 }

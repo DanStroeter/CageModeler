@@ -83,14 +83,16 @@ void CpuComputeStrategy::AllocateResources()
         _slots[i].colorMemory = color._deviceMemory;
         _slots[i].colorMapped = color._mappedData;
 
-        auto depth = _resourceManager->CreateBufferAndMapMemory(
-            std::span<std::byte>((std::byte*)nullptr, depthSize),
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (!_offset) {
+            auto depth = _resourceManager->CreateBufferAndMapMemory(
+                std::span<std::byte>((std::byte*)nullptr, depthSize),
+                VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-        _slots[i].depthBuffer = depth._deviceBuffer;
-        _slots[i].depthMemory = depth._deviceMemory;
-        _slots[i].depthMapped = depth._mappedData;
+            _slots[i].depthBuffer = depth._deviceBuffer;
+            _slots[i].depthMemory = depth._deviceMemory;
+            _slots[i].depthMapped = depth._mappedData;
+        }
     }
 
     const int triCount = _cageMesh._faces.rows();
@@ -102,6 +104,7 @@ void CpuComputeStrategy::AllocateResources()
         _vertexList[t * 3 + 2] = static_cast<uint32_t>(_cageMesh._faces(t, 2));
     }
 
+    /*
     auto vertexListStaging = _resourceManager->CreateBufferAndCopy(
         std::span<const uint32_t>(_vertexList.data(), _vertexList.size()),
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -113,6 +116,7 @@ void CpuComputeStrategy::AllocateResources()
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     CopyBuffer(vertexListStaging._deviceBuffer, _vertexListBuffer._deviceBuffer, _vertexList.size() * sizeof(uint32_t));
+    */
 }
 
 void CpuComputeStrategy::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size)
@@ -127,11 +131,7 @@ void CpuComputeStrategy::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize siz
     VkQueue queue;
     vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
 
-    VkSubmitInfo submitInfo{ VK_STRUCTURE_TYPE_SUBMIT_INFO };
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &cmd;
-    VK_CHECK(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
-    VK_CHECK(vkQueueWaitIdle(queue));
+    scoped.SubmitAndWait(queue);
 }
 
 void CpuComputeStrategy::RecordReadback(
@@ -166,11 +166,13 @@ void CpuComputeStrategy::RecordReadback(
         colorRegions[face].imageSubresource.layerCount = 1;
         colorRegions[face].imageExtent = { _faceSize, _faceSize, 1 };
 
-        depthRegions[face].bufferOffset = depthFaceSize * face;
-        depthRegions[face].imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        depthRegions[face].imageSubresource.baseArrayLayer = face;
-        depthRegions[face].imageSubresource.layerCount = 1;
-        depthRegions[face].imageExtent = { _faceSize, _faceSize, 1 };
+        if (!_offset) {
+            depthRegions[face].bufferOffset = depthFaceSize * face;
+            depthRegions[face].imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            depthRegions[face].imageSubresource.baseArrayLayer = face;
+            depthRegions[face].imageSubresource.layerCount = 1;
+            depthRegions[face].imageExtent = { _faceSize, _faceSize, 1 };
+        }
     }
 
     vkCmdCopyImageToBuffer(
@@ -181,13 +183,15 @@ void CpuComputeStrategy::RecordReadback(
         static_cast<uint32_t>(colorRegions.size()),
         colorRegions.data());
 
-    vkCmdCopyImageToBuffer(
-        cmd,
-        target.depthImage,
-        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        _slots[slot].depthBuffer,
-        static_cast<uint32_t>(depthRegions.size()),
-        depthRegions.data());
+    if (!_offset) {
+        vkCmdCopyImageToBuffer(
+            cmd,
+            target.depthImage,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            _slots[slot].depthBuffer,
+            static_cast<uint32_t>(depthRegions.size()),
+            depthRegions.data());
+    }
 
     VK_CHECK(vkEndCommandBuffer(cmd));
 }
@@ -198,13 +202,24 @@ void CpuComputeStrategy::SubmitAllReadbacks(
     VkSemaphore signalSemaphore,
     uint64_t signalValue)
 {
-    std::vector<VkCommandBufferSubmitInfo> cmdInfos(_computeCommandBuffers.size());
+    std::vector<VkCommandBufferSubmitInfo> cmdInfos;
+    cmdInfos.reserve(_computeCommandBuffers.size());
     for (size_t i = 0; i < _computeCommandBuffers.size(); ++i)
     {
-        cmdInfos[i] = {
+        if (_slotToDeformableIndex[i] == UINT32_MAX)
+        {
+            continue;
+        }
+
+        cmdInfos.push_back({
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
             .commandBuffer = _computeCommandBuffers[i]
-        };
+            });
+    }
+
+    if (cmdInfos.empty())
+    {
+        return;
     }
 
     VkSemaphoreSubmitInfo waitInfo{
@@ -244,6 +259,7 @@ void CpuComputeStrategy::ConsumeAllSlots()
         if (deformableIndex != UINT32_MAX)
         {
             ComputeOnCpu(deformableIndex, _slots[slot]);
+            _slotToDeformableIndex[slot] = UINT32_MAX;
         }
     }
 }
@@ -314,14 +330,16 @@ void CpuComputeStrategy::ComputeOnCpu(uint32_t deformableIndex, const SlotReadba
                 {
                     continue;
                 }
+                float w = _solidAngles[texelIdx];
+                if (!_offset) {
+                    const float depth = DecodeDepthSample(depthBytes + texelIdx * _depthBytesPerTexel);
+                    /*if (depth >= kDepthEpsilon)
+                    {
+                        continue;
+                    }*/
 
-                const float depth = DecodeDepthSample(depthBytes + texelIdx * _depthBytesPerTexel);
-                /*if (depth >= kDepthEpsilon)
-                {
-                    continue;
-                }*/
-
-                const float w = _solidAngles[texelIdx] * (1.0f - depth);
+                    w *= (1.0f - depth);
+                }
                 if (w <= 0.0f)
                 {
                     continue;
