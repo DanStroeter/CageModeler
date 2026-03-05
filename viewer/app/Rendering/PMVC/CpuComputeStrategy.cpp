@@ -70,72 +70,49 @@ Eigen::MatrixXd CpuComputeStrategy::Readback()
 
 void CpuComputeStrategy::AllocateResources()
 {
-	_computeDescriptorSets.resize(_targetCount);
+	_slots.resize(_targetCount);
 
-	std::vector<VkDescriptorSetLayout> layouts(
-		_targetCount,
-		_computeLayout->GetReference()
-	);
+	const VkDeviceSize colorSize =
+		VkDeviceSize(_faceSize) * _faceSize * 6 * 4 * sizeof(float);
 
-	VkDescriptorSetAllocateInfo allocInfo{
-		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
-	};
-	allocInfo.descriptorPool = _descriptorPool;
-	allocInfo.descriptorSetCount = _targetCount;
-	allocInfo.pSetLayouts = layouts.data();
+	const VkDeviceSize depthSize =
+		VkDeviceSize(_faceSize) * _faceSize * 6 * _depthBytesPerTexel;
 
-	VK_CHECK(vkAllocateDescriptorSets(
-		_device,
-		&allocInfo,
-		_computeDescriptorSets.data()
-	));
-
-	//const size_t C = static_cast<size_t>(_cageMesh._vertices.rows());
-
-	// --------------------------------------------------
-	// Allocate per-slot lambda / wsum buffers
-	// --------------------------------------------------
 	for (uint32_t i = 0; i < _targetCount; ++i)
 	{
-		const VkDeviceSize lambdaBytes = static_cast<size_t>(_cageMesh._vertices.rows()) * sizeof(float);
-		const VkDeviceSize wsumBytes = sizeof(float);
-
-		// Device-local buffers
-		_slots[i].lambda = _resourceManager->AllocateDeviceBuffer(
-			lambdaBytes,
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-		);
-
-		_slots[i].wsum = _resourceManager->AllocateDeviceBuffer(
-			wsumBytes,
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-		);
-
-		// Host-visible staging buffers
-		_slots[i].lambdaStaging = _resourceManager->CreateBufferAndMapMemory(
-			std::span<std::byte>((std::byte*)nullptr, lambdaBytes),
+		// ---------------------------
+		// Color cubemap staging buffer
+		// ---------------------------
+		auto color = _resourceManager->CreateBufferAndMapMemory(
+			std::span<std::byte>((std::byte*)nullptr, colorSize),
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 		);
 
-		_slots[i].wsumStaging = _resourceManager->CreateBufferAndMapMemory(
-			std::span<std::byte>((std::byte*)nullptr, wsumBytes),
+		_slots[i].colorBuffer = color._deviceBuffer;
+		_slots[i].colorMemory = color._deviceMemory;
+		_slots[i].colorMapped = color._mappedData;
+
+		// ---------------------------
+		// Depth cubemap staging buffer
+		// ---------------------------
+		auto depth = _resourceManager->CreateBufferAndMapMemory(
+			std::span<std::byte>((std::byte*)nullptr, depthSize),
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 		);
+
+		_slots[i].depthBuffer = depth._deviceBuffer;
+		_slots[i].depthMemory = depth._deviceMemory;
+		_slots[i].depthMapped = depth._mappedData;
 	}
 
 	// --------------------------------------------------
-	// Vertex index list buffer
+	// Vertex index list buffer (unchanged)
 	// --------------------------------------------------
+
 	const int triCount = _cageMesh._faces.rows();
 	std::vector<uint32_t> vertexList(triCount * 3);
 
@@ -279,42 +256,13 @@ void CpuComputeStrategy::WriteWeightsToFile(const std::string& filename)
 	LOG_INFO("Weights written to " + filename);
 }
 
-void CpuComputeStrategy::CreateDepthSampler() {
-	VkSamplerCreateInfo samplerInfo{};
-	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-
-	// For depth, you might want linear filtering
-	samplerInfo.magFilter = VK_FILTER_NEAREST;
-	samplerInfo.minFilter = VK_FILTER_NEAREST;
-
-	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-	samplerInfo.minLod = 0.0f;
-	samplerInfo.maxLod = 0.0f;
-	samplerInfo.mipLodBias = 0.0f;
-
-	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-
-	samplerInfo.anisotropyEnable = VK_FALSE;
-
-	// Enable comparison for shadow mapping if needed
-	//samplerInfo.compareEnable = VK_TRUE;  // Set to true if doing shadow comparison
-	//samplerInfo.compareOp = VK_COMPARE_OP_LESS;  // Or appropriate comparison
-
-	samplerInfo.unnormalizedCoordinates = VK_FALSE;
-	samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-
-	vkCreateSampler(_device, &samplerInfo, nullptr, &_depthSampler);
-}
-
 void CpuComputeStrategy::RecordReadback(
 	uint32_t slot,
 	const CubemapRenderTarget& target,
 	uint32_t deformableIndex)
 {
 	assert(slot < _computeCommandBuffers.size());
-	assert(slot < _computeDescriptorSets.size());
+	assert(slot < _slots.size());
 	assert(slot < _slotToDeformableIndex.size());
 
 	_slotToDeformableIndex[slot] = deformableIndex;
@@ -322,81 +270,58 @@ void CpuComputeStrategy::RecordReadback(
 	VkCommandBuffer cmd = _computeCommandBuffers[slot];
 	VK_CHECK(vkResetCommandBuffer(cmd, 0));
 
-	VkCommandBufferBeginInfo begin{
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
-	};
-	VK_CHECK(vkBeginCommandBuffer(cmd, &begin));
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
 
-	UpdateComputeDescriptorSet(slot, target);
+	const VkDeviceSize colorFaceSize =
+		VkDeviceSize(_faceSize) * _faceSize * 4 * sizeof(float);
+	const VkDeviceSize depthFaceSize =
+		VkDeviceSize(_faceSize) * _faceSize * _depthBytesPerTexel;
 
-	auto& pipe = _renderPipelineManager->GetPipelineObject(_computePipeline);
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipe._handle);
-	vkCmdBindDescriptorSets(
-		cmd,
-		VK_PIPELINE_BIND_POINT_COMPUTE,
-		pipe._pipelineLayout,
-		0, 1,
-		&_computeDescriptorSets[slot],
-		0, nullptr
-	);
+	// Copy each face of the cubemap to the mapped staging buffer
+	std::array<VkBufferImageCopy, 6> colorRegions{};
+	std::array<VkBufferImageCopy, 6> depthRegions{};
 
-	ComputePushConstants pc{};
-	pc.uFaceSize = { (int)_faceSize, (int)_faceSize };
-	pc.uNumTriangles = _cageMesh._faces.rows();
-
-	vkCmdPushConstants(
-		cmd,
-		pipe._pipelineLayout,
-		VK_SHADER_STAGE_COMPUTE_BIT,
-		0, sizeof(pc), &pc
-	);
-
-	vkCmdFillBuffer(cmd, _slots[slot].lambda._deviceBuffer, 0, VK_WHOLE_SIZE, 0);
-	vkCmdFillBuffer(cmd, _slots[slot].wsum._deviceBuffer, 0, VK_WHOLE_SIZE, 0);
-
-	VkBufferMemoryBarrier clearBarrier[2]{};
-	for (int i = 0; i < 2; ++i)
+	for (uint32_t face = 0; face < 6; ++face)
 	{
-		clearBarrier[i].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-		clearBarrier[i].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		clearBarrier[i].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-		clearBarrier[i].offset = 0;
-		clearBarrier[i].size = VK_WHOLE_SIZE;
+		colorRegions[face].bufferOffset = colorFaceSize * face;
+		colorRegions[face].bufferRowLength = 0;
+		colorRegions[face].bufferImageHeight = 0;
+		colorRegions[face].imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		colorRegions[face].imageSubresource.mipLevel = 0;
+		colorRegions[face].imageSubresource.baseArrayLayer = face;
+		colorRegions[face].imageSubresource.layerCount = 1;
+		colorRegions[face].imageExtent = { _faceSize, _faceSize, 1 };
+
+		depthRegions[face].bufferOffset = depthFaceSize * face;
+		depthRegions[face].bufferRowLength = 0;
+		depthRegions[face].bufferImageHeight = 0;
+		depthRegions[face].imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		depthRegions[face].imageSubresource.mipLevel = 0;
+		depthRegions[face].imageSubresource.baseArrayLayer = face;
+		depthRegions[face].imageSubresource.layerCount = 1;
+		depthRegions[face].imageExtent = { _faceSize, _faceSize, 1 };
 	}
 
-	clearBarrier[0].buffer = _slots[slot].lambda._deviceBuffer;
-	clearBarrier[1].buffer = _slots[slot].wsum._deviceBuffer;
-
-	vkCmdPipelineBarrier(
+	// Copy color and depth images to staging buffers
+	vkCmdCopyImageToBuffer(
 		cmd,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		0,
-		0, nullptr,
-		2, clearBarrier,
-		0, nullptr
+		target.cubemapImage,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		_slots[slot].colorBuffer,
+		static_cast<uint32_t>(colorRegions.size()),
+		colorRegions.data()
 	);
 
-	uint32_t groupsX = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize;
-	uint32_t groupsY = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize;
-	vkCmdDispatch(cmd, groupsX, groupsY, 6);
-
-	VkBufferMemoryBarrier postBarrier[2]{};
-	for (int i = 0; i < 2; ++i)
-	{
-		postBarrier[i] = clearBarrier[i];
-		postBarrier[i].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-		postBarrier[i].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	}
-
-	vkCmdPipelineBarrier(
+	vkCmdCopyImageToBuffer(
 		cmd,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		VK_PIPELINE_STAGE_TRANSFER_BIT,
-		0,
-		0, nullptr,
-		2, postBarrier,
-		0, nullptr
+		target.depthImage,
+		VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+		_slots[slot].depthBuffer,
+		static_cast<uint32_t>(depthRegions.size()),
+		depthRegions.data()
 	);
 
 	VK_CHECK(vkEndCommandBuffer(cmd));
@@ -408,6 +333,7 @@ void CpuComputeStrategy::SubmitAllReadbacks(
 	VkSemaphore signalSemaphore,
 	uint64_t signalValue)
 {
+	// Prepare submit info for all readback command buffers
 	std::vector<VkCommandBufferSubmitInfo> cmdInfos(_computeCommandBuffers.size());
 	for (size_t i = 0; i < _computeCommandBuffers.size(); ++i)
 	{
@@ -417,18 +343,20 @@ void CpuComputeStrategy::SubmitAllReadbacks(
 		};
 	}
 
+	// Wait semaphore info (wait for render pass completion)
 	VkSemaphoreSubmitInfo waitInfo{
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 		.semaphore = waitSemaphore,
 		.value = waitValue,
-		.stageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+		.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT   // <-- transfer stage
 	};
 
+	// Signal semaphore info (signal when copies complete)
 	VkSemaphoreSubmitInfo signalInfo{
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 		.semaphore = signalSemaphore,
 		.value = signalValue,
-		.stageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+		.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT   // <-- transfer stage
 	};
 
 	VkSubmitInfo2 submit2{
@@ -441,6 +369,7 @@ void CpuComputeStrategy::SubmitAllReadbacks(
 		.pSignalSemaphoreInfos = &signalInfo
 	};
 
+	// Submit to transfer queue
 	VkQueue queue;
 	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
 	VK_CHECK(vkQueueSubmit2(queue, 1, &submit2, VK_NULL_HANDLE));
