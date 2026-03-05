@@ -821,6 +821,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 		waitSeconds * 1000.0);
 	waitTemp = std::chrono::high_resolution_clock::now();
 	weights = computeStage->Readback();
+	LOG_DEBUG("Readback complete");
 	waitSeconds = SecondsSince(waitTemp);
 	LOG_DEBUG(
 		"Total time={:.6f} ms",
