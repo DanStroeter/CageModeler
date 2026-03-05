@@ -1,16 +1,16 @@
 #pragma once
 
+#include <cstdint>
+#include <memory>
+#include <span>
+#include <vector>
+
 #include <Rendering/PMVC/IComputeStrategy.h>
-#include <Rendering/Core/DescriptorSetLayout.h>
 #include <Rendering/Core/Buffer.h>
-#include <Rendering/Core/Pipeline.h>
-#include <Mesh/GeometryUtils.h>
 #include <Rendering/Core/DescriptorPool.h>
 #include <Rendering/Core/RenderResourceManager.h>
 #include <Rendering/PMVC/CubemapRenderInstance.h>
-#include <Rendering/PMVC/SphereWeightCalculator.h>
-
-//class SphereWeightCalculator;
+#include <Mesh/GeometryUtils.h>
 
 class CpuComputeStrategy final : public ICubemapComputeStrategy
 {
@@ -40,63 +40,47 @@ public:
     }
 
     uint32_t RequiredRenderTargetCount() const override;
-
     void Initialize() override;
 
+    void RecordReadback(uint32_t slot, const CubemapRenderTarget& target, uint32_t deformableIndex);
+    void SubmitAllReadbacks(VkSemaphore waitSemaphore, uint64_t waitValue, VkSemaphore signalSemaphore, uint64_t signalValue);
+    void ConsumeAllSlots();
     Eigen::MatrixXd Readback();
-
-    //new
-    void RecordReadback(
-        uint32_t slot,
-        const CubemapRenderTarget& target,
-        uint32_t deformableIndex);
-
-    void SubmitAllReadbacks(
-        VkSemaphore waitSemaphore,
-        uint64_t waitValue,
-        VkSemaphore signalSemaphore,
-        uint64_t signalValue);
 
 private:
     struct SlotReadback
     {
-        VkBuffer colorBuffer;
-        VkDeviceMemory colorMemory;
-        void* colorMapped;
+        VkBuffer colorBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory colorMemory = VK_NULL_HANDLE;
+        void* colorMapped = nullptr;
 
-        VkBuffer depthBuffer;
-        VkDeviceMemory depthMemory;
-        void* depthMapped;
+        VkBuffer depthBuffer = VK_NULL_HANDLE;
+        VkDeviceMemory depthMemory = VK_NULL_HANDLE;
+        void* depthMapped = nullptr;
     };
 
-    //helpers for cpu compute
+    void AllocateResources();
+    void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
+
     float ComputeSolidAngle(uint32_t texelX, uint32_t texelY) const;
     float DecodeDepthSample(const uint8_t* texel) const;
-    void CopyImagesToStaging(const CubemapRenderTarget& target, const SlotReadback& slot);
     void ComputeOnCpu(uint32_t deformableIndex, const SlotReadback& slot);
-
-    void AllocateResources();
-
-    const uint32_t kDispatchGroupSize = 8;
 
     RenderResourceRef<Device> _device;
     uint32_t _transferQueueFamily = 0;
     uint32_t _faceSize = 32;
     VkFormat _format = VK_FORMAT_R32G32B32A32_SFLOAT;
 
-    // Compute pipeline and descriptors
-    PipelineHandle _computePipeline;
-    RenderResourceRef<DescriptorSetLayout> _computeLayout;
-    std::vector<VkDescriptorSet> _computeDescriptorSets = {};
+    VkFormat _depthFormat = VK_FORMAT_D32_SFLOAT;
+    VkDeviceSize _depthBytesPerTexel = sizeof(float);
 
-    // Command resources
     VkCommandPool _computeCommandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> _computeCommandBuffers = {};
-    std::vector<VkCommandBuffer> _copyCommandBuffers = {};
 
     Buffer _vertexListBuffer;
+    std::vector<uint32_t> _vertexList;
+    std::vector<float> _solidAngles;
 
-    // CPU-side result storage
     Eigen::MatrixXd _lambdaResults;
     std::vector<float> _wsumResults;
 
@@ -107,16 +91,8 @@ private:
     std::shared_ptr<RenderResourceManager> _resourceManager;
     std::shared_ptr<RenderPipelineManager> _renderPipelineManager;
 
-   SphereWeightCalculator _sphereWeightCalculator;
-
-    void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
-    void WriteWeightsToFile(const std::string& filename);
-
-    int _targetCount = 3;
-
-	std::vector<SlotReadback> _slots;
-
-    bool _offset = false;
-
+    int _targetCount = 0;
+    std::vector<SlotReadback> _slots;
     std::vector<uint32_t> _slotToDeformableIndex;
+    bool _offset = false;
 };
