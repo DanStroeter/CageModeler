@@ -4,7 +4,7 @@
 
 uint32_t GpuMPComputeStrategy::RequiredRenderTargetCount() const
 {
-	return _targetCount;
+	return static_cast<uint32_t>(_deformableMesh._vertices.rows());
 }
 
 void GpuMPComputeStrategy::Initialize()
@@ -12,6 +12,9 @@ void GpuMPComputeStrategy::Initialize()
 	//_slotSync.resize(_targetCount);
 	// Prepare slots
 	//_slotDoneValue.resize(_targetCount, 0ull);
+	_targetCount = static_cast<int>(_deformableMesh._vertices.rows());
+	_slotToDeformableIndex.assign(_targetCount, UINT32_MAX);
+
 	_lambdaResults.resize(
 		_deformableMesh._vertices.rows(),
 		_cageMesh._vertices.rows()
@@ -38,11 +41,11 @@ void GpuMPComputeStrategy::Initialize()
 		throw std::runtime_error("Failed to allocate compute command buffers!");
 
 	VkCommandBufferAllocateInfo allocInfo2{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
-	allocInfo.commandPool = _computeCommandPool;
-	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandBufferCount = static_cast<uint32_t>(_copyCommandBuffers.size());
+	allocInfo2.commandPool = _computeCommandPool;
+	allocInfo2.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo2.commandBufferCount = static_cast<uint32_t>(_copyCommandBuffers.size());
 
-	if (vkAllocateCommandBuffers(_device, &allocInfo, _copyCommandBuffers.data()) != VK_SUCCESS)
+	if (vkAllocateCommandBuffers(_device, &allocInfo2, _copyCommandBuffers.data()) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate compute command buffers!");
 
 	_sphereWeightCalculator = SphereWeightCalculator();
@@ -718,3 +721,235 @@ void GpuMPComputeStrategy::CreateDepthSampler() {
 	vkCreateSampler(_device, &samplerInfo, nullptr, &_depthSampler);
 }
 
+void GpuMPComputeStrategy::RecordCompute(
+	uint32_t slot,
+	const CubemapRenderTarget& target,
+	uint32_t deformableIndex)
+{
+	assert(slot < _computeCommandBuffers.size());
+	assert(slot < _computeDescriptorSets.size());
+	assert(slot < _slotToDeformableIndex.size());
+
+	_slotToDeformableIndex[slot] = deformableIndex;
+
+	VkCommandBuffer cmd = _computeCommandBuffers[slot];
+	VK_CHECK(vkResetCommandBuffer(cmd, 0));
+
+	VkCommandBufferBeginInfo begin{
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+	};
+	VK_CHECK(vkBeginCommandBuffer(cmd, &begin));
+
+	UpdateComputeDescriptorSet(slot, target);
+
+	auto& pipe = _renderPipelineManager->GetPipelineObject(_computePipeline);
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipe._handle);
+	vkCmdBindDescriptorSets(
+		cmd,
+		VK_PIPELINE_BIND_POINT_COMPUTE,
+		pipe._pipelineLayout,
+		0, 1,
+		&_computeDescriptorSets[slot],
+		0, nullptr
+	);
+
+	ComputePushConstants pc{};
+	pc.uFaceSize = { (int)_faceSize, (int)_faceSize };
+	pc.uNumTriangles = _cageMesh._faces.rows();
+
+	vkCmdPushConstants(
+		cmd,
+		pipe._pipelineLayout,
+		VK_SHADER_STAGE_COMPUTE_BIT,
+		0, sizeof(pc), &pc
+	);
+
+	vkCmdFillBuffer(cmd, _slots[slot].lambda._deviceBuffer, 0, VK_WHOLE_SIZE, 0);
+	vkCmdFillBuffer(cmd, _slots[slot].wsum._deviceBuffer, 0, VK_WHOLE_SIZE, 0);
+
+	VkBufferMemoryBarrier clearBarrier[2]{};
+	for (int i = 0; i < 2; ++i)
+	{
+		clearBarrier[i].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+		clearBarrier[i].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		clearBarrier[i].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		clearBarrier[i].offset = 0;
+		clearBarrier[i].size = VK_WHOLE_SIZE;
+	}
+
+	clearBarrier[0].buffer = _slots[slot].lambda._deviceBuffer;
+	clearBarrier[1].buffer = _slots[slot].wsum._deviceBuffer;
+
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		0,
+		0, nullptr,
+		2, clearBarrier,
+		0, nullptr
+	);
+
+	uint32_t groupsX = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize;
+	uint32_t groupsY = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize;
+	vkCmdDispatch(cmd, groupsX, groupsY, 6);
+
+	VkBufferMemoryBarrier postBarrier[2]{};
+	for (int i = 0; i < 2; ++i)
+	{
+		postBarrier[i] = clearBarrier[i];
+		postBarrier[i].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		postBarrier[i].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	}
+
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0, nullptr,
+		2, postBarrier,
+		0, nullptr
+	);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
+}
+
+void GpuMPComputeStrategy::SubmitAllComputes(
+	VkSemaphore waitSemaphore,
+	uint64_t waitValue,
+	VkSemaphore signalSemaphore,
+	uint64_t signalValue)
+{
+	std::vector<VkCommandBufferSubmitInfo> cmdInfos(_computeCommandBuffers.size());
+	for (size_t i = 0; i < _computeCommandBuffers.size(); ++i)
+	{
+		cmdInfos[i] = {
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+			.commandBuffer = _computeCommandBuffers[i]
+		};
+	}
+
+	VkSemaphoreSubmitInfo waitInfo{
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		.semaphore = waitSemaphore,
+		.value = waitValue,
+		.stageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+	};
+
+	VkSemaphoreSubmitInfo signalInfo{
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		.semaphore = signalSemaphore,
+		.value = signalValue,
+		.stageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT
+	};
+
+	VkSubmitInfo2 submit2{
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+		.waitSemaphoreInfoCount = 1,
+		.pWaitSemaphoreInfos = &waitInfo,
+		.commandBufferInfoCount = static_cast<uint32_t>(cmdInfos.size()),
+		.pCommandBufferInfos = cmdInfos.data(),
+		.signalSemaphoreInfoCount = 1,
+		.pSignalSemaphoreInfos = &signalInfo
+	};
+
+	VkQueue queue;
+	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
+	VK_CHECK(vkQueueSubmit2(queue, 1, &submit2, VK_NULL_HANDLE));
+}
+
+void GpuMPComputeStrategy::SubmitAllReadbackCopies(
+	VkSemaphore waitSemaphore,
+	uint64_t waitValue,
+	VkSemaphore signalSemaphore,
+	uint64_t signalValue)
+{
+	for (uint32_t slot = 0; slot < _copyCommandBuffers.size(); ++slot)
+	{
+		VkCommandBuffer cmd = _copyCommandBuffers[slot];
+		VK_CHECK(vkResetCommandBuffer(cmd, 0));
+
+		VkCommandBufferBeginInfo beginInfo{
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+			.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+		};
+		VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
+
+		VkBufferCopy lambdaCopy{
+			.srcOffset = 0,
+			.dstOffset = 0,
+			.size = _cageMesh._vertices.rows() * sizeof(float)
+		};
+
+		VkBufferCopy wsumCopy{
+			.srcOffset = 0,
+			.dstOffset = 0,
+			.size = sizeof(float)
+		};
+
+		vkCmdCopyBuffer(cmd, _slots[slot].lambda._deviceBuffer, _slots[slot].lambdaStaging._deviceBuffer, 1, &lambdaCopy);
+		vkCmdCopyBuffer(cmd, _slots[slot].wsum._deviceBuffer, _slots[slot].wsumStaging._deviceBuffer, 1, &wsumCopy);
+
+		VK_CHECK(vkEndCommandBuffer(cmd));
+	}
+
+	std::vector<VkCommandBufferSubmitInfo> cmdInfos(_copyCommandBuffers.size());
+	for (size_t i = 0; i < _copyCommandBuffers.size(); ++i)
+	{
+		cmdInfos[i] = {
+			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
+			.commandBuffer = _copyCommandBuffers[i]
+		};
+	}
+
+	VkSemaphoreSubmitInfo waitInfo{
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		.semaphore = waitSemaphore,
+		.value = waitValue,
+		.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT
+	};
+
+	VkSemaphoreSubmitInfo signalInfo{
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
+		.semaphore = signalSemaphore,
+		.value = signalValue,
+		.stageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT
+	};
+
+	VkSubmitInfo2 submit2{
+		.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
+		.waitSemaphoreInfoCount = 1,
+		.pWaitSemaphoreInfos = &waitInfo,
+		.commandBufferInfoCount = static_cast<uint32_t>(cmdInfos.size()),
+		.pCommandBufferInfos = cmdInfos.data(),
+		.signalSemaphoreInfoCount = 1,
+		.pSignalSemaphoreInfos = &signalInfo
+	};
+
+	VkQueue queue;
+	vkGetDeviceQueue(_device, _transferQueueFamily, 0, &queue);
+	VK_CHECK(vkQueueSubmit2(queue, 1, &submit2, VK_NULL_HANDLE));
+}
+
+void GpuMPComputeStrategy::ConsumeAllSlots()
+{
+	const size_t C = _cageMesh._vertices.rows();
+
+	for (uint32_t slot = 0; slot < _slots.size(); ++slot)
+	{
+		const uint32_t deformableIndex = _slotToDeformableIndex[slot];
+		if (deformableIndex == UINT32_MAX)
+			continue;
+
+		const float* lambda =
+			(float*)_slots[slot].lambdaStaging._mappedData;
+		const float wsum =
+			*(float*)_slots[slot].wsumStaging._mappedData;
+
+		for (size_t c = 0; c < C; ++c)
+			_lambdaResults(deformableIndex, c) = lambda[c];
+
+		_wsumResults[deformableIndex] = wsum;
+	}
+}

@@ -65,6 +65,26 @@ public:
         uint64_t waitValue,
         uint64_t signalValue);
 
+    //new
+    void RecordCompute(
+        uint32_t slot,
+        const CubemapRenderTarget& target,
+        uint32_t deformableIndex);
+
+    void SubmitAllComputes(
+        VkSemaphore waitSemaphore,
+        uint64_t waitValue,
+        VkSemaphore signalSemaphore,
+        uint64_t signalValue);
+
+    void SubmitAllReadbackCopies(
+        VkSemaphore waitSemaphore,
+        uint64_t waitValue,
+        VkSemaphore signalSemaphore,
+        uint64_t signalValue);
+
+    void ConsumeAllSlots();
+
 private:
     void CreatePipelineAndLayouts();
     void AllocateResources();
@@ -123,4 +143,6 @@ private:
     bool _offset = false;
     void CreateDepthSampler();
     VkSampler _depthSampler;
+
+    std::vector<uint32_t> _slotToDeformableIndex;
 };

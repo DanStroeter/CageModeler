@@ -672,14 +672,14 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 	// ============================================================
 	// Phase 1: Render ALL cubemaps
 	// ============================================================
-	uint64_t renderDone = ++timelineValue;
+	uint64_t renderDone = timelineValue;
 
 	for (uint32_t i = 0; i < cubemapCount; ++i)
 	{
 		const uint32_t cubemapIdx = range.first + i;
 		CubemapRenderTarget& target =
 			_cubemapRenderUnit.targets[i];
-
+		renderDone = ++timelineValue;
 		RecordAndSubmitCubemapRender(
 			cubemapIdx,
 			vertices[cubemapIdx],
@@ -696,7 +696,8 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 	{
 		computeStage->RecordCompute(
 			i,
-			_cubemapRenderUnit.targets[i]
+			_cubemapRenderUnit.targets[i],
+			range.first + i
 		);
 	}
 
