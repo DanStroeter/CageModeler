@@ -59,21 +59,16 @@ void main()
     // vec4 origin = vertexBuffer.vertices[vertexIdx];
     // vec4 direction = rayDirectionBuffer.directions[globalRayIndex];
     
-    // --- VALIDATION WRITE ---cd 
-    // Atomically increment counter and get index for this hit
-    uint hitIndex = atomicAdd(counterBuffer.atomicCounter, 1);
-    
-    // Store just the rayIndex as per HitBufferData structure
-    //hitBuffer.rayIndices[hitIndex] = globalRayIndex;
-    //uint hitIndex = atomicAdd(hitCounter.value, 1);
-    if (hitIndex < totalRays)
-    {
-        // Store just the rayIndex as per HitBufferData structure
-        hitBuffer.rayIndices[hitIndex] = globalRayIndex;
-    }
-    // Optionally trace a ray (commented out for pure validation)
-    /*
+     // --- VALIDATION WRITE ---
+    // For debug validation, write directly by launch index so the output file should
+    // contain a deterministic ramp [0..totalRays-1] when raygen executes correctly.
+    hitBuffer.rayIndices[globalRayIndex] = globalRayIndex;
+
+    // Keep the counter side-effect for additional observability while avoiding it as
+    // the indexing source (which can hide descriptor/binding problems).
+    atomicAdd(counterBuffer.atomicCounter, 1);
     // Trace ray
+    /*
     traceRayEXT(TOP_LEVEL,        // acceleration structure
                 gl_RayFlagsNoneEXT, // ray flags
                 0xFF,              // cull mask

@@ -183,6 +183,7 @@ private:
 
     // --- Readback ---
     struct ReadbackData {
+        MemoryMappedBuffer counterStagingBuffer;
         MemoryMappedBuffer stagingBuffer; 
         VkDeviceSize size = 0;
         HitBufferData* mappedData = nullptr;
@@ -193,6 +194,7 @@ private:
 
     ReadbackData _readback;
 
+    uint32_t GetTraceWriteCount() const;
     void CreateReadbackResources();
     void SubmitReadback();
     void WaitForReadbackComplete();

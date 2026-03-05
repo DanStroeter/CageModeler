@@ -473,6 +473,7 @@ void Raytracer::BuildAccelerationStructure(VkAccelerationStructureGeometryKHR& g
 	auto scratch = _resourceManager->CreateScratchBuffer(
 		sizeInfo.buildScratchSize,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
 
@@ -1171,6 +1172,15 @@ void Raytracer::CreateReadbackResources()
 		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
 	);
 
+	std::vector<uint32_t> counterReadback{ 0 };
+
+	_readback.counterStagingBuffer = _resourceManager->CreateBufferAndMapMemory(
+		std::span(counterReadback),
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
 	LOG_INFO("Readback resources created successfully");
 }
 
@@ -1190,6 +1200,20 @@ void Raytracer::SubmitReadback() {
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	VK_CHECK(vkBeginCommandBuffer(_readback.copyCmd, &beginInfo));
 
+	std::array<VkBufferMemoryBarrier, 2> barriers{};
+	for (auto& barrier : barriers) {
+		barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+		barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.offset = 0;
+	}
+	barriers[0].buffer = _rayBuffers.hitBuffer._deviceBuffer;
+	barriers[0].size = _readback.size;
+	barriers[1].buffer = _rayBuffers.atomicCounter._deviceBuffer;
+	barriers[1].size = sizeof(uint32_t);
+	/*
 	VkBufferMemoryBarrier barrier{};
 	barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
 	barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -1198,7 +1222,7 @@ void Raytracer::SubmitReadback() {
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.buffer = _rayBuffers.hitBuffer._deviceBuffer;
 	barrier.offset = 0;
-	barrier.size = _readback.size;
+	barrier.size = _readback.size;*/
 
 	vkCmdPipelineBarrier(
 		_readback.copyCmd,
@@ -1206,7 +1230,7 @@ void Raytracer::SubmitReadback() {
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
 		0,
 		0, nullptr,
-		1, &barrier,
+		static_cast<uint32_t>(barriers.size()), barriers.data(),
 		0, nullptr
 	);
 
@@ -1222,6 +1246,17 @@ void Raytracer::SubmitReadback() {
 		_rayBuffers.hitBuffer._deviceBuffer,
 		_readback.stagingBuffer._deviceBuffer,
 		1, &copyRegion
+	);
+	VkBufferCopy counterCopyRegion{
+	.srcOffset = 0,
+	.dstOffset = 0,
+	.size = sizeof(uint32_t)
+	};
+	vkCmdCopyBuffer(
+		_readback.copyCmd,
+		_rayBuffers.atomicCounter._deviceBuffer,
+		_readback.counterStagingBuffer._deviceBuffer,
+		1, &counterCopyRegion
 	);
 
 	VK_CHECK(vkEndCommandBuffer(_readback.copyCmd));
@@ -1254,6 +1289,16 @@ std::vector<Raytracer::HitBufferData> Raytracer::GetHitResults()
 
 	return results;
 }
+
+uint32_t Raytracer::GetTraceWriteCount() const
+{
+	if (_readback.counterStagingBuffer._mappedData == nullptr)
+		return 0;
+
+	const auto* count = static_cast<const uint32_t*>(_readback.counterStagingBuffer._mappedData);
+	return *count;
+}
+
 
 void Raytracer::WaitForReadbackComplete() {
 	LOG_INFO("Waiting for readback to complete...");
