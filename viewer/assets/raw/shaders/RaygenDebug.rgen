@@ -65,7 +65,7 @@ void main()
     
     // Store just the rayIndex as per HitBufferData structure
     //hitBuffer.rayIndices[hitIndex] = globalRayIndex;
-    uint hitIndex = atomicAdd(hitCounter.value, 1);
+    //uint hitIndex = atomicAdd(hitCounter.value, 1);
     if (hitIndex < totalRays)
     {
         // Store just the rayIndex as per HitBufferData structure
