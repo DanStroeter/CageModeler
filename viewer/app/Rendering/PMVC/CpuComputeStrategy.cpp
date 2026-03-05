@@ -248,6 +248,10 @@ void CpuComputeStrategy::ConsumeAllSlots()
     }
 }
 
+static float AreaElement(float x, float y) {
+    return atan2(x * y, sqrt(x * x + y * y + 1.0f));
+}
+
 float CpuComputeStrategy::ComputeSolidAngle(uint32_t texelX, uint32_t texelY) const
 {
     const float size = static_cast<float>(_faceSize);
@@ -312,10 +316,10 @@ void CpuComputeStrategy::ComputeOnCpu(uint32_t deformableIndex, const SlotReadba
                 }
 
                 const float depth = DecodeDepthSample(depthBytes + texelIdx * _depthBytesPerTexel);
-                if (depth >= kDepthEpsilon)
+                /*if (depth >= kDepthEpsilon)
                 {
                     continue;
-                }
+                }*/
 
                 const float w = _solidAngles[texelIdx] * (1.0f - depth);
                 if (w <= 0.0f)
