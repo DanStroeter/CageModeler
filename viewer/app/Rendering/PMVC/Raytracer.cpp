@@ -67,6 +67,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> Raytracer::ComputeCoordin
 	vkDeviceWaitIdle(_device);
 	std::vector<HitBufferData> results = GetHitResults();
 	WriteHitsToFile("RaytracingHits.txt", results);
+	LOG_INFO("Ray debug write count after readback: {}", GetTraceWriteCount());
 
 	Eigen::MatrixXd weights;
 	Eigen::MatrixXd M = weights;
@@ -171,7 +172,7 @@ void Raytracer::StartRayTrace()
 		1
 	);
 
-	LOG_INFO("Tracing {} rays (1 vertex × {} directions)",
+	LOG_INFO("Tracing {} rays (1 vertex Ã— {} directions)",
 		totalRays,
 		_pushConstants.raysPerVertex);
 
@@ -627,46 +628,30 @@ void Raytracer::CreateRayTracingPipeline() {
 void Raytracer::CreateRayTracingDescriptorSet() {
 	LOG_INFO("Creating ray tracing descriptor set...");
 
-	// Create Layout
 	std::vector<VkDescriptorSetLayoutBinding> bindings = {
-		// Binding 0: Acceleration structure
+		// Binding 0: Acceleration structure (kept for pipeline compatibility)
 		{
 			.binding = 0,
 			.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
 			.descriptorCount = 1,
 			.stageFlags = VK_SHADER_STAGE_ALL
 		},
-		// Binding 1: Deformable vertices
+		// Binding 1: Ray write buffer (one uint per launched ray)
 		{
 			.binding = 1,
 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			.descriptorCount = 1,
 			.stageFlags = VK_SHADER_STAGE_ALL
 		},
-		// Binding 2: Ray directions
+		// Binding 2: Atomic counter
 		{
 			.binding = 2,
-			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_ALL
-		},
-		// Binding 3: Hit buffer
-		{
-			.binding = 3,
-			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.descriptorCount = 1,
-			.stageFlags = VK_SHADER_STAGE_ALL
-		},
-		// Binding 4: Atomic counter for hit buffer
-		{
-			.binding = 4,
 			.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
 			.descriptorCount = 1,
 			.stageFlags = VK_SHADER_STAGE_ALL
 		}
 	};
 
-	// Create descriptor set layout
 	VkDescriptorSetLayoutCreateInfo layoutInfo{
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 		.bindingCount = static_cast<uint32_t>(bindings.size()),
@@ -681,16 +666,9 @@ void Raytracer::CreateRayTracingDescriptorSet() {
 	VK_CHECK(vkCreateDescriptorSetLayout(_device, &layoutInfo, nullptr, &_rtPipeline.descriptorLayout));
 	LOG_INFO("Created descriptor set layout with {} bindings", bindings.size());
 
-	// 2. CREATE DESCRIPTOR POOL
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-		{
-			.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-			.descriptorCount = 1
-		},
-		{
-			.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-			.descriptorCount = 4
-		}
+		{ .type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, .descriptorCount = 1 },
+		{ .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 2 }
 	};
 
 	VkDescriptorPoolCreateInfo poolInfo{
@@ -708,7 +686,6 @@ void Raytracer::CreateRayTracingDescriptorSet() {
 	VK_CHECK(vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_rtPipeline.descriptorPool));
 	LOG_INFO("Created descriptor pool");
 
-	// 3. ALLOCATE DESCRIPTOR SET
 	VkDescriptorSetAllocateInfo allocInfo{
 		.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		.descriptorPool = _rtPipeline.descriptorPool,
@@ -726,8 +703,8 @@ void Raytracer::UpdateDescriptorSet() {
 	std::vector<VkDescriptorBufferInfo> bufferInfos;
 
 	// Reserve space for all writes
-	descriptorWrites.reserve(5);
-	bufferInfos.reserve(4);
+	descriptorWrites.reserve(3);
+	bufferInfos.reserve(2);
 
 	// Helper lambda to add buffer writes
 	auto addBufferWrite = [&](uint32_t binding, const Buffer& buffer,
@@ -778,26 +755,16 @@ void Raytracer::UpdateDescriptorSet() {
 	};
 	descriptorWrites.push_back(accelWrite);
 
-	// Binding 1: Deformable vertices (origins of rays)
-	VkDeviceSize vertexBufferSize = static_cast<VkDeviceSize>(
-		_pushConstants.vertexCount) * sizeof(glm::vec4);
-	addBufferWrite(1, _deformableGeometry.vertexBuffer, vertexBufferSize);
-
-	// Binding 2: Ray directions
-	uint32_t totalRays = _pushConstants.vertexCount * _pushConstants.raysPerVertex;
-	VkDeviceSize directionsSize = static_cast<VkDeviceSize>(totalRays) * sizeof(glm::vec4);
-	addBufferWrite(2, _rayBuffers.rayDirections, directionsSize);
-
-	// Binding 3: Hit buffer
+	// Binding 1: Ray write buffer
 	uint32_t maxTotalHits = _pushConstants.vertexCount *
 		_pushConstants.raysPerVertex *
 		_pushConstants.maxHitsPerRay;
 	VkDeviceSize hitBufferSize = static_cast<VkDeviceSize>(maxTotalHits) * sizeof(HitBufferData);
-	addBufferWrite(3, _rayBuffers.hitBuffer, hitBufferSize);
+	addBufferWrite(1, _rayBuffers.hitBuffer, hitBufferSize);
 
-	// Binding 4: Atomic counter
+	// Binding 2: Atomic counter
 	VkDeviceSize atomicCounterSize = sizeof(uint32_t);
-	addBufferWrite(4, _rayBuffers.atomicCounter, atomicCounterSize);
+	addBufferWrite(2, _rayBuffers.atomicCounter, atomicCounterSize);
 
 	// Update all descriptors at once
 	vkUpdateDescriptorSets(_device,
@@ -989,76 +956,19 @@ VkShaderModule Raytracer::CreateShaderModule(const std::vector<uint32_t>& code) 
 // --- Ray Tracing Buffers ---
 void Raytracer::CreateRayBuffers()
 {
-	_pushConstants.vertexCount = _deformableGeometry.vertexCount;
+	_pushConstants.vertexCount = 1;
 
 	const uint32_t totalRays = _pushConstants.vertexCount * _pushConstants.raysPerVertex;
 	const uint32_t maxTotalHits = totalRays * _pushConstants.maxHitsPerRay;
 
-	LOG_INFO("Setting up ray directions:");
-	LOG_INFO("  Vertex count: {}", _pushConstants.vertexCount);
-	LOG_INFO("  Total rays: {}", totalRays);
-	LOG_INFO("  Max possible hits: {}", maxTotalHits);
-
-	// Ray directions (6 axis-aligned directions for now to verify that it works)
-
-	std::vector<glm::vec4> baseDirections =
-	{
-		{  1.0f,  0.0f,  0.0f, 0.0f }, // Right
-		{ -1.0f,  0.0f,  0.0f, 0.0f }, // Left
-		{  0.0f,  1.0f,  0.0f, 0.0f }, // Up
-		{  0.0f, -1.0f,  0.0f, 0.0f }, // Down
-		{  0.0f,  0.0f,  1.0f, 0.0f }, // Front
-		{  0.0f,  0.0f, -1.0f, 0.0f }  // Back
-	};
-	std::vector<glm::vec4> allDirections;
-	allDirections.reserve(totalRays);
-
-	// For each vertex, add all 6 directions
-	for (uint32_t vertexIdx = 0; vertexIdx < _pushConstants.vertexCount; ++vertexIdx) {
-		for (const auto& dir : baseDirections) {
-			allDirections.push_back(dir);
-		}
-	}
-
-	const VkDeviceSize directionsBufferSize =
-		static_cast<VkDeviceSize>(allDirections.size()) * sizeof(glm::vec4);
-
-	LOG_INFO("  Creating directions buffer with {} bytes ({} directions)",
-		directionsBufferSize, allDirections.size());
-
-	auto stagingDirections = _resourceManager->CreateBufferAndCopy(
-		std::span(reinterpret_cast<const std::byte*>(allDirections.data()),
-			directionsBufferSize),
-		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-	);
-
-	_rayBuffers.rayDirections = _resourceManager->AllocateDeviceBuffer(
-		directionsBufferSize,
-		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-	);
-
-	if (_rayBuffers.rayDirections._deviceBuffer == VK_NULL_HANDLE)
-		throw std::runtime_error("Failed to create ray directions buffer");
-
-	CopyBuffer(
-		stagingDirections._deviceBuffer,
-		_rayBuffers.rayDirections._deviceBuffer,
-		directionsBufferSize
-	);
-
-	stagingDirections.ReleaseResource(_device);
-
-	LOG_INFO("  Ray directions buffer created: {}",
-		(void*)_rayBuffers.rayDirections._deviceBuffer);
+	LOG_INFO("Setting up minimal ray debug buffers:");
+	LOG_INFO("  Vertex count used for debug launch: {}", _pushConstants.vertexCount);
+	LOG_INFO("  Rays per vertex: {}", _pushConstants.raysPerVertex);
+	LOG_INFO("  Total rays launched: {}", totalRays);
+	LOG_INFO("  Max possible writes: {}", maxTotalHits);
 
 	// Hit buffer
 	const VkDeviceSize hitBufferSize = static_cast<VkDeviceSize>(maxTotalHits) * sizeof(HitBufferData);
-
-	LOG_INFO("  Hit buffer size: {} bytes", hitBufferSize);
 
 	std::vector<HitBufferData> zeroData(maxTotalHits, HitBufferData{ 0 });
 
@@ -1084,9 +994,6 @@ void Raytracer::CreateRayBuffers()
 	);
 
 	stagingHitBuffer.ReleaseResource(_device);
-
-	LOG_INFO("  Hit buffer created: {}",
-		(void*)_rayBuffers.hitBuffer._deviceBuffer);
 
 	// Atomic counter buffer
 	const VkDeviceSize counterBufferSize = sizeof(uint32_t);
@@ -1114,7 +1021,7 @@ void Raytracer::CreateRayBuffers()
 
 	stagingCounter.ReleaseResource(_device);
 
-	LOG_INFO("Successfully set up 6 fixed rays from 1 vertex");
+	LOG_INFO("Minimal ray debug buffers ready");
 }
 
 // --- Sync ---
@@ -1333,7 +1240,8 @@ void Raytracer::WriteHitsToFile(const std::string& filename, const std::vector<H
 		<< (_pushConstants.vertexCount *
 			_pushConstants.raysPerVertex *
 			_pushConstants.maxHitsPerRay) << "\n";
-	file << "Vector hit size: " << hits.size() << "\n\n";
+	file << "Vector hit size: " << hits.size() << "\n";
+	file << "Atomic write count: " << GetTraceWriteCount() << "\n\n";
 
 	file << "===== Rays =====\n";
 	file << "Every ray index should have " << _pushConstants.raysPerVertex * _pushConstants.maxHitsPerRay << " entires.\n";;

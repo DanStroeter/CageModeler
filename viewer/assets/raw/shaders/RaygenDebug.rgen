@@ -1,9 +1,7 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
-#extension GL_EXT_scalar_block_layout : enable
 
-// Push constants matching your C++ structure
-layout(push_constant) uniform PushConstants 
+layout(push_constant) uniform PushConstants
 {
     uint vertexCount;
     uint raysPerVertex;
@@ -11,48 +9,26 @@ layout(push_constant) uniform PushConstants
     uint padding;
 } pc;
 
-// Binding 0: Acceleration structure (not directly accessed in shader)
-// This is implicitly used by traceRayEXT
-
-// Binding 1: Deformable vertices (origins)
-layout(set = 0, binding = 1, std430) readonly buffer VertexBuffer 
+// Binding 1: one uint entry written per launched ray
+layout(set = 0, binding = 1, std430) buffer HitBuffer
 {
-    vec4 vertices[];
-} vertexBuffer;
-
-// Binding 2: Ray directions
-layout(set = 0, binding = 2, std430) readonly buffer RayDirectionBuffer 
-{
-    vec4 directions[];
-} rayDirectionBuffer;
-
-// Binding 3: Hit buffer (HitBufferData = uint32_t rayIndex)
-layout(set = 0, binding = 3, std430) buffer HitBuffer
-{
-    uint rayIndices[]; 
+    uint rayIndices[];
 } hitBuffer;
 
-// Binding 4: Atomic counter used to append into hitBuffer
-layout(set = 0, binding = 4, std430) buffer CounterBuffer
+// Binding 2: atomic counter incremented for each launched ray
+layout(set = 0, binding = 2, std430) buffer CounterBuffer
 {
-        uint atomicCounter;
-    } counterBuffer;
-
-// Ray payload (minimal for this test)
-layout(location = 0) rayPayloadEXT vec4 payload;
+    uint atomicCounter;
+} counterBuffer;
 
 void main()
 {
-    uint globalRayIndex = gl_LaunchIDEXT.x;
-    uint totalRays = pc.vertexCount * pc.raysPerVertex;
+    const uint globalRayIndex = gl_LaunchIDEXT.x;
+    const uint totalRays = pc.vertexCount * pc.raysPerVertex;
 
     if (globalRayIndex >= totalRays)
         return;
 
-    uint vertexIdx = globalRayIndex / pc.raysPerVertex;
-    uint localRayIdx = globalRayIndex % pc.raysPerVertex;
-
     hitBuffer.rayIndices[globalRayIndex] = globalRayIndex;
-
-    atomicAdd(counterBuffer.atomicCounter, 1);
+    atomicAdd(counterBuffer.atomicCounter, 1u);
 }

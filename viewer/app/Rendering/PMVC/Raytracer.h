@@ -147,7 +147,6 @@ private:
     // Ray Tracing Buffers
     struct RayBuffers
     {
-        Buffer rayDirections;             
         Buffer hitBuffer;  
         Buffer atomicCounter;
     };
@@ -168,7 +167,7 @@ private:
         uint32_t padding;
     };
 
-    PushConstants _pushConstants{0, 6, 1, 0};
+    PushConstants _pushConstants{1, 1, 1, 0};
 
     // --- Sync ---
     struct TraceSync {
