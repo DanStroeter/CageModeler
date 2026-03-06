@@ -112,6 +112,21 @@ void Raytracer::StartRayTrace()
 		VK_CHECK(vkCreateFence(
 			_device, &fenceInfo, nullptr, &_traceSync.fence));
 	}
+	if (_traceSync.timeline == VK_NULL_HANDLE)
+	{
+		VkSemaphoreTypeCreateInfo timelineTypeInfo{
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
+			.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
+			.initialValue = 0
+		};
+
+		VkSemaphoreCreateInfo semaphoreInfo{
+			.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+			.pNext = &timelineTypeInfo
+		};
+
+		VK_CHECK(vkCreateSemaphore(_device, &semaphoreInfo, nullptr, &_traceSync.timeline));
+	}	
 
 	vkWaitForFences(_device, 1, &_traceSync.fence, VK_TRUE, UINT64_MAX);
 	vkResetFences(_device, 1, &_traceSync.fence);
@@ -171,6 +186,29 @@ void Raytracer::StartRayTrace()
 		1,
 		1
 	);
+	std::array<VkBufferMemoryBarrier, 2> traceToCopyBarriers{};
+	for (auto& barrier : traceToCopyBarriers) {
+		barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+		barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.offset = 0;
+	}
+	traceToCopyBarriers[0].buffer = _rayBuffers.hitBuffer._deviceBuffer;
+	traceToCopyBarriers[0].size = VK_WHOLE_SIZE;
+	traceToCopyBarriers[1].buffer = _rayBuffers.atomicCounter._deviceBuffer;
+	traceToCopyBarriers[1].size = sizeof(uint32_t);
+
+	vkCmdPipelineBarrier(
+		_traceSync.commandBuffer,
+		VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0, nullptr,
+		static_cast<uint32_t>(traceToCopyBarriers.size()), traceToCopyBarriers.data(),
+		0, nullptr
+	);
 
 	LOG_INFO("Tracing {} rays (1 vertex × {} directions)",
 		totalRays,
@@ -178,19 +216,30 @@ void Raytracer::StartRayTrace()
 
 	VK_CHECK(vkEndCommandBuffer(_traceSync.commandBuffer));
 
+	const uint64_t traceDoneValue = ++_traceSync.traceDoneValue;
+	VkTimelineSemaphoreSubmitInfo timelineInfo{
+		.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+		.signalSemaphoreValueCount = 1,
+		.pSignalSemaphoreValues = &traceDoneValue
+	};
+
+
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.pNext = &timelineInfo;
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &_traceSync.commandBuffer;
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = &_traceSync.timeline;
 
 	VK_CHECK(vkQueueSubmit(_queue, 1, &submitInfo, _traceSync.fence));
 
 	_traceSync.isTracing = true;
 	
-	//wait for idle
+	/*wait for idle
 	vkDeviceWaitIdle(_device);
 
-	LOG_INFO("Ray trace dispatch submitted!");
+	LOG_INFO("Ray trace dispatch submitted!");*/
 }
 
 // --- Device Properties ---
@@ -373,7 +422,6 @@ void Raytracer::CreateBLAS()
 	triangles.vertexStride = sizeof(glm::vec4);
 	triangles.maxVertex = _cageGeometry.vertexCount - 1;
 	triangles.indexType = VK_INDEX_TYPE_UINT32;
-	<
 	triangles.vertexData.deviceAddress =
 		GetBufferAddress(_cageGeometry.vertexBuffer);
 
@@ -1009,7 +1057,8 @@ void Raytracer::CreateRayBuffers()
 	_rayBuffers.atomicCounter = _resourceManager->AllocateDeviceBuffer(
 		counterBufferSize,
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
@@ -1065,11 +1114,11 @@ void Raytracer::CreateReadbackResources()
 	allocInfo.commandBufferCount = 1;
 	VK_CHECK(vkAllocateCommandBuffers(_device, &allocInfo, &_readback.copyCmd));
 
-	// Fence
+	/* Fence
 	VkFenceCreateInfo fenceInfo{};
 	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-	VK_CHECK(vkCreateFence(_device, &fenceInfo, nullptr, &_readback.copyCompleteFence));
+	VK_CHECK(vkCreateFence(_device, &fenceInfo, nullptr, &_readback.copyCompleteFence));*/
 
 	// Staging buffer
 	std::vector<std::byte> readbackStorage(static_cast<size_t>(hitBufferSize));
@@ -1101,7 +1150,7 @@ void Raytracer::SubmitReadback() {
 	WaitForTrace();
 
 	// Reset copy fence
-	vkResetFences(_device, 1, &_readback.copyCompleteFence);
+	//vkResetFences(_device, 1, &_readback.copyCompleteFence);
 
 	// Reset copy command buffer
 	vkResetCommandBuffer(_readback.copyCmd, 0);
@@ -1112,7 +1161,7 @@ void Raytracer::SubmitReadback() {
 	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 	VK_CHECK(vkBeginCommandBuffer(_readback.copyCmd, &beginInfo));
 
-	std::array<VkBufferMemoryBarrier, 2> barriers{};
+	/*std::array<VkBufferMemoryBarrier, 2> barriers{};
 	for (auto& barrier : barriers) {
 		barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
 		barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -1136,7 +1185,7 @@ void Raytracer::SubmitReadback() {
 	barrier.offset = 0;
 	barrier.size = _readback.size;*/
 
-	vkCmdPipelineBarrier(
+	/*vkCmdPipelineBarrier(
 		_readback.copyCmd,
 		VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
 		VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -1144,7 +1193,7 @@ void Raytracer::SubmitReadback() {
 		0, nullptr,
 		static_cast<uint32_t>(barriers.size()), barriers.data(),
 		0, nullptr
-	);
+	);*/
 
 	// Copy hit buffer from device-local to staging
 	VkBufferCopy copyRegion{
@@ -1174,13 +1223,30 @@ void Raytracer::SubmitReadback() {
 	VK_CHECK(vkEndCommandBuffer(_readback.copyCmd));
 
 	// Submit copy with fence
+	VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	const uint64_t waitValue = _traceSync.traceDoneValue;
+	const uint64_t signalValue = ++_traceSync.copyDoneValue;
+
+	VkTimelineSemaphoreSubmitInfo timelineInfo{
+		.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+		.waitSemaphoreValueCount = 1,
+		.pWaitSemaphoreValues = &waitValue,
+		.signalSemaphoreValueCount = 1,
+		.pSignalSemaphoreValues = &signalValue
+	};
+
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.pNext = &timelineInfo;
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = &_traceSync.timeline;
+	submitInfo.pWaitDstStageMask = &waitStage;
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &_readback.copyCmd;
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = &_traceSync.timeline;
 
-	VK_CHECK(vkQueueSubmit(_queue, 1, &submitInfo, _readback.copyCompleteFence));
-
+	VK_CHECK(vkQueueSubmit(_queue, 1, &submitInfo, VK_NULL_HANDLE));
 	LOG_INFO("Readback copy submitted");
 }
 
@@ -1214,7 +1280,14 @@ uint32_t Raytracer::GetTraceWriteCount() const
 
 void Raytracer::WaitForReadbackComplete() {
 	LOG_INFO("Waiting for readback to complete...");
-	VK_CHECK(vkWaitForFences(_device, 1, &_readback.copyCompleteFence, VK_TRUE, UINT64_MAX));
+	const uint64_t waitValue = _traceSync.copyDoneValue;
+	VkSemaphoreWaitInfo waitInfo{
+		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
+		.semaphoreCount = 1,
+		.pSemaphores = &_traceSync.timeline,
+		.pValues = &waitValue
+	};
+	VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
 	LOG_INFO("Readback complete");
 }
 

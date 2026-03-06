@@ -133,12 +133,12 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	_gizmo = std::make_shared<Gizmo>(*_scene);
 	_gizmo->UpdateModelMatrix(viewInfo);
 
-#if BUILD_DEVELOPMENT
+//#if BUILD_DEVELOPMENT
 	_newProjectPanel = std::make_shared<NewProjectPanel>(_meshOperationSystem,
 		[this] { OnNewProjectCancelled(); },
 		[this] { OnNewProjectCreated(); });
 
-	_projectModel->_deformationType = DeformationType::Raytracing;
+	_projectModel->_deformationType = DeformationType::MVC;
 	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
 	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
 	_projectModel->_meshFilepath = "assets/meshes/armadilloman.obj";
@@ -149,7 +149,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	_projectOptionsPanel->SetModelData(_projectModel);
 
 	OnNewProjectCreated();
-#endif
+//#endif
 }
 
 void Editor::CreateSceneLights() const

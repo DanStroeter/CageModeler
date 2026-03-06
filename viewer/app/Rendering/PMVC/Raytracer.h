@@ -173,6 +173,9 @@ private:
     struct TraceSync {
         VkFence fence = VK_NULL_HANDLE;
         VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+        VkSemaphore timeline = VK_NULL_HANDLE;
+        uint64_t traceDoneValue = 0;
+        uint64_t copyDoneValue = 0;
         bool isTracing = false;
     };
 
@@ -188,7 +191,7 @@ private:
         HitBufferData* mappedData = nullptr;
 
         VkCommandBuffer copyCmd = VK_NULL_HANDLE;
-        VkFence copyCompleteFence = VK_NULL_HANDLE;
+        //VkFence copyCompleteFence = VK_NULL_HANDLE;
     };
 
     ReadbackData _readback;
