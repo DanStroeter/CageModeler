@@ -42,8 +42,10 @@ void Raytracer::Initialize()
 		_queueFamilyIndex,
 		0,
 		&_queue);
+
 	CreateCageBuffers(_cageMesh, _cageGeometry);
 	CreateRayOriginBuffer(_deformableMesh, _deformableGeometry);
+
 	CreateAccelerationStructures();
 
 	CreateRayBuffers();
@@ -58,8 +60,11 @@ void Raytracer::Initialize()
 
 MeshOperationResult<MeshComputeWeightsOperationResult> Raytracer::ComputeCoordinates() {
 	StartRayTrace();
+	vkDeviceWaitIdle(_device);
 	WaitForTrace();
+	vkDeviceWaitIdle(_device);
 	SubmitReadback();
+	vkDeviceWaitIdle(_device);
 	std::vector<HitBufferData> results = GetHitResults();
 	WriteHitsToFile("RaytracingHits.txt", results);
 
@@ -1117,7 +1122,7 @@ void Raytracer::WaitForTrace() {
 	if (!_traceSync.isTracing || _traceSync.fence == VK_NULL_HANDLE) {
 		return;
 	}
-
+	vkDeviceWaitIdle(_device);
 	LOG_INFO("Waiting for trace to complete...");
 	auto startTime = std::chrono::high_resolution_clock::now();
 

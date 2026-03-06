@@ -29,7 +29,7 @@ layout(set = 0, binding = 2, std430) readonly buffer RayDirectionBuffer
 // Binding 3: Hit buffer (HitBufferData = uint32_t rayIndex)
 layout(set = 0, binding = 3, std430) buffer HitBuffer
 {
-    uint rayIndices[];  // Each entry is just a rayIndex (uint32_t)
+    uint rayIndices[]; 
 } hitBuffer;
 
 // Binding 4: Atomic counter used to append into hitBuffer
@@ -43,42 +43,16 @@ layout(location = 0) rayPayloadEXT vec4 payload;
 
 void main()
 {
-    // Calculate ray index from launch ID
     uint globalRayIndex = gl_LaunchIDEXT.x;
     uint totalRays = pc.vertexCount * pc.raysPerVertex;
-    
-    // Bounds checking
+
     if (globalRayIndex >= totalRays)
         return;
-    
-    // Calculate vertex and local ray index (optional, for debugging)
+
     uint vertexIdx = globalRayIndex / pc.raysPerVertex;
     uint localRayIdx = globalRayIndex % pc.raysPerVertex;
-    
-    // Get ray origin and direction (optional, not needed for validation)
-    // vec4 origin = vertexBuffer.vertices[vertexIdx];
-    // vec4 direction = rayDirectionBuffer.directions[globalRayIndex];
-    
-     // --- VALIDATION WRITE ---
-    // For debug validation, write directly by launch index so the output file should
-    // contain a deterministic ramp [0..totalRays-1] when raygen executes correctly.
+
     hitBuffer.rayIndices[globalRayIndex] = globalRayIndex;
 
-    // Keep the counter side-effect for additional observability while avoiding it as
-    // the indexing source (which can hide descriptor/binding problems).
     atomicAdd(counterBuffer.atomicCounter, 1);
-    // Trace ray
-    /*
-    traceRayEXT(TOP_LEVEL,        // acceleration structure
-                gl_RayFlagsNoneEXT, // ray flags
-                0xFF,              // cull mask
-                0,                 // sbt record offset
-                0,                 // sbt record stride
-                0,                 // miss index
-                origin.xyz,        // origin
-                0.0,               // tmin
-                direction.xyz,     // direction
-                1000.0,            // tmax
-                0);                // payload location
-    */
 }
