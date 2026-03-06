@@ -373,7 +373,7 @@ void Raytracer::CreateBLAS()
 	triangles.vertexStride = sizeof(glm::vec4);
 	triangles.maxVertex = _cageGeometry.vertexCount - 1;
 	triangles.indexType = VK_INDEX_TYPE_UINT32;
-
+	<
 	triangles.vertexData.deviceAddress =
 		GetBufferAddress(_cageGeometry.vertexBuffer);
 
