@@ -22,7 +22,16 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/string_cast.hpp> // <- stellt glm::to_string bereit
 
+#include <algorithm>
+#include <chrono>
+#include <cctype>
+#include <thread>
 #include <filesystem>
+#include <fstream>
+#include <unordered_map>
+#include <vector>
+
+#include <regex>
 
 namespace
 {
@@ -82,6 +91,191 @@ namespace
 	[[nodiscard]] inline bool HasModifierKeysPressed(const SDL_Keymod modifierKeys)
 	{
 		return IsSet(modifierKeys, SDL_KMOD_LSHIFT) || IsSet(modifierKeys, SDL_KMOD_LALT) || IsSet(modifierKeys, SDL_KMOD_LGUI);
+	}
+
+	[[nodiscard]] std::string ToLower(std::string value)
+	{
+		std::transform(value.begin(), value.end(), value.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+		return value;
+	}
+
+	struct EvaluationProjectConfig
+	{
+		std::string _name;
+		std::string _coordinateType = "MVC";
+		std::string _mesh;
+		std::string _cage;
+		std::string _deformedCage;
+		std::optional<std::string> _embedding;
+		std::optional<int32_t> _samples;
+	};
+
+	struct EvaluationConfig
+	{
+		std::string _timingsFile = "timings.txt";
+		std::vector<EvaluationProjectConfig> _projects;
+	};
+
+	[[nodiscard]] std::optional<std::string> ExtractJsonStringValue(const std::string& objectText, const std::string& key)
+	{
+		const std::regex pattern("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
+		std::smatch match;
+		if (std::regex_search(objectText, match, pattern) && match.size() > 1)
+		{
+			return match[1].str();
+		}
+		return std::nullopt;
+	}
+
+	[[nodiscard]] std::optional<int32_t> ExtractJsonIntValue(const std::string& objectText, const std::string& key)
+	{
+		const std::regex pattern("\"" + key + "\"\\s*:\\s*(-?[0-9]+)");
+		std::smatch match;
+		if (std::regex_search(objectText, match, pattern) && match.size() > 1)
+		{
+			return static_cast<int32_t>(std::stoi(match[1].str()));
+		}
+		return std::nullopt;
+	}
+
+	[[nodiscard]] std::vector<std::string> ExtractTopLevelObjects(const std::string& arrayText)
+	{
+		std::vector<std::string> objects;
+		int32_t braceDepth = 0;
+		bool isInString = false;
+		std::size_t objectStart = std::string::npos;
+		for (std::size_t i = 0; i < arrayText.size(); ++i)
+		{
+			const auto c = arrayText[i];
+			const auto escaped = (i > 0 && arrayText[i - 1] == '\\');
+			if (c == '"' && !escaped)
+			{
+				isInString = !isInString;
+				continue;
+			}
+			if (isInString)
+			{
+				continue;
+			}
+			if (c == '{')
+			{
+				if (braceDepth == 0)
+				{
+					objectStart = i;
+				}
+				++braceDepth;
+			}
+			else if (c == '}')
+			{
+				--braceDepth;
+				if (braceDepth == 0 && objectStart != std::string::npos)
+				{
+					objects.push_back(arrayText.substr(objectStart, i - objectStart + 1));
+					objectStart = std::string::npos;
+				}
+			}
+		}
+		return objects;
+	}
+
+	[[nodiscard]] std::optional<EvaluationConfig> ParseEvaluationConfig(const std::string& text)
+	{
+		EvaluationConfig config;
+		if (const auto timingsFile = ExtractJsonStringValue(text, "timingsFile"))
+		{
+			config._timingsFile = timingsFile.value();
+		}
+		const auto projectsPos = text.find("\"projects\"");
+		if (projectsPos == std::string::npos)
+		{
+			return std::nullopt;
+		}
+		const auto arrayStart = text.find('[', projectsPos);
+		if (arrayStart == std::string::npos)
+		{
+			return std::nullopt;
+		}
+		int32_t bracketDepth = 0;
+		bool isInString = false;
+		std::size_t arrayEnd = std::string::npos;
+		for (std::size_t i = arrayStart; i < text.size(); ++i)
+		{
+			const auto c = text[i];
+			const auto escaped = (i > 0 && text[i - 1] == '\\');
+			if (c == '"' && !escaped)
+			{
+				isInString = !isInString;
+				continue;
+			}
+			if (isInString)
+			{
+				continue;
+			}
+			if (c == '[')
+			{
+				++bracketDepth;
+			}
+			else if (c == ']')
+			{
+				--bracketDepth;
+				if (bracketDepth == 0)
+				{
+					arrayEnd = i;
+					break;
+				}
+			}
+		}
+		if (arrayEnd == std::string::npos)
+		{
+			return std::nullopt;
+		}
+		const auto projectsText = text.substr(arrayStart + 1, arrayEnd - arrayStart - 1);
+		for (const auto& objectText : ExtractTopLevelObjects(projectsText))
+		{
+			EvaluationProjectConfig project;
+			project._name = ExtractJsonStringValue(objectText, "name").value_or("");
+			project._coordinateType = ExtractJsonStringValue(objectText, "coordinateType").value_or("MVC");
+			project._mesh = ExtractJsonStringValue(objectText, "mesh").value_or("");
+			project._cage = ExtractJsonStringValue(objectText, "cage").value_or("");
+			project._deformedCage = ExtractJsonStringValue(objectText, "deformedCage").value_or("");
+			project._embedding = ExtractJsonStringValue(objectText, "embedding");
+			project._samples = ExtractJsonIntValue(objectText, "samples");
+			config._projects.push_back(std::move(project));
+		}
+		return config;
+	}
+
+	[[nodiscard]] std::optional<DeformationType> ParseDeformationType(const std::string& value)
+	{
+		static const std::unordered_map<std::string, DeformationType> mapping = {
+			{ "mvc", DeformationType::MVC },
+			{ "qmvc", DeformationType::QMVC },
+			{ "harmonic", DeformationType::Harmonic },
+			{ "bbw", DeformationType::BBW },
+			{ "lbc", DeformationType::LBC },
+			{ "mec", DeformationType::MEC },
+			{ "mlc", DeformationType::MLC },
+			{ "green", DeformationType::Green },
+			{ "qgc", DeformationType::QGC },
+			{ "somigliana", DeformationType::Somigliana },
+			{ "pmvcserialoffset", DeformationType::PMVCSerialOffset },
+			{ "pmvcserialnooffset", DeformationType::PMVCSerialNoOffset },
+			{ "pmvcringoffset", DeformationType::PMVCRingOffset },
+			{ "pmvcringnooffset", DeformationType::PMVCRingNoOffset },
+			{ "pmvcalloffset", DeformationType::PMVCAllOffset },
+			{ "pmvcallnooffset", DeformationType::PMVCAllNoOffset },
+			{ "pmvccpuoffset", DeformationType::PMVCCpuOffset },
+			{ "pmvccpunooffset", DeformationType::PMVCCpuNoOffset },
+			{ "raytracing", DeformationType::Raytracing }
+		};
+
+		const auto it = mapping.find(ToLower(value));
+		if (it == mapping.end())
+		{
+			return std::nullopt;
+		}
+
+		return it->second;
 	}
 }
 
@@ -148,15 +342,120 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 
-
 	StartEvaluation();
 	//OnNewProjectCreated();
 //#endif
 }
 
-void Editor::StartEvaluation() {
+void Editor::StartEvaluation()
+{
+	constexpr auto kEvaluationRoot = std::filesystem::path("evaluation");
+	constexpr auto kEvaluationConfig = "projects.json";
 
+	const auto evaluationRoot = std::filesystem::absolute(kEvaluationRoot);
+	const auto configPath = evaluationRoot / kEvaluationConfig;
+	if (!std::filesystem::exists(configPath))
+	{
+		LOG_WARN("Evaluation config '{}' does not exist. Skipping evaluation run.", configPath.string());
+		return;
+	}
+
+	std::ifstream configFile(configPath);
+	if (!configFile.is_open())
+	{
+		LOG_ERROR("Unable to open evaluation config '{}'.", configPath.string());
+		return;
+	}
+
+	const std::string configContent((std::istreambuf_iterator<char>(configFile)), std::istreambuf_iterator<char>());
+	const auto parsedConfig = ParseEvaluationConfig(configContent);
+	if (!parsedConfig.has_value())
+	{
+		LOG_ERROR("Failed to parse evaluation config '{}'.", configPath.string());
+		return;
+	}
+
+	const auto timingOutputPath = evaluationRoot / parsedConfig->_timingsFile;
+	std::ofstream timingOutput(timingOutputPath, std::ios::out | std::ios::trunc);
+	if (!timingOutput.is_open())
+	{
+		LOG_ERROR("Unable to open timing output file '{}'.", timingOutputPath.string());
+		return;
+	}
+
+#ifdef NDEBUG
+	constexpr auto buildType = "Release";
+#else
+	constexpr auto buildType = "Debug/Development";
+#endif
+
+	timingOutput << "BuildType=" << buildType << "\n";
+	timingOutput << "ProjectCount=" << parsedConfig->_projects.size() << "\n";
+
+	for (std::size_t i = 0; i < parsedConfig->_projects.size(); ++i)
+	{
+		const auto& project = parsedConfig->_projects[i];
+		if (project._mesh.empty() || project._cage.empty() || project._deformedCage.empty())
+		{
+			LOG_WARN("Skipping project {} due to missing required file keys (mesh/cage/deformedCage).", i);
+			continue;
+		}
+
+		const auto deformationType = ParseDeformationType(project._coordinateType);
+		if (!deformationType.has_value())
+		{
+			LOG_WARN("Skipping project {} due to unsupported coordinateType '{}'.", i, project._coordinateType);
+			continue;
+		}
+
+		const auto projectName = project._name.empty() ? (std::string("project_") + std::to_string(i)) : project._name;
+		const auto projectOutputDir = evaluationRoot / projectName;
+		std::filesystem::create_directories(projectOutputDir);
+
+		_projectModel->_deformationType = *deformationType;
+		_projectModel->_meshFilepath = evaluationRoot / project._mesh;
+		_projectModel->_cageFilepath = evaluationRoot / project._cage;
+		_projectModel->_deformedCageFilepath = evaluationRoot / project._deformedCage;
+		_projectModel->_embeddingFilepath = project._embedding.has_value() ? std::optional<std::filesystem::path>(evaluationRoot / project._embedding.value()) : std::nullopt;
+
+		if (project._samples.has_value())
+		{
+			_projectModel->_numSamples = project._samples.value();
+		}
+
+		const auto start = std::chrono::steady_clock::now();
+		OnNewProjectCreated();
+
+		while (_isComputingWeightsData.load(std::memory_order_relaxed) ||
+			_isComputingDeformationData.load(std::memory_order_relaxed))
+		{
+			FunctionWrapper mainThreadFunction;
+			while (_mainThreadQueue->TryPop(mainThreadFunction))
+			{
+				mainThreadFunction();
+			}
+
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+
+		FunctionWrapper mainThreadFunction;
+		while (_mainThreadQueue->TryPop(mainThreadFunction))
+		{
+			mainThreadFunction();
+		}
+
+		const auto end = std::chrono::steady_clock::now();
+		const auto elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
+
+		ExportWeights(projectOutputDir / "weights.dmat");
+		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
+		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
+
+		timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs << '\n';
+		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
+	}
 }
+
 
 void Editor::CreateSceneLights() const
 {

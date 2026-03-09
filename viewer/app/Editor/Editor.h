@@ -49,6 +49,8 @@ public:
 private:
 	void SetUpUIElements();
 
+	void StartEvaluation();
+
 	void CreateSceneLights() const;
 
 	/**
