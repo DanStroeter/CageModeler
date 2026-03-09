@@ -148,8 +148,14 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 
-	OnNewProjectCreated();
+
+	StartEvaluation();
+	//OnNewProjectCreated();
 //#endif
+}
+
+void Editor::StartEvaluation() {
+
 }
 
 void Editor::CreateSceneLights() const
