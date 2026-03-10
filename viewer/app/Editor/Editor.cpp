@@ -447,10 +447,10 @@ void Editor::StartEvaluation()
 		const auto end = std::chrono::steady_clock::now();
 		const auto elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
 
-		ExportWeights(projectOutputDir / "weights.dmat");
-		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
+		//ExportWeights(projectOutputDir / "weights.dmat");
+		//ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
 		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
-		ExportSample();
+		//ExportCurrentDeformedMesh(projectOutputDir / "deformed_mesh_sample.obj");
 
 		timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs << '\n';
 		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
@@ -877,12 +877,18 @@ void Editor::OnNewProjectCreated()
 
 		return;
 	}
+	_isComputingWeightsData.store(true, std::memory_order_seq_cst);
+	_isComputingDeformationData.store(false, std::memory_order_seq_cst);
 	
 
 	_threadPool->Submit([this]()
 	{
-		_isComputingWeightsData.store(true, std::memory_order_seq_cst);
-
+		//_isComputingWeightsData.store(true, std::memory_order_seq_cst);
+		const auto resetComputationState = [this]()
+		{
+			_isComputingWeightsData.store(false, std::memory_order_seq_cst);
+			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
+		};
 		// Update _projectModel if user creates a new project
 		if(_newProjectPanel != nullptr) {
 			auto _panelModel = _newProjectPanel->GetModel();
@@ -898,6 +904,7 @@ void Editor::OnNewProjectCreated()
 			{
 				_statusBar->SetError(std::move(error));
 			});
+			resetComputationState();
 
 			return;
 		}
@@ -986,9 +993,12 @@ void Editor::OnNewProjectCreated()
 				_statusBar->SetError(std::move(error));
 			});
 
+
+			resetComputationState();
 			return;
 		}
 
+		_isComputingDeformationData.store(true, std::memory_order_seq_cst);
 		_isComputingWeightsData.store(false, std::memory_order_seq_cst);
 
 		_weightsData.Update(std::move(weightsResult.GetValue()._skinningMatrix),
@@ -998,7 +1008,7 @@ void Editor::OnNewProjectCreated()
 			std::move(weightsResult.GetValue()._psiTri),
 			std::move(weightsResult.GetValue()._psiQuad));
 
-		_isComputingDeformationData.store(true, std::memory_order_seq_cst);
+		//_isComputingDeformationData.store(true, std::memory_order_seq_cst);
 
 		const auto& mesh = projectResult.GetValue()->_mesh;
 		const auto& cage = projectResult.GetValue()->_cage;
