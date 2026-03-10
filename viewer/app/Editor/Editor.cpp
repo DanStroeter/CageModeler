@@ -393,6 +393,9 @@ void Editor::StartEvaluation()
 	timingOutput << "BuildType=" << buildType << "\n";
 	timingOutput << "ProjectCount=" << parsedConfig->_projects.size() << "\n";
 
+	
+	_isEvaluationMode = true;
+
 	for (std::size_t i = 0; i < parsedConfig->_projects.size(); ++i)
 	{
 		const auto& project = parsedConfig->_projects[i];
@@ -462,11 +465,12 @@ void Editor::StartEvaluation()
 		ExportWeights(projectOutputDir / "weights.dmat");
 		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
 		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
-		// ExportCurrentDeformedMesh(projectOutputDir / "deformed_mesh_sample.obj");
 
 		timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs << '\n';
 		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
 	}
+
+	_isEvaluationMode = false;
 }
 
 void Editor::CreateSceneLights() const
@@ -895,14 +899,15 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 	_isComputingWeightsData.store(true, std::memory_order_seq_cst);
 	_isComputingDeformationData.store(false, std::memory_order_seq_cst);
 
-	// Snapshot model data on the calling thread so the worker does not race on UI-owned state.
 	auto projectModelSnapshot = std::make_shared<ProjectModelData>(*_projectModel);
 	if (_newProjectPanel != nullptr)
 	{
 		projectModelSnapshot = std::make_shared<ProjectModelData>(*_newProjectPanel->GetModel());
 	}
 
-	_threadPool->Submit([this, completionPromise, projectModelSnapshot]()
+	const bool isEvaluationMode = _isEvaluationMode;
+
+	_threadPool->Submit([this, completionPromise, projectModelSnapshot, isEvaluationMode]()
 	{
 		const auto fail = [this]()
 		{
@@ -992,11 +997,12 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 			promise.set_value(ComputeCageWeights(*projectData));
 		}
 
-		
-		
 		auto weightsResult = future.get();
-		
-		/*catch (const std::exception& e)
+		/*try
+		{
+			weightsResult = future.get();
+		}
+		catch (const std::exception& e)
 		{
 			_mainThreadQueue->Push([this, msg = std::string(e.what())]() mutable
 			{
@@ -1069,6 +1075,28 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 
 		_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
 
+		if (isEvaluationMode)
+		{
+			// Evaluation/offscreen mode:
+			// keep computed data, skip all scene/render proxy churn.
+			_projectData = projectData;
+
+			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
+
+			if (completionPromise != nullptr)
+			{
+				try
+				{
+					completionPromise->set_value();
+				}
+				catch (const std::future_error&)
+				{
+				}
+			}
+
+			return;
+		}
+
 		_mainThreadQueue->Push([this, projectData, completionPromise]() mutable
 		{
 			const auto& viewInfo = _cameraSubsystem->GetCamera().GetViewInfo();
@@ -1118,8 +1146,6 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 				[this]() { OnSequencerStartedDragging(); },
 				[this]() { OnSequencerEndedDragging(); }));
 
-			// This is the point you said should define completion:
-			// weights computed + deformation applied.
 			UpdateDeformedMeshPositionsFromDeformationData();
 
 			{
