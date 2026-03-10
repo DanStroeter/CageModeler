@@ -59,6 +59,71 @@ void GpuMPComputeStrategy::Initialize()
 	CreateDepthSampler();
 }
 
+void GpuMPComputeStrategy::Cleanup()
+{
+	if (_computeCommandPool != VK_NULL_HANDLE)
+	{
+		if (!_computeCommandBuffers.empty())
+		{
+			vkFreeCommandBuffers(_device, _computeCommandPool, static_cast<uint32_t>(_computeCommandBuffers.size()), _computeCommandBuffers.data());
+			_computeCommandBuffers.clear();
+		}
+		if (!_copyCommandBuffers.empty())
+		{
+			vkFreeCommandBuffers(_device, _computeCommandPool, static_cast<uint32_t>(_copyCommandBuffers.size()), _copyCommandBuffers.data());
+			_copyCommandBuffers.clear();
+		}
+
+		vkDestroyCommandPool(_device, _computeCommandPool, nullptr);
+		_computeCommandPool = VK_NULL_HANDLE;
+	}
+
+	if (_barySampler != VK_NULL_HANDLE)
+	{
+		vkDestroySampler(_device, _barySampler, nullptr);
+		_barySampler = VK_NULL_HANDLE;
+	}
+
+	if (_depthSampler != VK_NULL_HANDLE)
+	{
+		vkDestroySampler(_device, _depthSampler, nullptr);
+		_depthSampler = VK_NULL_HANDLE;
+	}
+
+	if (_vertexListBuffer._deviceBuffer != VK_NULL_HANDLE)
+	{
+		_vertexListBuffer.ReleaseResource(_device);
+		_vertexListBuffer = Buffer();
+	}
+
+	for (auto& slot : _slots)
+	{
+		if (slot.lambda._deviceBuffer != VK_NULL_HANDLE)
+		{
+			slot.lambda.ReleaseResource(_device);
+			slot.lambda = Buffer();
+		}
+		if (slot.wsum._deviceBuffer != VK_NULL_HANDLE)
+		{
+			slot.wsum.ReleaseResource(_device);
+			slot.wsum = Buffer();
+		}
+		if (slot.lambdaStaging._deviceBuffer != VK_NULL_HANDLE)
+		{
+			slot.lambdaStaging.ReleaseResource(_device);
+			slot.lambdaStaging = MemoryMappedBuffer();
+		}
+		if (slot.wsumStaging._deviceBuffer != VK_NULL_HANDLE)
+		{
+			slot.wsumStaging.ReleaseResource(_device);
+			slot.wsumStaging = MemoryMappedBuffer();
+		}
+	}
+
+	_sphereWeightCalculator.Cleanup(_device);
+}
+
+
 //TODO maybe needs to be checked
 /*void GpuMPComputeStrategy::WaitForTargetReuse(VkSemaphore timeline, uint64_t slotDoneValue)
 {

@@ -40,6 +40,7 @@ public:
     uint32_t RequiredRenderTargetCount() const override;
 
     void Initialize() override;
+    void Cleanup() override;
 
     void DispatchAfterRender(
         uint32_t deformableIndex,

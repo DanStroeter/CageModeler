@@ -49,6 +49,7 @@ public:
 		const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance, uint32_t cubemapSize, VkFormat format);
 	~CubemapManager();
 	void Initialize();
+	void Cleanup();
 
 	MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates(DeformationType deformationType);
 	void DebugRenderCubemaps();

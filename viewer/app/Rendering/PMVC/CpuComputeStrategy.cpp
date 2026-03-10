@@ -58,6 +58,46 @@ void CpuComputeStrategy::Initialize()
     AllocateResources();
 }
 
+void CpuComputeStrategy::Cleanup()
+{
+    if (_computeCommandPool != VK_NULL_HANDLE)
+    {
+        if (!_computeCommandBuffers.empty())
+        {
+            vkFreeCommandBuffers(_device, _computeCommandPool, static_cast<uint32_t>(_computeCommandBuffers.size()), _computeCommandBuffers.data());
+            _computeCommandBuffers.clear();
+        }
+
+        vkDestroyCommandPool(_device, _computeCommandPool, nullptr);
+        _computeCommandPool = VK_NULL_HANDLE;
+    }
+
+    for (auto& slot : _slots)
+    {
+        if (slot.colorBuffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(_device, slot.colorBuffer, nullptr);
+            slot.colorBuffer = VK_NULL_HANDLE;
+        }
+        if (slot.colorMemory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(_device, slot.colorMemory, nullptr);
+            slot.colorMemory = VK_NULL_HANDLE;
+        }
+
+        if (slot.depthBuffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(_device, slot.depthBuffer, nullptr);
+            slot.depthBuffer = VK_NULL_HANDLE;
+        }
+        if (slot.depthMemory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(_device, slot.depthMemory, nullptr);
+            slot.depthMemory = VK_NULL_HANDLE;
+        }
+    }
+}
+
 Eigen::MatrixXd CpuComputeStrategy::Readback()
 {
     for (Eigen::Index row = 0; row < _lambdaResults.rows(); ++row)

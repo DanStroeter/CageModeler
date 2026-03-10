@@ -18,7 +18,46 @@ CubemapManager::CubemapManager(const std::shared_ptr<RenderPipelineManager>& ren
 
 CubemapManager::~CubemapManager()
 {
-	//TODO cleanup
+	Cleanup();
+}
+
+
+void CubemapManager::Cleanup()
+{
+	if (!_device)
+		return;
+
+	vkDeviceWaitIdle(_device);
+
+	if (_indexBuffer._deviceBuffer != VK_NULL_HANDLE)
+	{
+		_indexBuffer.ReleaseResource(_device);
+		_indexBuffer = MemoryMappedBuffer();
+	}
+
+	if (_vertexBuffer._deviceBuffer != VK_NULL_HANDLE)
+	{
+		_vertexBuffer.ReleaseResource(_device);
+		_vertexBuffer = MemoryMappedBuffer();
+	}
+
+	if (_renderPass != VK_NULL_HANDLE)
+	{
+		vkDestroyRenderPass(_device, _renderPass, nullptr);
+		_renderPass = VK_NULL_HANDLE;
+	}
+
+	if (_renderPassCpu != VK_NULL_HANDLE)
+	{
+		vkDestroyRenderPass(_device, _renderPassCpu, nullptr);
+		_renderPassCpu = VK_NULL_HANDLE;
+	}
+
+	if (_graphicCommandPool != VK_NULL_HANDLE)
+	{
+		vkDestroyCommandPool(_device, _graphicCommandPool, nullptr);
+		_graphicCommandPool = VK_NULL_HANDLE;
+	}
 }
 
 void CubemapManager::Initialize()

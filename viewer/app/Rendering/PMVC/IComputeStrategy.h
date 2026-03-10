@@ -21,6 +21,8 @@ public:
 
     virtual void Initialize() { };
 
+    virtual void Cleanup() { };
+
     /*virtual void DispatchAfterRender(
         uint32_t deformableIndex,
         uint32_t slot,

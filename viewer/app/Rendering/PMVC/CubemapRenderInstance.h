@@ -101,6 +101,7 @@ public:
 		const CubemapWorkRange& range,
 		Eigen::MatrixXd& weights);
 	void ComputeCoordinates(const CubemapWorkRange& range, Eigen::MatrixXd& weights);
+	void Cleanup();
 
 private:
 	//CubemapManager& _cubemapManager;

@@ -24,7 +24,7 @@
 #include <thread>
 
 CubemapRenderInstance::~CubemapRenderInstance() {
-	//TODO: cleanup
+	Cleanup();
 }
 
 CubemapRenderInstance::CubemapRenderInstance()
@@ -78,6 +78,77 @@ CubemapRenderInstance::CubemapRenderInstance(
 , _cubemapPipelineHandleCpu(cubemapPipelineHandleCpu)
 {
 	Initialize();
+}
+
+
+void CubemapRenderInstance::Cleanup()
+{
+	if (!_device)
+		return;
+
+	vkDeviceWaitIdle(_device);
+
+	if (_computeStage)
+	{
+		_computeStage->Cleanup();
+		_computeStage.reset();
+	}
+
+	for (auto timeline : _timelines)
+	{
+		if (timeline != VK_NULL_HANDLE)
+			vkDestroySemaphore(_device, timeline, nullptr);
+	}
+	_timelines.clear();
+
+	if (_graphicCommandPool != VK_NULL_HANDLE)
+	{
+		vkDestroyCommandPool(_device, _graphicCommandPool, nullptr);
+		_graphicCommandPool = VK_NULL_HANDLE;
+	}
+
+	if (_cubemapRenderUnit.matricesUBO._deviceBuffer != VK_NULL_HANDLE)
+	{
+		_cubemapRenderUnit.matricesUBO.ReleaseResource(_device);
+		_cubemapRenderUnit.matricesUBO = MemoryMappedBuffer();
+	}
+
+	for (auto& target : _cubemapRenderUnit.targets)
+	{
+		for (auto framebuffer : target.framebuffers)
+		{
+			if (framebuffer != VK_NULL_HANDLE)
+				vkDestroyFramebuffer(_device, framebuffer, nullptr);
+		}
+		for (auto view : target.faceViews)
+		{
+			if (view != VK_NULL_HANDLE)
+				vkDestroyImageView(_device, view, nullptr);
+		}
+		for (auto view : target.depthViews)
+		{
+			if (view != VK_NULL_HANDLE)
+				vkDestroyImageView(_device, view, nullptr);
+		}
+
+		if (target.cubemapView != VK_NULL_HANDLE)
+			vkDestroyImageView(_device, target.cubemapView, nullptr);
+		if (target.depthView != VK_NULL_HANDLE)
+			vkDestroyImageView(_device, target.depthView, nullptr);
+
+		if (target.cubemapImage != VK_NULL_HANDLE)
+			vkDestroyImage(_device, target.cubemapImage, nullptr);
+		if (target.cubemapMemory != VK_NULL_HANDLE)
+			vkFreeMemory(_device, target.cubemapMemory, nullptr);
+
+		if (target.depthImage != VK_NULL_HANDLE)
+			vkDestroyImage(_device, target.depthImage, nullptr);
+		if (target.depthMemory != VK_NULL_HANDLE)
+			vkFreeMemory(_device, target.depthMemory, nullptr);
+	}
+
+	_cubemapRenderUnit.targets.clear();
+	_cubemapRenderUnit.graphicsCmdPerTarget.clear();
 }
 
 void CubemapRenderInstance::Initialize() {

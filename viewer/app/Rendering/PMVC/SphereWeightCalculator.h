@@ -19,6 +19,25 @@ public:
 
     SphereWeightCalculator() = default;
 
+    void Cleanup(RenderResourceRef<Device> device) {
+        if (_solidAngleSampler != VK_NULL_HANDLE) {
+            vkDestroySampler(device->GetReference(), _solidAngleSampler, nullptr);
+            _solidAngleSampler = VK_NULL_HANDLE;
+        }
+        if (_solidAngleArrayView != VK_NULL_HANDLE) {
+            vkDestroyImageView(device->GetReference(), _solidAngleArrayView, nullptr);
+            _solidAngleArrayView = VK_NULL_HANDLE;
+        }
+        if (_solidAngleImage != VK_NULL_HANDLE) {
+            vkDestroyImage(device->GetReference(), _solidAngleImage, nullptr);
+            _solidAngleImage = VK_NULL_HANDLE;
+        }
+        if (_solidAngleMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(device->GetReference(), _solidAngleMemory, nullptr);
+            _solidAngleMemory = VK_NULL_HANDLE;
+        }
+    }
+
     void SphereWeightInitialization(uint32_t size,
         RenderResourceRef<Device> device,
         std::shared_ptr<RenderResourceManager> resourceManager,
@@ -421,6 +440,25 @@ public:
     VkSampler      _solidAngleSampler = VK_NULL_HANDLE;
 
     SphereWeightCalculator() = default;
+
+    void Cleanup(RenderResourceRef<Device> device) {
+        if (_solidAngleSampler != VK_NULL_HANDLE) {
+            vkDestroySampler(device->GetReference(), _solidAngleSampler, nullptr);
+            _solidAngleSampler = VK_NULL_HANDLE;
+        }
+        if (_solidAngleArrayView != VK_NULL_HANDLE) {
+            vkDestroyImageView(device->GetReference(), _solidAngleArrayView, nullptr);
+            _solidAngleArrayView = VK_NULL_HANDLE;
+        }
+        if (_solidAngleImage != VK_NULL_HANDLE) {
+            vkDestroyImage(device->GetReference(), _solidAngleImage, nullptr);
+            _solidAngleImage = VK_NULL_HANDLE;
+        }
+        if (_solidAngleMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(device->GetReference(), _solidAngleMemory, nullptr);
+            _solidAngleMemory = VK_NULL_HANDLE;
+        }
+    }
 
     void SphereWeightInitialization(uint32_t size,
         RenderResourceRef<Device> device,
