@@ -30,6 +30,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <vector>
+#include <future>
 
 #include <regex>
 
@@ -424,10 +425,11 @@ void Editor::StartEvaluation()
 		}*/
 
 		const auto start = std::chrono::steady_clock::now();
-		OnNewProjectCreated();
+		auto completionPromise = std::make_shared<std::promise<void>>();
+		auto completionFuture = completionPromise->get_future();
+		OnNewProjectCreated(completionPromise);
 
-		while (_isComputingWeightsData.load(std::memory_order_relaxed) ||
-			_isComputingDeformationData.load(std::memory_order_relaxed))
+		while (completionFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
 		{
 			FunctionWrapper mainThreadFunction;
 			while (_mainThreadQueue->TryPop(mainThreadFunction))
@@ -868,12 +870,17 @@ void Editor::OnNewCageCreated()
 	return;
 }
 
-void Editor::OnNewProjectCreated()
+void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& completionPromise)
 {
 	LOG_DEBUG("Set Cage and Mesh");
 	if (_projectModel->CheckMissingFiles())
 	{
 		_statusBar->SetError("Unable to load all files, check if some of them are missing.");
+
+		if (completionPromise != nullptr)
+		{
+			completionPromise->set_value();
+		}
 
 		return;
 	}
@@ -881,13 +888,18 @@ void Editor::OnNewProjectCreated()
 	_isComputingDeformationData.store(false, std::memory_order_seq_cst);
 	
 
-	_threadPool->Submit([this]()
+	_threadPool->Submit([this, completionPromise]()
 	{
 		//_isComputingWeightsData.store(true, std::memory_order_seq_cst);
-		const auto resetComputationState = [this]()
+		const auto resetComputationState = [this, completionPromise]()
 		{
 			_isComputingWeightsData.store(false, std::memory_order_seq_cst);
 			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
+
+			if (completionPromise != nullptr)
+			{
+				completionPromise->set_value();
+			}
 		};
 		// Update _projectModel if user creates a new project
 		if(_newProjectPanel != nullptr) {
@@ -985,7 +997,7 @@ void Editor::OnNewProjectCreated()
 		}
 
 		auto weightsResult = future.get();
-		if (weightsResult.HasError() && !DeformationTypeHelpers::IsPMVC(_projectModel.get()->_deformationType))
+		if (weightsResult.HasError())
 		{
 			// Update the status with an error.
 			_mainThreadQueue->Push([this, error = std::move(weightsResult.GetError())]() mutable
@@ -1028,11 +1040,20 @@ void Editor::OnNewProjectCreated()
 			projectResult.GetValue()->_modelVerticesOffset,
 			projectResult.GetValue()->_numSamples,
 			projectResult.GetValue()->CanInterpolateWeights());
+		if (deformedMeshResult.HasError())
+		{
+			_mainThreadQueue->Push([this, error = std::move(deformedMeshResult.GetError())]() mutable
+			{
+				_statusBar->SetError(std::move(error));
+			});
+
+			resetComputationState();
+			return;
+		}
+
 		_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
 
-		_isComputingDeformationData.store(false, std::memory_order_seq_cst);
-
-		_mainThreadQueue->Push([this, projectResultValue = projectResult.GetValue()]() mutable
+		_mainThreadQueue->Push([this, projectResultValue = projectResult.GetValue(), completionPromise]() mutable
 		{
 			const auto& viewInfo = _cameraSubsystem->GetCamera().GetViewInfo();
 			_gizmo->SetPosition(viewInfo, glm::vec3(0.0f));
@@ -1116,6 +1137,13 @@ void Editor::OnNewProjectCreated()
 			{
 				_projectSettingsPanel->Dismiss();
 				_projectSettingsPanel = nullptr;
+			}
+
+			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
+
+			if (completionPromise != nullptr)
+			{
+				completionPromise->set_value();
 			}
 
 		});
