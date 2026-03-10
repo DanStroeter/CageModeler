@@ -237,6 +237,7 @@ private:
 	void OnSequencerEndedDragging();
 
 private:
+	void ClearEvaluationData();
 	bool _isEvaluationMode = false;
 	std::atomic<bool> _projectCreationFailed = false;
 

@@ -126,6 +126,8 @@ public:
 		return *this;
 	}
 
+	void ReleasePipeline(PipelineHandle handle);
+
 	[[nodiscard]] PipelineHandle Build() const;
 
 private:
@@ -182,6 +184,7 @@ public:
 	}
 
 	void ReleaseResource();
+	void ReleasePipeline(PipelineHandle handle);
 	[[nodiscard]] PipelineHandle BuildComputePipeline(const ComputePipelineObjectProxy& objectProxy);
 
 private:

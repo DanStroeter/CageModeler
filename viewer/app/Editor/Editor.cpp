@@ -100,6 +100,8 @@ namespace
 		return value;
 	}
 
+	[[nodiscard]] std::optional<DeformationType> ParseDeformationType(const std::string& value);
+
 	struct EvaluationProjectConfig
 	{
 		std::string _name;
@@ -109,6 +111,7 @@ namespace
 		std::string _deformedCage;
 		std::optional<std::string> _embedding;
 		std::optional<int32_t> _samples;
+		std::optional<int32_t> _cubemapSize;
 	};
 
 	struct EvaluationConfig
@@ -241,9 +244,33 @@ namespace
 			project._deformedCage = ExtractJsonStringValue(objectText, "deformedCage").value_or("");
 			project._embedding = ExtractJsonStringValue(objectText, "embedding");
 			project._samples = ExtractJsonIntValue(objectText, "samples");
+			project._cubemapSize = ExtractJsonIntValue(objectText, "cubemapSize");
 			config._projects.push_back(std::move(project));
 		}
 		return config;
+	}
+
+	[[nodiscard]] bool ValidateEvaluationProjectConfig(const EvaluationProjectConfig& project, const std::size_t projectIndex)
+	{
+		if (project._mesh.empty() || project._cage.empty() || project._deformedCage.empty())
+		{
+			LOG_WARN("Skipping project {} due to missing required file keys (mesh/cage/deformedCage).", projectIndex);
+			return false;
+		}
+
+		if (const auto deformationType = ParseDeformationType(project._coordinateType); !deformationType.has_value())
+		{
+			LOG_WARN("Skipping project {} due to unsupported coordinateType '{}'.", projectIndex, project._coordinateType);
+			return false;
+		}
+
+		if (project._cubemapSize.has_value() && project._cubemapSize.value() <= 0)
+		{
+			LOG_WARN("Skipping project {} due to invalid cubemapSize {} (must be > 0).", projectIndex, project._cubemapSize.value());
+			return false;
+		}
+
+		return true;
 	}
 
 	[[nodiscard]] std::optional<DeformationType> ParseDeformationType(const std::string& value)
@@ -370,11 +397,6 @@ void Editor::StartEvaluation()
 
 	const std::string configContent((std::istreambuf_iterator<char>(configFile)), std::istreambuf_iterator<char>());
 	const auto parsedConfig = ParseEvaluationConfig(configContent);
-	if (!parsedConfig.has_value())
-	{
-		LOG_ERROR("Failed to parse evaluation config '{}'.", configPath.string());
-		return;
-	}
 
 	const auto timingOutputPath = evaluationRoot / parsedConfig->_timingsFile;
 	std::ofstream timingOutput(timingOutputPath, std::ios::out | std::ios::trunc);
@@ -399,6 +421,11 @@ void Editor::StartEvaluation()
 	for (std::size_t i = 0; i < parsedConfig->_projects.size(); ++i)
 	{
 		const auto& project = parsedConfig->_projects[i];
+		if (!ValidateEvaluationProjectConfig(project, i))
+		{
+			//LOG_ERROR("Failed to parse evaluation config '{}'.", configPath.string());
+			return;
+		}
 		if (project._mesh.empty() || project._cage.empty() || project._deformedCage.empty())
 		{
 			LOG_WARN("Skipping project {} due to missing required file keys (mesh/cage/deformedCage).", i);
@@ -420,6 +447,7 @@ void Editor::StartEvaluation()
 		_projectModel->_meshFilepath = evaluationRoot / project._mesh;
 		_projectModel->_cageFilepath = evaluationRoot / project._cage;
 		_projectModel->_deformedCageFilepath = evaluationRoot / project._deformedCage;
+		_projectModel->_cubemapSize = project._cubemapSize.value_or(32);
 
 		const auto start = std::chrono::steady_clock::now();
 
@@ -465,8 +493,14 @@ void Editor::StartEvaluation()
 		ExportWeights(projectOutputDir / "weights.dmat");
 		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
 		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
+		//_cubemapRenderer->Cleanup();
+		ClearEvaluationData();
+		
+		//_cubemapRenderer->~CubemapManager();
+		//_cubemapRenderer = std::make_shared<CubemapManager>(_sceneManager->_renderPipelineManager, _renderResourceManager, _device, _instance, 32, VK_FORMAT_R32G32B32A32_SFLOAT);
+		
 
-		timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs << '\n';
+		timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs <<  ",cubemapSize: " << project._cubemapSize.value_or(32) <<'\n';
 		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
 	}
 
@@ -955,13 +989,13 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 			auto promise = std::make_shared<std::promise<WeightsResult>>();
 			future = promise->get_future();
 
-			_mainThreadQueue->Push([this, projectData, promise]() mutable
+			_mainThreadQueue->Push([this, projectData, projectModelSnapshot, promise]() mutable
 			{
 				try
 				{
+					_cubemapRenderer->Initialize(static_cast<uint32_t>(projectModelSnapshot->_cubemapSize));
 					_cubemapRenderer->SetCage(projectData->_cage);
 					_cubemapRenderer->SetMesh(projectData->_mesh);
-					_cubemapRenderer->Initialize();
 					promise->set_value(_cubemapRenderer->ComputeCoordinates(projectData->_deformationType));
 				}
 				catch (...)
@@ -1180,6 +1214,34 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 			}
 		});
 	});
+}
+
+void Editor::ClearEvaluationData()
+{
+	/* {
+		auto emptyWeights = MeshComputeWeightsOperationResult{};
+		_weightsData.Update(std::move(emptyWeights._skinningMatrix),
+			std::move(emptyWeights._weights),
+			std::move(emptyWeights._interpolatedWeights),
+			std::move(emptyWeights._psi),
+			std::move(emptyWeights._psiTri),
+			std::move(emptyWeights._psiQuad));
+	}
+
+
+
+	_weightsData.Update(Eigen::MatrixXd(),
+		Eigen::MatrixXd(),
+		Eigen::MatrixXd(),
+		Eigen::MatrixXd(),
+		Eigen::MatrixXd(),
+		Eigen::MatrixXd());
+	*/
+	//_deformationData.Update({});
+
+	_projectData.reset();
+
+
 }
 
 void Editor::OnProjectSettingsCancelled()

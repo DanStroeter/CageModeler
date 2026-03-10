@@ -88,7 +88,7 @@ private:
 #if BUILD_DEVELOPMENT
 	VkDebugUtilsMessengerEXT _debugMessenger = VK_NULL_HANDLE;
 #endif
-
+	friend Editor;
 	SubsystemPtr<WindowSubsystem> _windowSubsystem = nullptr;
 	SubsystemPtr<CameraSubsystem> _cameraSubsystem = nullptr;
 };

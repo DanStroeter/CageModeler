@@ -21,55 +21,51 @@ CubemapManager::~CubemapManager()
 	Cleanup();
 }
 
-
-void CubemapManager::Cleanup()
-{
-	if (!_device)
-		return;
-
+void CubemapManager::Cleanup() {
+	if (!_device) return;
 	vkDeviceWaitIdle(_device);
-
-	if (_indexBuffer._deviceBuffer != VK_NULL_HANDLE)
-	{
+	if (_indexBuffer._deviceBuffer != VK_NULL_HANDLE) {
 		_indexBuffer.ReleaseResource(_device);
 		_indexBuffer = MemoryMappedBuffer();
 	}
-
-	if (_vertexBuffer._deviceBuffer != VK_NULL_HANDLE)
-	{
+	if (_vertexBuffer._deviceBuffer != VK_NULL_HANDLE) {
 		_vertexBuffer.ReleaseResource(_device);
 		_vertexBuffer = MemoryMappedBuffer();
 	}
-
-	if (_renderPass != VK_NULL_HANDLE)
-	{
+	if (_renderPass != VK_NULL_HANDLE) {
 		vkDestroyRenderPass(_device, _renderPass, nullptr);
 		_renderPass = VK_NULL_HANDLE;
 	}
-
-	if (_renderPassCpu != VK_NULL_HANDLE)
-	{
+	if (_renderPassCpu != VK_NULL_HANDLE) {
 		vkDestroyRenderPass(_device, _renderPassCpu, nullptr);
 		_renderPassCpu = VK_NULL_HANDLE;
 	}
-
-	if (_graphicCommandPool != VK_NULL_HANDLE)
-	{
+	if (_graphicCommandPool != VK_NULL_HANDLE) {
 		vkDestroyCommandPool(_device, _graphicCommandPool, nullptr);
 		_graphicCommandPool = VK_NULL_HANDLE;
 	}
 }
 
-void CubemapManager::Initialize()
+void CubemapManager::Initialize(uint32_t cubemapSize)
 {
-	_descriptorPool = CreateRenderResource<DescriptorPool>(_device);
-	CreateCommandPool(_device->GetQueueFamilies()._graphics.value());
-	_renderPass = CreateRenderPass(_format, false);
-	_renderPassCpu = CreateRenderPass(_format, true);
-	CreateDescriptorSetLayouts();
-	_cubemapPipelineHandle = CreateCubemapRenderPipeline(false);
-	_cubemapPipelineHandleCpu = CreateCubemapRenderPipeline(true);
-	//SphereWeightInitialization(512);
+	if (!init) {
+		_descriptorPool = CreateRenderResource<DescriptorPool>(_device);
+		CreateCommandPool(_device->GetQueueFamilies()._graphics.value());
+		_renderPass = CreateRenderPass(_format, false);
+		_renderPassCpu = CreateRenderPass(_format, true);
+		CreateDescriptorSetLayouts();
+		_cubemapPipelineHandle = CreateCubemapRenderPipeline(false);
+		_cubemapPipelineHandleCpu = CreateCubemapRenderPipeline(true);
+		//SphereWeightInitialization(512);
+		init = true;
+	}
+	if(cubemapSize != _cubemapSize) {
+		_cubemapSize = cubemapSize;
+		_renderPipelineManager->ReleasePipeline(_cubemapPipelineHandle);
+		_renderPipelineManager->ReleasePipeline(_cubemapPipelineHandleCpu);
+		_cubemapPipelineHandle = CreateCubemapRenderPipeline(false);
+		_cubemapPipelineHandleCpu = CreateCubemapRenderPipeline(true);
+	}
 }
 
 VkRenderPass CubemapManager::CreateRenderPass(VkFormat format, bool cpuTransfer) {

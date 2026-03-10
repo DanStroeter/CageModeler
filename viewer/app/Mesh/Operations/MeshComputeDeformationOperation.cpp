@@ -140,7 +140,7 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 		}
 		else if (DeformationTypeHelpers::PMVCOffset(_params._deformationType)) {
 
-			//Rest data(never modified)
+			/*Rest data(never modified)
 			const auto& C0 = _params._cage._vertices;
 			const auto& V0 = _params._mesh._vertices;
 
@@ -163,7 +163,8 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 			// 4) Final vertices
 			vertexData[i]._vertices = proj1 + offset;
 
-			//WriteWeightsToFile("pmvc", _params._weightsData._weights);
+			//WriteWeightsToFile("pmvc", _params._weightsData._weights);*/
+			vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices + _params._mesh._vertices - _params._weightsData._weights * _params._cage._vertices;
 		}
 		else if (_params._deformationType == DeformationType::Raytracing)
 		{

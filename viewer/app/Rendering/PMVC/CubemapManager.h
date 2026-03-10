@@ -48,7 +48,7 @@ public:
 	CubemapManager(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
 		const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance, uint32_t cubemapSize, VkFormat format);
 	~CubemapManager();
-	void Initialize();
+	void Initialize(uint32_t cubemapSize);
 	void Cleanup();
 
 	MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates(DeformationType deformationType);
@@ -88,6 +88,8 @@ private:
 	//geodata:
 	EigenMesh _cageMesh;
 	EigenMesh _deformableMesh;
+
+	bool init = false;
 
 	//pipeline
 	VkCommandPool _graphicCommandPool;

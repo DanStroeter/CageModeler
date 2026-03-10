@@ -34,6 +34,33 @@ VkShaderModule RenderPipelineManager::CreateShaderModule(const std::vector<char>
 	return result;
 }
 
+void RenderPipelineManager::ReleasePipeline(PipelineHandle handle)
+{
+	if (!_device)
+	{
+		return;
+	}
+
+	const auto index = handle.GetIndex();
+	if (index >= _allocatedPipelines.size() || !_allocatedPipelines[index])
+	{
+		return;
+	}
+
+	const auto& pipeline = _pipelines[index];
+	if (pipeline._handle != VK_NULL_HANDLE)
+	{
+		vkDestroyPipeline(_device, pipeline._handle, nullptr);
+	}
+	if (pipeline._pipelineLayout != VK_NULL_HANDLE)
+	{
+		vkDestroyPipelineLayout(_device, pipeline._pipelineLayout, nullptr);
+	}
+
+	_allocatedPipelines[index] = false;
+	_pipelines[index] = PipelineObject();
+}
+
 void RenderPipelineManager::ReleaseResource()
 {
 	// Destroy all pipelines and pipeline layouts.
