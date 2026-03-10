@@ -349,7 +349,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 
 void Editor::StartEvaluation()
 {
-	constexpr auto kEvaluationRoot = std::filesystem::path("evaluation");
+	const auto kEvaluationRoot = std::filesystem::path("evaluation");
 	constexpr auto kEvaluationConfig = "projects.json";
 
 	const auto evaluationRoot = std::filesystem::absolute(kEvaluationRoot);
@@ -416,12 +416,12 @@ void Editor::StartEvaluation()
 		_projectModel->_meshFilepath = evaluationRoot / project._mesh;
 		_projectModel->_cageFilepath = evaluationRoot / project._cage;
 		_projectModel->_deformedCageFilepath = evaluationRoot / project._deformedCage;
-		_projectModel->_embeddingFilepath = project._embedding.has_value() ? std::optional<std::filesystem::path>(evaluationRoot / project._embedding.value()) : std::nullopt;
+		//_projectModel->_embeddingFilepath = project._embedding.has_value() ? std::optional<std::filesystem::path>(evaluationRoot / project._embedding.value()) : std::nullopt;
 
-		if (project._samples.has_value())
+		/*if (project._samples.has_value())
 		{
 			_projectModel->_numSamples = project._samples.value();
-		}
+		}*/
 
 		const auto start = std::chrono::steady_clock::now();
 		OnNewProjectCreated();
@@ -450,6 +450,7 @@ void Editor::StartEvaluation()
 		ExportWeights(projectOutputDir / "weights.dmat");
 		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
 		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
+		ExportSample();
 
 		timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs << '\n';
 		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);

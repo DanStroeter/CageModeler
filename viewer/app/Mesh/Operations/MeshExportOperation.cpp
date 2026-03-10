@@ -33,7 +33,7 @@ void DeformedMeshExportOperation::ExportSample(const std::size_t frameIndex, con
 	outputFilename.append(".obj");
 
 	// Scale the output data before we do the export.
-	GeometryUtils::ScaleEigenMesh(_params._deformationData._vertexData[frameIndex]._vertices, _params._scalingFactor);
+	//GeometryUtils::ScaleEigenMesh(_params._deformationData._vertexData[frameIndex]._vertices, _params._scalingFactor);
 
 	igl::writeOBJ(outputFilename, _params._deformationData._vertexData[frameIndex]._vertices, _params._faces);
 
