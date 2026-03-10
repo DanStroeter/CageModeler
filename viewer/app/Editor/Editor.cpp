@@ -333,7 +333,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCancelled(); },
 		[this] { OnNewProjectCreated(); });
 
-	_projectModel->_deformationType = DeformationType::MVC;
+	_projectModel->_deformationType = DeformationType::PMVCAllNoOffset;
 	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
 	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
 	_projectModel->_meshFilepath = "assets/meshes/armadilloman.obj";
@@ -417,27 +417,30 @@ void Editor::StartEvaluation()
 		_projectModel->_meshFilepath = evaluationRoot / project._mesh;
 		_projectModel->_cageFilepath = evaluationRoot / project._cage;
 		_projectModel->_deformedCageFilepath = evaluationRoot / project._deformedCage;
-		//_projectModel->_embeddingFilepath = project._embedding.has_value() ? std::optional<std::filesystem::path>(evaluationRoot / project._embedding.value()) : std::nullopt;
-
-		/*if (project._samples.has_value())
-		{
-			_projectModel->_numSamples = project._samples.value();
-		}*/
 
 		const auto start = std::chrono::steady_clock::now();
+
+		_projectCreationFailed.store(false, std::memory_order_seq_cst);
+
 		auto completionPromise = std::make_shared<std::promise<void>>();
 		auto completionFuture = completionPromise->get_future();
+
 		OnNewProjectCreated(completionPromise);
 
 		while (completionFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
 		{
+			if (_projectCreationFailed.load(std::memory_order_seq_cst))
+			{
+				break;
+			}
+
 			FunctionWrapper mainThreadFunction;
 			while (_mainThreadQueue->TryPop(mainThreadFunction))
 			{
 				mainThreadFunction();
 			}
 
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 
 		FunctionWrapper mainThreadFunction;
@@ -446,19 +449,25 @@ void Editor::StartEvaluation()
 			mainThreadFunction();
 		}
 
+		if (_projectCreationFailed.load(std::memory_order_seq_cst))
+		{
+			LOG_WARN("Evaluation project '{}' failed.", projectName);
+			timingOutput << projectName << "," << project._coordinateType << ",FAILED\n";
+			continue;
+		}
+
 		const auto end = std::chrono::steady_clock::now();
 		const auto elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
 
-		//ExportWeights(projectOutputDir / "weights.dmat");
-		//ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
+		ExportWeights(projectOutputDir / "weights.dmat");
+		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
 		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
-		//ExportCurrentDeformedMesh(projectOutputDir / "deformed_mesh_sample.obj");
+		// ExportCurrentDeformedMesh(projectOutputDir / "deformed_mesh_sample.obj");
 
 		timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs << '\n';
 		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
 	}
 }
-
 
 void Editor::CreateSceneLights() const
 {
@@ -873,140 +882,149 @@ void Editor::OnNewCageCreated()
 void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& completionPromise)
 {
 	LOG_DEBUG("Set Cage and Mesh");
+
+	_projectCreationFailed.store(false, std::memory_order_seq_cst);
+
 	if (_projectModel->CheckMissingFiles())
 	{
 		_statusBar->SetError("Unable to load all files, check if some of them are missing.");
-
-		if (completionPromise != nullptr)
-		{
-			completionPromise->set_value();
-		}
-
+		_projectCreationFailed.store(true, std::memory_order_seq_cst);
 		return;
 	}
+
 	_isComputingWeightsData.store(true, std::memory_order_seq_cst);
 	_isComputingDeformationData.store(false, std::memory_order_seq_cst);
-	
 
-	_threadPool->Submit([this, completionPromise]()
+	// Snapshot model data on the calling thread so the worker does not race on UI-owned state.
+	auto projectModelSnapshot = std::make_shared<ProjectModelData>(*_projectModel);
+	if (_newProjectPanel != nullptr)
 	{
-		//_isComputingWeightsData.store(true, std::memory_order_seq_cst);
-		const auto resetComputationState = [this, completionPromise]()
+		projectModelSnapshot = std::make_shared<ProjectModelData>(*_newProjectPanel->GetModel());
+	}
+
+	_threadPool->Submit([this, completionPromise, projectModelSnapshot]()
+	{
+		const auto fail = [this]()
 		{
 			_isComputingWeightsData.store(false, std::memory_order_seq_cst);
 			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
-
-			if (completionPromise != nullptr)
-			{
-				completionPromise->set_value();
-			}
+			_projectCreationFailed.store(true, std::memory_order_seq_cst);
 		};
-		// Update _projectModel if user creates a new project
-		if(_newProjectPanel != nullptr) {
-			auto _panelModel = _newProjectPanel->GetModel();
-			_projectModel = std::make_shared<ProjectModelData>(*_panelModel);
-		}
 
-		auto projectResult = CreateProject();
+		auto projectResult = _meshOperationSystem->ExecuteOperation<MeshLoadOperation>(
+			projectModelSnapshot->_deformationType,
+			projectModelSnapshot->_LBCWeightingScheme,
+			projectModelSnapshot->_meshFilepath.value(),
+			projectModelSnapshot->_cageFilepath.value_or(std::filesystem::path()),
+			projectModelSnapshot->_deformedCageFilepath,
+			projectModelSnapshot->_weightsFilepath,
+			projectModelSnapshot->_embeddingFilepath,
+			projectModelSnapshot->_parametersFilepath,
+			projectModelSnapshot->_numBBWSteps,
+			projectModelSnapshot->_numSamples,
+			projectModelSnapshot->_scalingFactor,
+			projectModelSnapshot->_interpolateWeights,
+			projectModelSnapshot->_findOffset,
+			projectModelSnapshot->_noOffset,
+			projectModelSnapshot->_somigNu,
+			projectModelSnapshot->_somiglianaDeformer);
 
 		if (projectResult.HasError())
 		{
-			// Update the status with an error.
 			_mainThreadQueue->Push([this, error = std::move(projectResult.GetError())]() mutable
 			{
 				_statusBar->SetError(std::move(error));
 			});
-			resetComputationState();
 
+			fail();
 			return;
 		}
-		
-		
-		// Compute the weights, but do it off the main thread, because it's the most expensive operation.
-		//LOG_DEBUG(_projectModel.get()->_deformationType);
-		//std::optional<decltype(ComputeCageWeights(*projectResult.GetValue()))> weightsResult;
-		/*std::promise<decltype(ComputeCageWeights(*projectResult.GetValue()))> promise;
-		auto future = promise.get_future();
-		Eigen::MatrixXd weightMatrix;
-		if (_projectModel.get()->_deformationType == DeformationType::PMVCLipman) {
-			_mainThreadQueue->Push(
-				[this, projectResult, p = std::move(promise), &weightMatrix]() mutable {
-				_cubemapRenderer->SetCage(projectResult.GetValue()->_cage);
-				_cubemapRenderer->SetMesh(projectResult.GetValue()->_mesh);
-				_cubemapRenderer->Initialize();
-				//_cubemapRenderer->ComputeCoordinates(weightMatrix);
-				
-				p.set_value(_cubemapRenderer->ComputeCoordinates());
-			}
-			);
-		}
-		else if (_projectModel.get()->_deformationType == DeformationType::PMVCRayracing) {
-			_mainThreadQueue->Push(
-				[this, projectResult, p = std::move(promise), &weightMatrix]() mutable {
-				_raytracer->SetCage(projectResult.GetValue()->_cage);
-				_raytracer->SetMesh(projectResult.GetValue()->_mesh);
-				_raytracer->Initialize();
-				//_cubemapRenderer->ComputeCoordinates(weightMatrix);
 
-				p.set_value(_raytracer->ComputeCoordinates());
-				//projectResult.GetValue()->_deformationType = DeformationType::MVC;
-				//p.set_value(ComputeCageWeights(*projectResult.GetValue()));
-			}
-			);
-		}
-		else {
-			promise.set_value(ComputeCageWeights(*projectResult.GetValue()));
-		}
+		auto projectData = projectResult.GetValue();
 
-		auto weightsResult = future.get();*/
-		using WeightsResult = decltype(ComputeCageWeights(*projectResult.GetValue()));
-
+		using WeightsResult = decltype(ComputeCageWeights(*projectData));
 		std::future<WeightsResult> future;
 
-		if (DeformationTypeHelpers::IsPMVC(_projectModel->_deformationType)) {
-
+		if (DeformationTypeHelpers::IsPMVC(projectModelSnapshot->_deformationType))
+		{
 			auto promise = std::make_shared<std::promise<WeightsResult>>();
 			future = promise->get_future();
-			_mainThreadQueue->Push(
-				[this, projectResult, promise]() mutable {
-				_cubemapRenderer->SetCage(projectResult.GetValue()->_cage);
-				_cubemapRenderer->SetMesh(projectResult.GetValue()->_mesh);
-				_cubemapRenderer->Initialize();
 
-				promise->set_value(_cubemapRenderer->ComputeCoordinates(projectResult.GetValue()->_deformationType));
-			}
-			);
+			_mainThreadQueue->Push([this, projectData, promise]() mutable
+			{
+				try
+				{
+					_cubemapRenderer->SetCage(projectData->_cage);
+					_cubemapRenderer->SetMesh(projectData->_mesh);
+					_cubemapRenderer->Initialize();
+					promise->set_value(_cubemapRenderer->ComputeCoordinates(projectData->_deformationType));
+				}
+				catch (...)
+				{
+					promise->set_exception(std::current_exception());
+				}
+			});
 		}
-		else if (_projectModel->_deformationType == DeformationType::Raytracing) {
+		else if (projectModelSnapshot->_deformationType == DeformationType::Raytracing)
+		{
 			auto promise = std::make_shared<std::promise<WeightsResult>>();
 			future = promise->get_future();
-			_mainThreadQueue->Push(
-				[this, projectResult, promise]() mutable {
-				_raytracer->SetCage(projectResult.GetValue()->_cage);
-				_raytracer->SetMesh(projectResult.GetValue()->_mesh);
-				_raytracer->Initialize();
-				promise->set_value(_raytracer->ComputeCoordinates());
-			}
-			);
 
+			_mainThreadQueue->Push([this, projectData, promise]() mutable
+			{
+				try
+				{
+					_raytracer->SetCage(projectData->_cage);
+					_raytracer->SetMesh(projectData->_mesh);
+					_raytracer->Initialize();
+					promise->set_value(_raytracer->ComputeCoordinates());
+				}
+				catch (...)
+				{
+					promise->set_exception(std::current_exception());
+				}
+			});
 		}
-		else {
+		else
+		{
 			std::promise<WeightsResult> promise;
 			future = promise.get_future();
-			promise.set_value(ComputeCageWeights(*projectResult.GetValue()));
+			promise.set_value(ComputeCageWeights(*projectData));
 		}
 
+		
+		
 		auto weightsResult = future.get();
+		
+		/*catch (const std::exception& e)
+		{
+			_mainThreadQueue->Push([this, msg = std::string(e.what())]() mutable
+			{
+				_statusBar->SetError(std::move(msg));
+			});
+
+			fail();
+			return;
+		}
+		catch (...)
+		{
+			_mainThreadQueue->Push([this]()
+			{
+				_statusBar->SetError("Unknown error during main-thread weight computation.");
+			});
+
+			fail();
+			return;
+		}*/
+
 		if (weightsResult.HasError())
 		{
-			// Update the status with an error.
 			_mainThreadQueue->Push([this, error = std::move(weightsResult.GetError())]() mutable
 			{
 				_statusBar->SetError(std::move(error));
 			});
 
-
-			resetComputationState();
+			fail();
 			return;
 		}
 
@@ -1020,26 +1038,24 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 			std::move(weightsResult.GetValue()._psiTri),
 			std::move(weightsResult.GetValue()._psiQuad));
 
-		//_isComputingDeformationData.store(true, std::memory_order_seq_cst);
-
-		const auto& mesh = projectResult.GetValue()->_mesh;
-		const auto& cage = projectResult.GetValue()->_cage;
-		const auto& defCage = projectResult.GetValue()->_deformedCage;
+		const auto& mesh = projectData->_mesh;
+		const auto& cage = projectData->_cage;
+		const auto& defCage = projectData->_deformedCage;
 
 		LOG_DEBUG("MESH vertices: {} x {}", mesh._vertices.rows(), mesh._vertices.cols());
 		LOG_DEBUG("CAGE vertices: {} x {}", cage._vertices.rows(), cage._vertices.cols());
 		LOG_DEBUG("DEF CAGE vertices: {} x {}", defCage._vertices.rows(), defCage._vertices.cols());
-		//LOG_DEBUG(projectResult.GetValue()->_deformationType);
 
-		auto deformedMeshResult = ComputeDeformedMesh(projectResult.GetValue()->_mesh,
-			projectResult.GetValue()->_cage,
-			projectResult.GetValue()->_deformedCage,
-			projectResult.GetValue()->_deformationType,
-			projectResult.GetValue()->_LBCWeightingScheme,
-			projectResult.GetValue()->_somiglianaDeformer,
-			projectResult.GetValue()->_modelVerticesOffset,
-			projectResult.GetValue()->_numSamples,
-			projectResult.GetValue()->CanInterpolateWeights());
+		auto deformedMeshResult = ComputeDeformedMesh(projectData->_mesh,
+			projectData->_cage,
+			projectData->_deformedCage,
+			projectData->_deformationType,
+			projectData->_LBCWeightingScheme,
+			projectData->_somiglianaDeformer,
+			projectData->_modelVerticesOffset,
+			projectData->_numSamples,
+			projectData->CanInterpolateWeights());
+
 		if (deformedMeshResult.HasError())
 		{
 			_mainThreadQueue->Push([this, error = std::move(deformedMeshResult.GetError())]() mutable
@@ -1047,18 +1063,17 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 				_statusBar->SetError(std::move(error));
 			});
 
-			resetComputationState();
+			fail();
 			return;
 		}
 
 		_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
 
-		_mainThreadQueue->Push([this, projectResultValue = projectResult.GetValue(), completionPromise]() mutable
+		_mainThreadQueue->Push([this, projectData, completionPromise]() mutable
 		{
 			const auto& viewInfo = _cameraSubsystem->GetCamera().GetViewInfo();
 			_gizmo->SetPosition(viewInfo, glm::vec3(0.0f));
 
-			// Remove the old meshes first and then re-add them back to the scene.
 			if (_deformedMeshHandle != InvalidHandle)
 			{
 				_scene->RemoveMesh(_deformedMeshHandle);
@@ -1071,68 +1086,54 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 				_deformedCageHandle = InvalidHandle;
 			}
 
-			_projectData = projectResultValue;
+			_projectData = projectData;
 
 			const auto translation = glm::translate(glm::mat4(1.0f), glm::vec3(_projectData->_centerOffset));
 			const auto scale = glm::scale(glm::mat4(1.0f), glm::vec3(_projectData->_scalingFactor));
 			const auto newModelMatrix = scale * translation;
 
-			// Add the mesh and the cage to the rendered meshes. We are not going to render the original mesh and original cage for now.
 			_deformedMeshHandle = _scene->AddMesh(_projectData->_mesh._vertices, _projectData->_mesh._faces);
-			const auto mesh = _scene->GetMesh(_deformedMeshHandle);
-			mesh->SetModelMatrix(newModelMatrix);
+			const auto deformedMesh = _scene->GetMesh(_deformedMeshHandle);
+			deformedMesh->SetModelMatrix(newModelMatrix);
 
 			_deformedCageHandle = _scene->AddCage(_projectData->_deformedCage._vertices, _projectData->_deformedCage._faces);
-
-			//_cubemapRenderer->SetCage(_projectData->_cage);
-			//_cubemapRenderer->SetMesh(_projectData->_mesh);
-			//_cubemapRenderer->Initialize();
-			//LOG_DEBUG("Cubemaprenderer init fertig");
-			//_cubemapRenderer->ComputeCoordinates();
-
 			const auto cageMesh = _scene->GetMesh(_deformedCageHandle);
 			cageMesh->SetModelMatrix(newModelMatrix);
 
-			// We only recompute the vertex colors if they were previously on.
 			const auto renderInfluenceMap = _projectModel->CanRenderInfluenceMap();
 			if (renderInfluenceMap)
 			{
 				UpdateMeshVertexColors(renderInfluenceMap);
 			}
 
-			// Update the settings panel.
 			_projectOptionsPanel->SetDeformableMesh(_scene->GetMesh(_deformedMeshHandle));
 			_projectOptionsPanel->SetCageMesh(_scene->GetMesh(_deformedCageHandle));
 
-			// Update the mesh and the cage. We do this only once to compute the weights and any other operation is executed simply on the deformed cage.
 			_toolBar->SetModel(std::make_shared<ToolBarModel>(_projectData));
 
-			// Update the status bar to display the new meshes.
 			_statusBar->SetModel(std::make_shared<StatusBarModel>(_projectData,
-				[this]<typename T>(T&& selectionType) { OnSelectionTypeChanged(std::forward<T>(selectionType)); },
+				[this]<typename T>(T && selectionType) { OnSelectionTypeChanged(std::forward<T>(selectionType)); },
 				[this](const uint32_t newFrameIndex) { OnSequencerFrameIndexChanged(newFrameIndex); },
 				[this](const uint32_t frameIndex, const uint32_t numFrames) { OnSequencerNumFramesChanged(frameIndex, numFrames); },
 				[this]() { OnSequencerStartedDragging(); },
 				[this]() { OnSequencerEndedDragging(); }));
 
-			// Updates the vertex data with the last sample.
+			// This is the point you said should define completion:
+			// weights computed + deformation applied.
 			UpdateDeformedMeshPositionsFromDeformationData();
 
-			// Rebuild the entire BVH.
 			{
 				auto bvhBuilder = _scene->BeginGeometryBVH();
 				bvhBuilder.AddGeometry(_deformedMeshHandle);
 				bvhBuilder.AddGeometry(_deformedCageHandle);
 			}
 
-			// Ready to dismiss the project panel when we are done.
 			if (_newProjectPanel != nullptr)
 			{
 				_newProjectPanel->Dismiss();
 				_newProjectPanel = nullptr;
 			}
 
-			// Ready to dismiss the project panel when we are done.
 			if (_projectSettingsPanel != nullptr)
 			{
 				_projectSettingsPanel->Dismiss();
@@ -1143,9 +1144,14 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 
 			if (completionPromise != nullptr)
 			{
-				completionPromise->set_value();
+				try
+				{
+					completionPromise->set_value();
+				}
+				catch (const std::future_error&)
+				{
+				}
 			}
-
 		});
 	});
 }
