@@ -481,5 +481,8 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 		std::move(interpolatedWeights),
 		std::move(psi),
 		std::move(psiTri),
-		std::move(psiQuad)};
+		std::move(psiQuad),
+		instance.GetRenderMs(),
+		instance.GetComputeMs(),
+		instance.GetComputeTotalMs()};
 }

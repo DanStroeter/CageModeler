@@ -487,6 +487,11 @@ void Editor::StartEvaluation()
 		std::string _coordinateType;
 		std::string _status;
 		std::optional<double> _elapsedMs;
+		std::optional<double> _initMs;
+		std::optional<double> _renderMs;
+		std::optional<double> _computeMs;
+		std::optional<double> _computeTotalMs;
+		std::optional<double> _deformationApplyMs;
 		std::optional<int32_t> _meshVertexCount;
 		std::optional<int32_t> _cageVertexCount;
 		std::optional<std::string> _pmvcComputeType;
@@ -536,6 +541,10 @@ void Editor::StartEvaluation()
 		const auto start = std::chrono::steady_clock::now();
 
 		_projectCreationFailed.store(false, std::memory_order_seq_cst);
+		{
+			std::scoped_lock lock(_evaluationTimingsMutex);
+			_latestEvaluationStageTimings = {};
+		}
 
 		auto completionPromise = std::make_shared<std::promise<void>>();
 		auto completionFuture = completionPromise->get_future();
@@ -575,6 +584,11 @@ void Editor::StartEvaluation()
 				std::nullopt,
 				std::nullopt,
 				std::nullopt,
+				std::nullopt,
+				std::nullopt,
+				std::nullopt,
+				std::nullopt,
+				std::nullopt,
 				(*deformationType == DeformationType::PMVC) ? std::optional<std::string>(project._pmvcComputeType) : std::nullopt,
 				(*deformationType == DeformationType::PMVC) ? std::optional<bool>(project._pmvcUseOffset.value_or(false)) : std::nullopt,
 				(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt });
@@ -583,6 +597,12 @@ void Editor::StartEvaluation()
 
 		const auto end = std::chrono::steady_clock::now();
 		const auto elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
+
+		EvaluationStageTimings stageTimings;
+		{
+			std::scoped_lock lock(_evaluationTimingsMutex);
+			stageTimings = _latestEvaluationStageTimings;
+		}
 
 		ExportWeights(projectOutputDir / "weights.dmat");
 		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
@@ -617,6 +637,11 @@ void Editor::StartEvaluation()
 			project._coordinateType,
 			"OK",
 			elapsedMs,
+			stageTimings._initMs,
+			stageTimings._renderMs,
+			stageTimings._computeMs,
+			stageTimings._computeTotalMs,
+			stageTimings._deformationApplyMs,
 			_projectData ? std::optional<int32_t>(static_cast<int32_t>(_projectData->_mesh._vertices.rows())) : std::nullopt,
 			_projectData ? std::optional<int32_t>(static_cast<int32_t>(_projectData->_cage._vertices.rows())) : std::nullopt,
 			(*deformationType == DeformationType::PMVC) ? std::optional<std::string>(project._pmvcComputeType) : std::nullopt,
@@ -647,6 +672,26 @@ void Editor::StartEvaluation()
 		if (result._elapsedMs.has_value())
 		{
 			timingOutput << ",\n      \"elapsedMs\": " << result._elapsedMs.value();
+		}
+		if (result._initMs.has_value())
+		{
+			timingOutput << ",\n      \"initMs\": " << result._initMs.value();
+		}
+		if (result._renderMs.has_value())
+		{
+			timingOutput << ",\n      \"renderMs\": " << result._renderMs.value();
+		}
+		if (result._computeMs.has_value())
+		{
+			timingOutput << ",\n      \"computeMs\": " << result._computeMs.value();
+		}
+		if (result._computeTotalMs.has_value())
+		{
+			timingOutput << ",\n      \"computeTotalMs\": " << result._computeTotalMs.value();
+		}
+		if (result._deformationApplyMs.has_value())
+		{
+			timingOutput << ",\n      \"deformationApplyMs\": " << result._deformationApplyMs.value();
 		}
 		if (result._meshVertexCount.has_value())
 		{
@@ -1110,6 +1155,7 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 
 	_threadPool->Submit([this, completionPromise, projectModelSnapshot, isEvaluationMode]()
 	{
+		const auto initStart = std::chrono::steady_clock::now();
 		const auto fail = [this]()
 		{
 			_isComputingWeightsData.store(false, std::memory_order_seq_cst);
@@ -1149,6 +1195,8 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 		}
 
 		auto projectData = projectResult.GetValue();
+		const auto initEnd = std::chrono::steady_clock::now();
+		const auto initMs = std::chrono::duration<double, std::milli>(initEnd - initStart).count();
 
 		using WeightsResult = decltype(ComputeCageWeights(*projectData));
 		std::future<WeightsResult> future;
@@ -1241,6 +1289,10 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 		_isComputingDeformationData.store(true, std::memory_order_seq_cst);
 		_isComputingWeightsData.store(false, std::memory_order_seq_cst);
 
+		const auto renderMs = weightsResult.GetValue()._renderMs;
+		const auto computeMs = weightsResult.GetValue()._computeMs;
+		const auto computeTotalMs = weightsResult.GetValue()._computeTotalMs;
+
 		_weightsData.Update(std::move(weightsResult.GetValue()._skinningMatrix),
 			std::move(weightsResult.GetValue()._weights),
 			std::move(weightsResult.GetValue()._interpolatedWeights),
@@ -1256,6 +1308,7 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 		LOG_DEBUG("CAGE vertices: {} x {}", cage._vertices.rows(), cage._vertices.cols());
 		LOG_DEBUG("DEF CAGE vertices: {} x {}", defCage._vertices.rows(), defCage._vertices.cols());
 
+		const auto deformationApplyStart = std::chrono::steady_clock::now();
 		auto deformedMeshResult = ComputeDeformedMesh(projectData->_mesh,
 			projectData->_cage,
 			projectData->_deformedCage,
@@ -1279,12 +1332,31 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 		}
 
 		_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
+		const auto deformationApplyEnd = std::chrono::steady_clock::now();
+		const auto deformationApplyMs = std::chrono::duration<double, std::milli>(deformationApplyEnd - deformationApplyStart).count();
 
 		if (isEvaluationMode)
 		{
 			// Evaluation/offscreen mode:
 			// keep computed data, skip all scene/render proxy churn.
 			_projectData = projectData;
+			{
+				std::scoped_lock lock(_evaluationTimingsMutex);
+				_latestEvaluationStageTimings._initMs = initMs;
+				_latestEvaluationStageTimings._computeTotalMs = computeTotalMs;
+				if (projectData->_deformationType == DeformationType::PMVC &&
+					(projectData->_pmvcComputeType == PMVCComputeType::All || projectData->_pmvcComputeType == PMVCComputeType::Cpu))
+				{
+					_latestEvaluationStageTimings._renderMs = renderMs;
+					_latestEvaluationStageTimings._computeMs = computeMs;
+				}
+				else
+				{
+					_latestEvaluationStageTimings._renderMs.reset();
+					_latestEvaluationStageTimings._computeMs.reset();
+				}
+				_latestEvaluationStageTimings._deformationApplyMs = deformationApplyMs;
+			}
 
 			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
 

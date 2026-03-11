@@ -13,6 +13,7 @@
 //#include <Rendering/PMVC/CubemapRenderInstance.h>
 #include <Rendering/PMVC/SphereWeightCalculator.h>
 #include <Mesh/Operations/MeshWeightsParams.h>
+#include <optional>
 
 
 class CubemapManager;
@@ -91,6 +92,9 @@ public:
 		const CubemapWorkRange& range,
 		Eigen::MatrixXd& weights);
 	void ComputeCoordinates(const CubemapWorkRange& range, Eigen::MatrixXd& weights);
+	[[nodiscard]] std::optional<double> GetRenderMs() const { return _renderMs; }
+	[[nodiscard]] std::optional<double> GetComputeMs() const { return _computeMs; }
+	[[nodiscard]] std::optional<double> GetComputeTotalMs() const { return _computeTotalMs; }
 	void Cleanup();
 
 private:
@@ -105,6 +109,9 @@ private:
 	unsigned int _cubemapSize;
 	VkFormat _format;
 	PMVCComputeType _computeType;
+	std::optional<double> _renderMs;
+	std::optional<double> _computeMs;
+	std::optional<double> _computeTotalMs;
 
 	//init functions
 	void Initialize();
