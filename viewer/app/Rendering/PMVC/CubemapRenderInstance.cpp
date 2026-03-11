@@ -15,6 +15,13 @@
 #include <Rendering/PMVC/GpuSerialComputeStrategy.h>
 #include <Rendering/PMVC/GpuMassivelyParallelComputeStrategy.h>
 #include <Mesh/Operations/MeshWeightsParams.h>
+#include <Thread/ThreadPool.h>
+
+#include <algorithm>
+#include <exception>
+#include <future>
+#include <mutex>
+#include <thread>
 
 CubemapRenderInstance::~CubemapRenderInstance() {
 	//TODO: cleanup
@@ -783,81 +790,117 @@ void CubemapRenderInstance::ComputeCoordinatesGPUAtomic(
 		return;
 	}
 
-	VkSemaphore timeline = _timelines[0];
-	uint64_t& timelineValue = _slotDoneValue[0];
+	const uint32_t hardwareThreads = std::max(1u, std::thread::hardware_concurrency());
+	const uint32_t workerCount = std::max(1u, std::min({ hardwareThreads, slotCount, cubemapCount }));
 
-	for (uint32_t batchStart = 0; batchStart < cubemapCount; batchStart += slotCount)
+	std::vector<std::vector<uint32_t>> slotPools(workerCount);
+	for (uint32_t slot = 0; slot < slotCount; ++slot)
 	{
-		const uint32_t batchCount = std::min(slotCount, cubemapCount - batchStart);
+		slotPools[slot % workerCount].push_back(slot);
+	}
 
-		if (timelineValue > 0)
+	ThreadPool workerPool(workerCount);
+	std::vector<std::promise<void>> completionPromises(workerCount);
+	std::vector<std::future<void>> completionFutures;
+	completionFutures.reserve(workerCount);
+	for (auto& completionPromise : completionPromises)
+	{
+		completionFutures.emplace_back(completionPromise.get_future());
+	}
+
+	std::mutex submitMutex;
+
+	for (uint32_t workerId = 0; workerId < workerCount; ++workerId)
+	{
+		workerPool.Submit([&, workerId]() mutable
 		{
-			VkSemaphoreWaitInfo waitInfo{};
-			waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-			waitInfo.semaphoreCount = 1;
-			waitInfo.pSemaphores = &timeline;
-			waitInfo.pValues = &timelineValue;
-			VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
-		}
+			try
+			{
+				VkSemaphore timeline = _timelines[workerId];
+				uint64_t& timelineValue = _slotDoneValue[workerId];
+				const auto& pool = slotPools[workerId];
 
-		std::vector<uint64_t> renderDoneValues(batchCount);
-		std::vector<uint64_t> computeDoneValues(batchCount);
-		std::vector<uint64_t> copyDoneValues(batchCount);
+				for (uint32_t batchStart = 0; batchStart < cubemapCount; batchStart += slotCount)
+				{
+					const uint32_t batchCount = std::min(slotCount, cubemapCount - batchStart);
 
-		for (uint32_t slot = 0; slot < batchCount; ++slot)
-		{
-			const uint32_t cubemapIdx = range.first + batchStart + slot;
-			CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
+					if (timelineValue > 0)
+					{
+						VkSemaphoreWaitInfo waitInfo{};
+						waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+						waitInfo.semaphoreCount = 1;
+						waitInfo.pSemaphores = &timeline;
+						waitInfo.pValues = &timelineValue;
+						VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
+					}
 
-			renderDoneValues[slot] = ++timelineValue;
-			RecordAndSubmitCubemapRender(
-				cubemapIdx,
-				slot,
-				vertices[cubemapIdx],
-				target,
-				timeline,
-				renderDoneValues[slot]);
-		}
+					for (const uint32_t slot : pool)
+					{
+						if (slot >= batchCount)
+						{
+							continue;
+						}
 
-		for (uint32_t slot = 0; slot < batchCount; ++slot)
-		{
-			const uint32_t cubemapIdx = range.first + batchStart + slot;
-			CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
+						const uint32_t cubemapIdx = range.first + batchStart + slot;
+						CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
 
-			computeDoneValues[slot] = ++timelineValue;
-			computeStage->DispatchAfterRender(
-				cubemapIdx,
-				slot,
-				timeline,
-				renderDoneValues[slot],
-				computeDoneValues[slot],
-				target
-			);
-		}
+						const uint64_t renderDone = ++timelineValue;
+						{
+							std::lock_guard lock(submitMutex);
+							RecordAndSubmitCubemapRender(
+								cubemapIdx,
+								slot,
+								vertices[cubemapIdx],
+								target,
+								timeline,
+								renderDone);
+						}
 
-		for (uint32_t slot = 0; slot < batchCount; ++slot)
-		{
-			copyDoneValues[slot] = ++timelineValue;
-			computeStage->SubmitReadbackCopy(
-				slot,
-				timeline,
-				computeDoneValues[slot],
-				copyDoneValues[slot]
-			);
-		}
+						const uint64_t computeDone = ++timelineValue;
+						{
+							std::lock_guard lock(submitMutex);
+							computeStage->DispatchAfterRender(
+								cubemapIdx,
+								slot,
+								timeline,
+								renderDone,
+								computeDone,
+								target
+							);
+						}
 
-		for (uint32_t slot = 0; slot < batchCount; ++slot)
-		{
-			const uint32_t cubemapIdx = range.first + batchStart + slot;
-			computeStage->ConsumeSlot(
-				cubemapIdx,
-				slot,
-				timeline,
-				copyDoneValues[slot]
-			);
-		}
+						const uint64_t copyDone = ++timelineValue;
+						{
+							std::lock_guard lock(submitMutex);
+							computeStage->SubmitReadbackCopy(
+								slot,
+								timeline,
+								computeDone,
+								copyDone
+							);
+						}
 
-		timelineValue = copyDoneValues.back();
+						computeStage->ConsumeSlot(
+							cubemapIdx,
+							slot,
+							timeline,
+							copyDone
+						);
+					}
+				}
+
+				completionPromises[workerId].set_value();
+			}
+			catch (...)
+			{
+				completionPromises[workerId].set_exception(std::current_exception());
+			}
+		});
+	}
+
+	for (auto& completion : completionFutures)
+	{
+		completion.get();
 	}
 
 	weights = computeStage->Readback();
