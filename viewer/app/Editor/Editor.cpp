@@ -104,6 +104,25 @@ namespace
 	[[nodiscard]] std::optional<PMVCComputeType> ParsePMVCComputeType(const std::string& value);
 	[[nodiscard]] std::optional<bool> ExtractJsonBoolValue(const std::string& objectText, const std::string& key);
 
+	[[nodiscard]] std::string EscapeJsonString(const std::string& value)
+	{
+		std::string escaped;
+		escaped.reserve(value.size());
+		for (const char c : value)
+		{
+			switch (c)
+			{
+			case '\\': escaped += "\\\\"; break;
+			case '"': escaped += '\\'; escaped += '"'; break;
+			case '\n': escaped += "\\n"; break;
+			case '\r': escaped += "\\r"; break;
+			case '\t': escaped += "\\t"; break;
+			default: escaped += c; break;
+			}
+		}
+		return escaped;
+	}
+
 	struct EvaluationProjectConfig
 	{
 		std::string _name;
@@ -120,7 +139,7 @@ namespace
 
 	struct EvaluationConfig
 	{
-		std::string _timingsFile = "timings.txt";
+		std::string _timingsFile = "timings.json";
 		std::vector<EvaluationProjectConfig> _projects;
 	};
 
@@ -431,12 +450,6 @@ void Editor::StartEvaluation()
 	const auto parsedConfig = ParseEvaluationConfig(configContent);
 
 	const auto timingOutputPath = evaluationRoot / parsedConfig->_timingsFile;
-	std::ofstream timingOutput(timingOutputPath, std::ios::out | std::ios::trunc);
-	if (!timingOutput.is_open())
-	{
-		LOG_ERROR("Unable to open timing output file '{}'.", timingOutputPath.string());
-		return;
-	}
 
 #ifdef NDEBUG
 	constexpr auto buildType = "Release";
@@ -444,8 +457,17 @@ void Editor::StartEvaluation()
 	constexpr auto buildType = "Debug/Development";
 #endif
 
-	timingOutput << "BuildType=" << buildType << "\n";
-	timingOutput << "ProjectCount=" << parsedConfig->_projects.size() << "\n";
+	struct EvaluationResult
+	{
+		std::string _projectName;
+		std::string _coordinateType;
+		std::string _status;
+		std::optional<double> _elapsedMs;
+		std::optional<int32_t> _cubemapSize;
+	};
+
+	std::vector<EvaluationResult> results;
+	results.reserve(parsedConfig->_projects.size());
 
 	
 	_isEvaluationMode = true;
@@ -517,7 +539,7 @@ void Editor::StartEvaluation()
 		if (_projectCreationFailed.load(std::memory_order_seq_cst))
 		{
 			LOG_WARN("Evaluation project '{}' failed.", projectName);
-			timingOutput << projectName << "," << project._coordinateType << ",FAILED\n";
+			results.push_back(EvaluationResult{ projectName, project._coordinateType, "FAILED", std::nullopt, project._cubemapSize.value_or(32) });
 			continue;
 		}
 
@@ -534,11 +556,42 @@ void Editor::StartEvaluation()
 		//_cubemapRenderer = std::make_shared<CubemapManager>(_sceneManager->_renderPipelineManager, _renderResourceManager, _device, _instance, 32, VK_FORMAT_R32G32B32A32_SFLOAT);
 		
 
-		timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs <<  ",cubemapSize: " << project._cubemapSize.value_or(32) <<'\n';
+		//timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs <<  ",cubemapSize: " << project._cubemapSize.value_or(32) <<'\n';
+		results.push_back(EvaluationResult{ projectName, project._coordinateType, "OK", elapsedMs, project._cubemapSize.value_or(32) });
 		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
 	}
 
 	_isEvaluationMode = false;
+	std::ofstream timingOutput(timingOutputPath, std::ios::out | std::ios::trunc);
+	if (!timingOutput.is_open())
+	{
+		LOG_ERROR("Unable to open timing output file '{}'.", timingOutputPath.string());
+		return;
+	}
+
+	timingOutput << "{\n";
+	timingOutput << "  \"buildType\": \"" << EscapeJsonString(buildType) << "\",\n";
+	timingOutput << "  \"projectCount\": " << parsedConfig->_projects.size() << ",\n";
+	timingOutput << "  \"results\": [\n";
+	for (std::size_t i = 0; i < results.size(); ++i)
+	{
+		const auto& result = results[i];
+		timingOutput << "    {\n";
+		timingOutput << "      \"projectName\": \"" << EscapeJsonString(result._projectName) << "\",\n";
+		timingOutput << "      \"coordinateType\": \"" << EscapeJsonString(result._coordinateType) << "\",\n";
+		timingOutput << "      \"status\": \"" << EscapeJsonString(result._status) << "\"";
+		if (result._elapsedMs.has_value())
+		{
+			timingOutput << ",\n      \"elapsedMs\": " << result._elapsedMs.value();
+		}
+		if (result._cubemapSize.has_value())
+		{
+			timingOutput << ",\n      \"cubemapSize\": " << result._cubemapSize.value();
+		}
+		timingOutput << "\n    }" << (i + 1 < results.size() ? "," : "") << "\n";
+	}
+	timingOutput << "  ]\n";
+	timingOutput << "}\n";
 }
 
 void Editor::CreateSceneLights() const
