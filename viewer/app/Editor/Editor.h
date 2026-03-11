@@ -13,6 +13,9 @@
 #include <Rendering/PMVC/Raytracer.h>
 
 #include <future>
+#include <optional>
+#include <vector>
+#include <cstdint>
 
 class ProjectSettingsPanel;
 class ProjectOptionsPanel;
@@ -120,7 +123,8 @@ private:
 	 * Exports the influence color map as an .OBJ file.
 	 * @param filepath A filepath for the output .OBJ file.
 	 */
-	void ExportInfluenceColorMap(std::filesystem::path filepath) const;
+	void ExportInfluenceColorMap(std::filesystem::path filepath,
+		std::optional<std::vector<int32_t>> selectedVertices = std::nullopt) const;
 
 	/**
 	 * Exports the weights as a .DMAT file.

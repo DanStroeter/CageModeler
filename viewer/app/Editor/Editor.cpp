@@ -135,6 +135,7 @@ namespace
 		std::optional<std::string> _embedding;
 		std::optional<int32_t> _samples;
 		std::optional<int32_t> _cubemapSize;
+		std::optional<std::vector<int32_t>> _vertices;
 	};
 
 	struct EvaluationConfig
@@ -174,6 +175,28 @@ namespace
 			return static_cast<int32_t>(std::stoi(match[1].str()));
 		}
 		return std::nullopt;
+	}
+
+	[[nodiscard]] std::optional<std::vector<int32_t>> ExtractJsonIntArrayValue(const std::string& objectText, const std::string& key)
+	{
+		const std::regex pattern("\"" + key + "\"\\s*:\\s*\\[([^\\]]*)\\]");
+		std::smatch match;
+		if (!std::regex_search(objectText, match, pattern) || match.size() <= 1)
+		{
+			return std::nullopt;
+		}
+
+		std::vector<int32_t> values;
+		const auto content = match[1].str();
+		const std::regex intPattern("-?[0-9]+");
+		auto begin = std::sregex_iterator(content.begin(), content.end(), intPattern);
+		auto end = std::sregex_iterator();
+		for (auto it = begin; it != end; ++it)
+		{
+			values.push_back(static_cast<int32_t>(std::stoi(it->str())));
+		}
+
+		return values;
 	}
 
 	[[nodiscard]] std::vector<std::string> ExtractTopLevelObjects(const std::string& arrayText)
@@ -281,6 +304,7 @@ namespace
 			project._embedding = ExtractJsonStringValue(objectText, "embedding");
 			project._samples = ExtractJsonIntValue(objectText, "samples");
 			project._cubemapSize = ExtractJsonIntValue(objectText, "cubemapSize");
+			project._vertices = ExtractJsonIntArrayValue(objectText, "vertices");
 			config._projects.push_back(std::move(project));
 		}
 		return config;
@@ -549,6 +573,23 @@ void Editor::StartEvaluation()
 		ExportWeights(projectOutputDir / "weights.dmat");
 		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
 		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
+		if (project._vertices.has_value())
+		{
+			ExportInfluenceColorMap(projectOutputDir / "influence_map.obj", project._vertices);
+
+			std::ofstream selectedVerticesOutput(projectOutputDir / "influence_map_vertices.txt", std::ios::out | std::ios::trunc);
+			if (!selectedVerticesOutput.is_open())
+			{
+				LOG_WARN("Unable to write influence map vertices file for project '{}'.", projectName);
+			}
+			else
+			{
+				for (const auto vertexIdx : project._vertices.value())
+				{
+					selectedVerticesOutput << vertexIdx << "\n";
+				}
+			}
+		}
 		//_cubemapRenderer->Cleanup();
 		ClearEvaluationData();
 		
@@ -1887,7 +1928,8 @@ void Editor::ExportDeformedCage(std::filesystem::path filepath) const
 		std::move(filepath));
 }
 
-void Editor::ExportInfluenceColorMap(std::filesystem::path filepath) const
+void Editor::ExportInfluenceColorMap(std::filesystem::path filepath,
+	std::optional<std::vector<int32_t>> selectedVertices) const
 {
 	CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
 
@@ -1900,6 +1942,7 @@ void Editor::ExportInfluenceColorMap(std::filesystem::path filepath) const
 		_projectData->_mesh,
 		_projectData->_cage,
 		_projectData->_parametrization.value(),
+		std::move(selectedVertices),
 		std::move(filepath),
 		std::move(weights),
 		_projectData->_modelVerticesOffset,

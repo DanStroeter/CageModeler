@@ -4,6 +4,9 @@
 #include <Mesh/Operations/MeshWeightsParams.h>
 
 #include <filesystem>
+#include <optional>
+#include <vector>
+#include <cstdint>
 
 struct MeshExportInfluenceMapOperationParams
 {
@@ -13,6 +16,7 @@ struct MeshExportInfluenceMapOperationParams
 		EigenMesh mesh,
 		EigenMesh cage,
 		Parametrization parametrization,
+		std::optional<std::vector<int32_t>> selectedVertices,
 		std::filesystem::path outputFilename,
 		const MeshComputeWeightsOperationResult& weightsData,
 		const int32_t modelVerticesOffset,
@@ -23,6 +27,7 @@ struct MeshExportInfluenceMapOperationParams
 		, _mesh(std::move(mesh))
 		, _cage(std::move(cage))
 		, _parametrization(std::move(parametrization))
+		, _selectedVertices(std::move(selectedVertices))
 		, _outputFilepath(std::move(outputFilename))
 		, _weightsData(weightsData)
 		, _modelVerticesOffset(modelVerticesOffset)
@@ -37,6 +42,7 @@ struct MeshExportInfluenceMapOperationParams
 	EigenMesh _mesh;
 	EigenMesh _cage;
 	Parametrization _parametrization { };
+	std::optional<std::vector<int32_t>> _selectedVertices;
 	std::filesystem::path _outputFilepath;
 	std::reference_wrapper<const MeshComputeWeightsOperationResult> _weightsData;
 	int32_t _modelVerticesOffset;
