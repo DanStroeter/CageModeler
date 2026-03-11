@@ -487,6 +487,10 @@ void Editor::StartEvaluation()
 		std::string _coordinateType;
 		std::string _status;
 		std::optional<double> _elapsedMs;
+		std::optional<int32_t> _meshVertexCount;
+		std::optional<int32_t> _cageVertexCount;
+		std::optional<std::string> _pmvcComputeType;
+		std::optional<bool> _pmvcUseOffset;
 		std::optional<int32_t> _cubemapSize;
 	};
 
@@ -563,7 +567,17 @@ void Editor::StartEvaluation()
 		if (_projectCreationFailed.load(std::memory_order_seq_cst))
 		{
 			LOG_WARN("Evaluation project '{}' failed.", projectName);
-			results.push_back(EvaluationResult{ projectName, project._coordinateType, "FAILED", std::nullopt, project._cubemapSize.value_or(32) });
+
+			results.push_back(EvaluationResult{
+				projectName,
+				project._coordinateType,
+				"FAILED",
+				std::nullopt,
+				std::nullopt,
+				std::nullopt,
+				(*deformationType == DeformationType::PMVC) ? std::optional<std::string>(project._pmvcComputeType) : std::nullopt,
+				(*deformationType == DeformationType::PMVC) ? std::optional<bool>(project._pmvcUseOffset.value_or(false)) : std::nullopt,
+				(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt });
 			continue;
 		}
 
@@ -598,7 +612,16 @@ void Editor::StartEvaluation()
 		
 
 		//timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs <<  ",cubemapSize: " << project._cubemapSize.value_or(32) <<'\n';
-		results.push_back(EvaluationResult{ projectName, project._coordinateType, "OK", elapsedMs, project._cubemapSize.value_or(32) });
+		results.push_back(EvaluationResult{
+			projectName,
+			project._coordinateType,
+			"OK",
+			elapsedMs,
+			_projectData ? std::optional<int32_t>(static_cast<int32_t>(_projectData->_mesh._vertices.rows())) : std::nullopt,
+			_projectData ? std::optional<int32_t>(static_cast<int32_t>(_projectData->_cage._vertices.rows())) : std::nullopt,
+			(*deformationType == DeformationType::PMVC) ? std::optional<std::string>(project._pmvcComputeType) : std::nullopt,
+			(*deformationType == DeformationType::PMVC) ? std::optional<bool>(project._pmvcUseOffset.value_or(false)) : std::nullopt,
+			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt });
 		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
 	}
 
@@ -624,6 +647,22 @@ void Editor::StartEvaluation()
 		if (result._elapsedMs.has_value())
 		{
 			timingOutput << ",\n      \"elapsedMs\": " << result._elapsedMs.value();
+		}
+		if (result._meshVertexCount.has_value())
+		{
+			timingOutput << ",\n      \"numMeshVertices\": " << result._meshVertexCount.value();
+		}
+		if (result._cageVertexCount.has_value())
+		{
+			timingOutput << ",\n      \"numCageVertices\": " << result._cageVertexCount.value();
+		}
+		if (result._pmvcComputeType.has_value())
+		{
+			timingOutput << ",\n      \"pmvcComputeType\": \"" << EscapeJsonString(result._pmvcComputeType.value()) << "\"";
+		}
+		if (result._pmvcUseOffset.has_value())
+		{
+			timingOutput << ",\n      \"pmvcUseOffset\": " << (result._pmvcUseOffset.value() ? "true" : "false");
 		}
 		if (result._cubemapSize.has_value())
 		{
