@@ -10,6 +10,7 @@
 #include <Rendering/Core/DescriptorPool.h>
 #include <Rendering/Core/RenderResourceManager.h>
 #include <Rendering/PMVC/CubemapRenderInstance.h>
+#include <Thread/ThreadPool.h>
 #include <Mesh/GeometryUtils.h>
 
 class CpuComputeStrategy final : public ICubemapComputeStrategy
@@ -94,6 +95,8 @@ private:
     int _targetCount = 0;
     std::vector<SlotReadback> _slots;
     std::vector<uint32_t> _slotToDeformableIndex;
+    std::unique_ptr<ThreadPool> _threadPool;
+    uint32_t _cpuWorkerCount = 1;
     bool _offset = false;
 
     static constexpr uint32_t kMaxSlots = 64;

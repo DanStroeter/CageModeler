@@ -6,6 +6,7 @@
 #include <limits>
 #include <cassert>
 #include <cstddef>
+#include <thread>
 
 
 uint32_t CpuComputeStrategy::RequiredRenderTargetCount() const
@@ -17,6 +18,10 @@ void CpuComputeStrategy::Initialize()
 {
     _targetCount = static_cast<int>(RequiredRenderTargetCount());
     _slotToDeformableIndex.assign(_targetCount, UINT32_MAX);
+
+    const uint32_t hardwareThreads = std::max(1u, std::thread::hardware_concurrency());
+    _cpuWorkerCount = std::max(1u, std::min<uint32_t>(hardwareThreads, static_cast<uint32_t>(_targetCount)));
+    _threadPool = std::make_unique<ThreadPool>(_cpuWorkerCount);
 
     _lambdaResults.resize(_deformableMesh._vertices.rows(), _cageMesh._vertices.rows());
     _lambdaResults.setZero();
@@ -253,12 +258,32 @@ void CpuComputeStrategy::SubmitAllReadbacks(
 
 void CpuComputeStrategy::ConsumeAllSlots()
 {
+    std::vector<std::future<void>> tasks;
+    tasks.reserve(_slots.size());
+
     for (size_t slot = 0; slot < _slots.size(); ++slot)
     {
         const uint32_t deformableIndex = _slotToDeformableIndex[slot];
-        if (deformableIndex != UINT32_MAX)
+        if (deformableIndex == UINT32_MAX)
+        {
+            continue;
+        }
+
+        tasks.emplace_back(_threadPool->Submit([this, deformableIndex, slot]()
         {
             ComputeOnCpu(deformableIndex, _slots[slot]);
+        }));
+    }
+
+    for (auto& task : tasks)
+    {
+        task.get();
+    }
+
+    for (size_t slot = 0; slot < _slots.size(); ++slot)
+    {
+        if (_slotToDeformableIndex[slot] != UINT32_MAX)
+        {
             _slotToDeformableIndex[slot] = UINT32_MAX;
         }
     }
