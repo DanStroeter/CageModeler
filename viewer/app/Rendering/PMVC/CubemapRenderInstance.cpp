@@ -768,8 +768,10 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 	Eigen::MatrixXd& weights)
 {
 	const auto totalStart = std::chrono::steady_clock::now();
-	LOG_DEBUG("ComputeCoordinatesGPUMP (batched)");
-
+	auto waitStart = std::chrono::high_resolution_clock::now();
+	auto waitTemp = std::chrono::high_resolution_clock::now();
+	LOG_DEBUG("ComputeCoordinatesGPUAtomic (batched, no slots)");
+  
 	auto* computeStage = static_cast<GpuMPComputeStrategy*>(_computeStage.get());
 	const auto vertices = BuildDeformableVertexPositions();
 
@@ -779,6 +781,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 	);
 	const uint32_t cubemapCount = end - range.first;
 	const uint32_t slotCount = static_cast<uint32_t>(_cubemapRenderUnit.targets.size());
+	const auto renderStart = std::chrono::steady_clock::now();
 
 	if (cubemapCount == 0 || slotCount == 0)
 	{
@@ -788,8 +791,6 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 
 	VkSemaphore timeline = _timelines[0];
 	uint64_t& timelineValue = _slotDoneValue[0];
-	double renderMs = 0.0;
-	double computeMs = 0.0;
 
 	for (uint32_t batchStart = 0; batchStart < cubemapCount; batchStart += slotCount)
 	{
@@ -805,7 +806,6 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 			VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
 		}
 
-		const auto renderStart = std::chrono::steady_clock::now();
 		uint64_t renderDone = timelineValue;
 		for (uint32_t slot = 0; slot < batchCount; ++slot)
 		{
@@ -824,9 +824,6 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 			computeStage->RecordCompute(slot, target, cubemapIdx);
 		}
 
-		const auto computeStart = std::chrono::steady_clock::now();
-		renderMs += std::chrono::duration<double, std::milli>(computeStart - renderStart).count();
-
 		const uint64_t computeDone = ++timelineValue;
 		computeStage->SubmitAllComputes(timeline, renderDone, timeline, computeDone);
 
@@ -842,15 +839,15 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 
 		timelineValue = copyDone;
 		computeStage->ConsumeAllSlots();
-		computeMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - computeStart).count();
 	}
+	const auto renderEnd = std::chrono::steady_clock::now();
+	_renderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
+	const auto computeStart = renderEnd;
 
-	const auto readbackStart = std::chrono::steady_clock::now();
 	weights = computeStage->Readback();
-	const auto totalEnd = std::chrono::steady_clock::now();
-	_renderMs = renderMs;
-	_computeMs = computeMs + std::chrono::duration<double, std::milli>(totalEnd - readbackStart).count();
-	_computeTotalMs = std::chrono::duration<double, std::milli>(totalEnd - totalStart).count();
+	const auto computeEnd = std::chrono::steady_clock::now();
+	_computeMs = std::chrono::duration<double, std::milli>(computeEnd - computeStart).count();
+	_computeTotalMs = std::chrono::duration<double, std::milli>(computeEnd - totalStart).count();
 }
 
 void CubemapRenderInstance::ComputeCoordinatesGPUAtomic(
@@ -1122,6 +1119,7 @@ void CubemapRenderInstance::ComputeCoordinatesCpu(
 	);
 	const uint32_t cubemapCount = end - range.first;
 	const uint32_t slotCount = static_cast<uint32_t>(_cubemapRenderUnit.targets.size());
+	const auto renderStart = std::chrono::steady_clock::now();
 
 	if (cubemapCount == 0 || slotCount == 0)
 	{
@@ -1131,8 +1129,6 @@ void CubemapRenderInstance::ComputeCoordinatesCpu(
 
 	VkSemaphore timeline = _timelines[0];
 	uint64_t& timelineValue = _slotDoneValue[0];
-	double renderMs = 0.0;
-	double computeMs = 0.0;
 
 	for (uint32_t batchStart = 0; batchStart < cubemapCount; batchStart += slotCount)
 	{
@@ -1148,7 +1144,6 @@ void CubemapRenderInstance::ComputeCoordinatesCpu(
 			VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
 		}
 
-		const auto renderStart = std::chrono::steady_clock::now();
 		uint64_t renderDone = timelineValue;
 		for (uint32_t slot = 0; slot < batchCount; ++slot)
 		{
@@ -1178,17 +1173,16 @@ void CubemapRenderInstance::ComputeCoordinatesCpu(
 		VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
 
 		timelineValue = readbackDone;
-		const auto computeStart = std::chrono::steady_clock::now();
-		renderMs += std::chrono::duration<double, std::milli>(computeStart - renderStart).count();
 		computeStage->ConsumeAllSlots();
-		computeMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - computeStart).count();
 	}
+	const auto renderEnd = std::chrono::steady_clock::now();
+	_renderMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
+	const auto computeStart = renderEnd;
 
-	const auto readbackStart = std::chrono::steady_clock::now();
 	weights = computeStage->Readback();
+	const auto computeEnd = std::chrono::steady_clock::now();
+	_computeMs = std::chrono::duration<double, std::milli>(computeEnd - computeStart).count();
 	const auto totalEnd = std::chrono::steady_clock::now();
-	_renderMs = renderMs;
-	_computeMs = computeMs + std::chrono::duration<double, std::milli>(totalEnd - readbackStart).count();
 	_computeTotalMs = std::chrono::duration<double, std::milli>(totalEnd - totalStart).count();
 }
 
