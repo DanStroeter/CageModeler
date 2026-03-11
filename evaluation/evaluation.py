@@ -1,6 +1,6 @@
 import os
 import subprocess
-import csv
+import json
 
 coordinateFlags = ['--MVC', '--harmonic', '--green', '--MEC', '--BBW', '--LBC', '--QGC', '--MLC', '--somigliana']
 
@@ -36,37 +36,48 @@ def eval_influence(meshFile, cageFile, cageDeformedFile, embeddingFile, outFile,
     if (pipe.returncode != 0):
         print('cageDeformation3D failed for ' + str(command))
         print(log)
-    return log
+    return log 
 
 def eval_runtimes_meshes():
-    f = open('runtimes.csv', 'w')
-    writer = csv.writer(f)
+    runtimes = []
     for i in range(len(models)):
         meshFile = models[i]
         cageFile = cages[i]
         cageDeformedFile = cagesDeformed[i]
         embeddingFile = embeddings[i]
         outFile = outFiles[i]
-        runtimes_row = [meshFile]
+        model_runtimes = {
+            'mesh': meshFile,
+            'runtimes': {}
+        }
         for coordsFlag in coordinateFlags:
             print('Evaluate ' + meshFile + ' (...) ' + coordsFlag)
-            runtimes_row.append(eval_runtime(meshFile, cageFile, cageDeformedFile, embeddingFile, outFile, coordsFlag))
-        writer.writerow(runtimes_row)
+           runtime = eval_runtime(meshFile, cageFile, cageDeformedFile, embeddingFile, outFile, coordsFlag)
+            model_runtimes['runtimes'][coordsFlag] = runtime
+        runtimes.append(model_runtimes)
+
+    with open('runtimes.json', 'w') as runtimes_file:
+        json.dump(runtimes, runtimes_file, indent=2)
 
 def eval_influence_meshes():
-    f = open('influence_evaluation.log', 'w')
-    log = ''
+   influence_results = []
     for i in range(len(models_influence)):
         meshFile = models_influence[i]
         cageFile = cages_influence[i]
         cageDeformedFile = cagesDeformed_influence[i]
         embeddingFile = embeddings_influence[i]
         outFile = outFiles_influence[i]
+         model_influence = {
+            'mesh': meshFile,
+            'influence': {}
+        }
         for coordsFlag in coordinateFlags_influence:
             print('Evaluate ' + meshFile + ' (...) ' + coordsFlag)
-            log += eval_influence(meshFile, cageFile, cageDeformedFile, embeddingFile, outFile, coordsFlag)
-    f.write(log)
-    f.close()
+            model_influence['influence'][coordsFlag] = eval_influence(meshFile, cageFile, cageDeformedFile, embeddingFile, outFile, coordsFlag)
+        influence_results.append(model_influence)
+
+    with open('influence_evaluation.json', 'w') as influence_file:
+        json.dump(influence_results, influence_file, indent=2)
 
 def main():
     os.chdir('../models')

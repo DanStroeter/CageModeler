@@ -135,36 +135,16 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 			//WriteWeightsToFile("mvc", _params._weightsData._weights.transpose());
 			vertexData[i]._vertices = _params._weightsData._weights.transpose() * _params._deformedCage._vertices;
 		}
-		else if (DeformationTypeHelpers::PMVCNoOffset(_params._deformationType)) {
-			vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices;
-		}
-		else if (DeformationTypeHelpers::PMVCOffset(_params._deformationType)) {
-
-			/*Rest data(never modified)
-			const auto& C0 = _params._cage._vertices;
-			const auto& V0 = _params._mesh._vertices;
-
-
-			// Deformed cage
-			const auto& C1 = _params._deformedCage._vertices;
-
-			// PMVC weights
-			const auto& W = _params._weightsData._weights;
-
-			// 1) Project rest mesh to rest cage
-			Eigen::MatrixXd proj0 = W * C0;
-
-			// 2) Compute offset
-			Eigen::MatrixXd offset = V0 - proj0;
-
-			// 3) Project onto deformed cage
-			Eigen::MatrixXd proj1 = W * C1;
-
-			// 4) Final vertices
-			vertexData[i]._vertices = proj1 + offset;
-
-			//WriteWeightsToFile("pmvc", _params._weightsData._weights);*/
-			vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices + _params._mesh._vertices - _params._weightsData._weights * _params._cage._vertices;
+		else if (DeformationTypeHelpers::IsPMVC(_params._deformationType))
+		{
+			//if (_params._pmvcUseOffset)
+			//{
+			//	vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices + _params._mesh._vertices - _params._weightsData._weights * _params._cage._vertices;
+			//}
+			//else
+			//{
+				vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices;
+			//}
 		}
 		else if (_params._deformationType == DeformationType::Raytracing)
 		{

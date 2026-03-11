@@ -9,6 +9,7 @@ struct MeshLoadOperationParams
 {
 	MeshLoadOperationParams() = default;
 	MeshLoadOperationParams(const DeformationType deformationType,
+		const PMVCComputeType pmvcComputeType,
 		const LBC::DataSetup::WeightingScheme LBCWeightingScheme,
 		std::filesystem::path meshFilepath,
 		std::filesystem::path cageFilepath,
@@ -22,10 +23,12 @@ struct MeshLoadOperationParams
 		const bool interpolateWeights,
 		const bool findOffset,
 		const bool noOffset,
+		const bool pmvcUseOffset,
 		const double somigNu,
 		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer
 		)
 		: _deformationType(deformationType)
+		, _pmvcComputeType(pmvcComputeType)
 		, _LBCWeightingScheme(LBCWeightingScheme)
 		, _meshFilepath(std::move(meshFilepath))
 		, _cageFilepath(std::move(cageFilepath))
@@ -39,6 +42,7 @@ struct MeshLoadOperationParams
 		, _interpolateWeights(interpolateWeights)
 		, _findOffset(findOffset)
 		, _noOffset(noOffset)
+		, _pmvcUseOffset(pmvcUseOffset)
 		, _somigNu(somigNu)
 	{ }
 
@@ -63,6 +67,7 @@ struct MeshLoadOperationParams
 	}
 
 	DeformationType _deformationType = DeformationType::Green;
+	PMVCComputeType _pmvcComputeType = PMVCComputeType::All;
 	LBC::DataSetup::WeightingScheme _LBCWeightingScheme = LBC::DataSetup::WeightingScheme::SQUARE;
 
 	std::filesystem::path _meshFilepath { };
@@ -82,6 +87,7 @@ struct MeshLoadOperationParams
 	bool _interpolateWeights = false;
 	bool _findOffset = false;
 	bool _noOffset = false;
+	bool _pmvcUseOffset = false;
 
 	double _somigNu = 0;
 };

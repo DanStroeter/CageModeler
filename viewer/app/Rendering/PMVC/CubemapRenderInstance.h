@@ -43,17 +43,6 @@ struct CubemapRenderUnit
 	VkDescriptorSet    matricesDescriptorSet;
 };
 
-enum class ComputeType {
-	CPU,
-	GPUATOMIC,
-	//GPUSORT,
-	DEBUGCUBEMAPS, // for debugging writes cupemaps to disk no compute
-	GPUSERIAL ,
-	GPUMP
-	// TODO: implement if time leftover
-};
-
-
 struct CubemapMatricesUBO
 {
 	float invNumTriangles;
@@ -70,7 +59,8 @@ public:
 		CubemapManager& cubemapManager,
 		int cubemapSize,
 		VkFormat format,
-		DeformationType deformationType,
+		PMVCComputeType computeType,
+		bool useOffset,
 
 		RenderResourceRef<Device> device,
 		RenderResourceRef<DescriptorPool> descriptorPool,
@@ -109,12 +99,12 @@ private:
 	std::unique_ptr<ICubemapComputeStrategy> _computeStage;
 	
 	//offset
-	float _offset;
+	bool _pmvcUseOffset;
 
 	//parameters 
 	unsigned int _cubemapSize;
 	VkFormat _format;
-	DeformationType _deformationType;
+	PMVCComputeType _computeType;
 
 	//init functions
 	void Initialize();

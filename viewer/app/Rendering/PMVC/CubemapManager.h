@@ -51,7 +51,7 @@ public:
 	void Initialize(uint32_t cubemapSize);
 	void Cleanup();
 
-	MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates(DeformationType deformationType);
+	MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates(PMVCComputeType computeType, bool useOffset);
 	void DebugRenderCubemaps();
 	void DebugComputeCoordinates();
 
