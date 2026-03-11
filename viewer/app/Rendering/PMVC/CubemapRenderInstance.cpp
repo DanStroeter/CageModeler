@@ -656,13 +656,6 @@ std::vector<glm::vec3> CubemapRenderInstance::BuildDeformableVertexPositions() c
 	return vertices;
 }
 
-static double SecondsSince(
-	const std::chrono::high_resolution_clock::time_point& start)
-{
-	using namespace std::chrono;
-	return duration<double>(high_resolution_clock::now() - start).count();
-}
-
 glm::mat4 CubemapRenderInstance::ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos)
 {
 	switch (faceIndex)
@@ -781,29 +774,22 @@ void CubemapRenderInstance::ComputeCoordinatesGPUAtomic(
 		range.first + range.count,
 		static_cast<uint32_t>(vertices.size())
 	);
+	const uint32_t cubemapCount = end > range.first ? end - range.first : 0;
+	const uint32_t slotCount = static_cast<uint32_t>(_cubemapRenderUnit.targets.size());
 
-	constexpr uint32_t SlotCount = 3; // ⭐ sweet spot
-	static_assert(SlotCount > 0);
-
-	// ------------------------------------------------------------
-	// Main submission loop (NO per-iteration CPU wait)
-	// ------------------------------------------------------------
-	double totalSlotWaitMs = 0.0;
-	for (uint32_t cubemapIdx = range.first; cubemapIdx < end; ++cubemapIdx)
+	if (cubemapCount == 0 || slotCount == 0)
 	{
-		const uint32_t slot = cubemapIdx % SlotCount;
+		weights = computeStage->Readback();
+		return;
+	}
 
-		CubemapRenderTarget& target =
-			_cubemapRenderUnit.targets[slot];
+	VkSemaphore timeline = _timelines[0];
+	uint64_t& timelineValue = _slotDoneValue[0];
 
-		VkSemaphore timeline = _timelines[slot];
-		uint64_t& timelineValue = _slotDoneValue[slot];
+	for (uint32_t batchStart = 0; batchStart < cubemapCount; batchStart += slotCount)
+	{
+		const uint32_t batchCount = std::min(slotCount, cubemapCount - batchStart);
 
-		LOG_DEBUG("[Pipelined] cubemapIdx={}, slot={}", cubemapIdx, slot);
-
-		// --------------------------------------------------------
-		// 0) Wait ONLY if slot is being reused
-		// --------------------------------------------------------
 		if (timelineValue > 0)
 		{
 			VkSemaphoreWaitInfo waitInfo{};
@@ -811,121 +797,69 @@ void CubemapRenderInstance::ComputeCoordinatesGPUAtomic(
 			waitInfo.semaphoreCount = 1;
 			waitInfo.pSemaphores = &timeline;
 			waitInfo.pValues = &timelineValue;
-
-			auto waitStart = std::chrono::high_resolution_clock::now();
-
-			vkWaitSemaphores(
-				_device,
-				&waitInfo,
-				UINT64_MAX
-			);
-
-			double waitSeconds = SecondsSince(waitStart);
-
-			LOG_DEBUG(
-				"  [SlotWait] slot={}, value={}, wait={:.6f} ms",
-				slot,
-				timelineValue,
-				waitSeconds * 1000.0
-			);
-			totalSlotWaitMs += waitSeconds * 1000.0;
+			VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
 		}
 
-		// --------------------------------------------------------
-		// 1) Render
-		// --------------------------------------------------------
-		uint64_t renderDone = ++timelineValue;
+		std::vector<uint64_t> renderDoneValues(batchCount);
+		std::vector<uint64_t> computeDoneValues(batchCount);
+		std::vector<uint64_t> copyDoneValues(batchCount);
 
-		LOG_DEBUG("  [Render] signal={}", renderDone);
+		for (uint32_t slot = 0; slot < batchCount; ++slot)
+		{
+			const uint32_t cubemapIdx = range.first + batchStart + slot;
+			CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
 
-		RecordAndSubmitCubemapRender(
-			cubemapIdx,
-			slot,
-			vertices[cubemapIdx],
-			target,
-			timeline,
-			renderDone
-		);
+			renderDoneValues[slot] = ++timelineValue;
+			RecordAndSubmitCubemapRender(
+				cubemapIdx,
+				slot,
+				vertices[cubemapIdx],
+				target,
+				timeline,
+				renderDoneValues[slot]);
+		}
 
-		// --------------------------------------------------------
-		// 2) Compute (waits on renderDone)
-		// --------------------------------------------------------
-		uint64_t computeDone = ++timelineValue;
+		for (uint32_t slot = 0; slot < batchCount; ++slot)
+		{
+			const uint32_t cubemapIdx = range.first + batchStart + slot;
+			CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
 
-		LOG_DEBUG("  [Compute] wait={}, signal={}",
-			renderDone, computeDone);
+			computeDoneValues[slot] = ++timelineValue;
+			computeStage->DispatchAfterRender(
+				cubemapIdx,
+				slot,
+				timeline,
+				renderDoneValues[slot],
+				computeDoneValues[slot],
+				target
+			);
+		}
 
-		computeStage->DispatchAfterRender(
-			cubemapIdx,
-			slot,
-			timeline,
-			renderDone,
-			computeDone,
-			target
-		);
+		for (uint32_t slot = 0; slot < batchCount; ++slot)
+		{
+			copyDoneValues[slot] = ++timelineValue;
+			computeStage->SubmitReadbackCopy(
+				slot,
+				timeline,
+				computeDoneValues[slot],
+				copyDoneValues[slot]
+			);
+		}
 
-		// --------------------------------------------------------
-		// 3) Copy (waits on computeDone)
-		// --------------------------------------------------------
-		uint64_t copyDone = ++timelineValue;
+		for (uint32_t slot = 0; slot < batchCount; ++slot)
+		{
+			const uint32_t cubemapIdx = range.first + batchStart + slot;
+			computeStage->ConsumeSlot(
+				cubemapIdx,
+				slot,
+				timeline,
+				copyDoneValues[slot]
+			);
+		}
 
-		LOG_DEBUG("  [Copy] wait={}, signal={}",
-			computeDone, copyDone);
-
-		computeStage->SubmitReadbackCopy(
-			slot,
-			timeline,
-			computeDone,
-			copyDone
-		);
-
-		computeStage->ConsumeSlot(
-			cubemapIdx,
-			slot,
-			timeline,
-			copyDone
-		);
-
-		// timelineValue now represents the last in-flight op for this slot
+		timelineValue = copyDoneValues.back();
 	}
 
-	// ------------------------------------------------------------
-	// Final synchronization (wait for ALL slots)
-	// ------------------------------------------------------------
-	for (uint32_t slot = 0; slot < SlotCount; ++slot)
-	{
-		VkSemaphore timeline = _timelines[slot];
-		uint64_t value = _slotDoneValue[slot];
-
-		if (value == 0)
-			continue;
-
-		VkSemaphoreWaitInfo waitInfo{};
-		waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-		waitInfo.semaphoreCount = 1;
-		waitInfo.pSemaphores = &timeline;
-		waitInfo.pValues = &value;
-
-		auto waitStart = std::chrono::high_resolution_clock::now();
-
-		vkWaitSemaphores(_device, &waitInfo, UINT64_MAX);
-
-		double waitSeconds = SecondsSince(waitStart);
-
-		LOG_DEBUG(
-			"  [FinalWait] slot={}, value={}, wait={:.6f} ms",
-			slot,
-			value,
-			waitSeconds * 1000.0);
-		totalSlotWaitMs += waitSeconds * 1000.0;
-	}
-	LOG_DEBUG(
-		"GPUAtomic pipelining stats: slotWait={:.3f} ms",
-		totalSlotWaitMs
-	);
-	// ------------------------------------------------------------
-	// Readback (now guaranteed complete)
-	// ------------------------------------------------------------
 	weights = computeStage->Readback();
 
 	LOG_DEBUG("ComputeCoordinatesGPUSerial (pipelined): done");
@@ -946,89 +880,93 @@ void CubemapRenderInstance::ComputeCoordinatesGPUSerial(
 		range.first + range.count,
 		static_cast<uint32_t>(vertices.size())
 	);
+	const uint32_t cubemapCount = end > range.first ? end - range.first : 0;
+	const uint32_t slotCount = static_cast<uint32_t>(_cubemapRenderUnit.targets.size());
 
-	// ---- single slot ----
-	constexpr uint32_t slot = 0;
-	CubemapRenderTarget& target =
-		_cubemapRenderUnit.targets[slot];
-
-	VkSemaphore timeline = _timelines[slot];
-	uint64_t& timelineValue = _slotDoneValue[slot];
-
-	for (uint32_t cubemapIdx = range.first; cubemapIdx < end; ++cubemapIdx)
+	if (cubemapCount == 0 || slotCount == 0)
 	{
-		LOG_DEBUG("[Serial] cubemapIdx={}", cubemapIdx);
-
-		// ------------------------------------------------------------
-		// 1) Render
-		// ------------------------------------------------------------
-		uint64_t renderDone = ++timelineValue;
-
-		LOG_DEBUG("  [Render] signal={}", renderDone);
-
-		RecordAndSubmitCubemapRender(
-			cubemapIdx,
-			slot,
-			vertices[cubemapIdx],
-			target,
-			timeline,
-			renderDone
-		);
-
-		// ------------------------------------------------------------
-		// 2) Compute (waits on renderDone)
-		// ------------------------------------------------------------
-		uint64_t computeDone = ++timelineValue;
-
-		LOG_DEBUG("  [Compute] wait={}, signal={}",
-			renderDone, computeDone);
-
-		computeStage->DispatchAfterRender(
-			cubemapIdx,
-			slot,
-			timeline,
-			renderDone,
-			computeDone,
-			target
-		);
-
-		// ------------------------------------------------------------
-		// 3) Copy (waits on computeDone)
-		// ------------------------------------------------------------
-		uint64_t copyDone = ++timelineValue;
-
-		LOG_DEBUG("  [Copy] wait={}, signal={}",
-			computeDone, copyDone);
-
-		computeStage->SubmitReadbackCopy(
-			slot,
-			timeline,
-			computeDone,
-			copyDone
-		);
-
-		computeStage->ConsumeSlot(
-			cubemapIdx,
-			slot,
-			timeline,
-			copyDone
-		);
-
-		// ------------------------------------------------------------
-		// 4) CPU wait (serialization point)
-		// ------------------------------------------------------------
-		VkSemaphoreWaitInfo waitInfo{};
-		waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
-		waitInfo.semaphoreCount = 1;
-		waitInfo.pSemaphores = &timeline;
-		waitInfo.pValues = &computeDone;
-
-		vkWaitSemaphores(
-			_device,
-			&waitInfo,
-			UINT64_MAX
-		);
+		weights = computeStage->Readback();
+		return;
 	}
+
+	VkSemaphore timeline = _timelines[0];
+	uint64_t& timelineValue = _slotDoneValue[0];
+
+	for (uint32_t batchStart = 0; batchStart < cubemapCount; batchStart += slotCount)
+	{
+		const uint32_t batchCount = std::min(slotCount, cubemapCount - batchStart);
+
+		if (timelineValue > 0)
+		{
+			VkSemaphoreWaitInfo waitInfo{};
+			waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+			waitInfo.semaphoreCount = 1;
+			waitInfo.pSemaphores = &timeline;
+			waitInfo.pValues = &timelineValue;
+			VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
+		}
+
+		std::vector<uint64_t> renderDoneValues(batchCount);
+		std::vector<uint64_t> computeDoneValues(batchCount);
+		std::vector<uint64_t> copyDoneValues(batchCount);
+
+		for (uint32_t slot = 0; slot < batchCount; ++slot)
+		{
+			const uint32_t cubemapIdx = range.first + batchStart + slot;
+			CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
+
+			renderDoneValues[slot] = ++timelineValue;
+			RecordAndSubmitCubemapRender(
+				cubemapIdx,
+				slot,
+				vertices[cubemapIdx],
+				target,
+				timeline,
+				renderDoneValues[slot]
+			);
+		}
+
+		for (uint32_t slot = 0; slot < batchCount; ++slot)
+		{
+			const uint32_t cubemapIdx = range.first + batchStart + slot;
+			CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
+
+			computeDoneValues[slot] = ++timelineValue;
+			computeStage->DispatchAfterRender(
+				cubemapIdx,
+				slot,
+				timeline,
+				renderDoneValues[slot],
+				computeDoneValues[slot],
+				target
+			);
+		}
+
+		for (uint32_t slot = 0; slot < batchCount; ++slot)
+		{
+			copyDoneValues[slot] = ++timelineValue;
+			computeStage->SubmitReadbackCopy(
+				slot,
+				timeline,
+				computeDoneValues[slot],
+				copyDoneValues[slot]
+			);
+		}
+
+		for (uint32_t slot = 0; slot < batchCount; ++slot)
+		{
+			const uint32_t cubemapIdx = range.first + batchStart + slot;
+			computeStage->ConsumeSlot(
+				cubemapIdx,
+				slot,
+				timeline,
+				copyDoneValues[slot]
+			);
+		}
+
+		timelineValue = copyDoneValues.back();
+	}
+
 	weights = computeStage->Readback();
 
 	LOG_DEBUG("ComputeCoordinatesGPUSerial: done");

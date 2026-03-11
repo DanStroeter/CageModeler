@@ -115,7 +115,7 @@ private:
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
     void WriteWeightsToFile(const std::string& filename);
 
-    int _targetCount = 1;
+    int _targetCount = 64;
 
 	bool _offset = false;
 
