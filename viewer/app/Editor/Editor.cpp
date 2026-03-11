@@ -620,7 +620,7 @@ void Editor::StartEvaluation()
 		ExportWeights(projectOutputDir / "weights.dmat");
 		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
 		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
-		if (project._vertices.has_value())
+		/*if (project._vertices.has_value())
 		{
 			ExportInfluenceColorMap(projectOutputDir / "influence_map.obj", project._vertices);
 
@@ -636,7 +636,7 @@ void Editor::StartEvaluation()
 					selectedVerticesOutput << vertexIdx << "\n";
 				}
 			}
-		}
+		}*/
 		const auto meshVertexCount = _projectData
 			? std::optional<int32_t>(static_cast<int32_t>(_projectData->_mesh._vertices.rows()))
 			: std::nullopt;

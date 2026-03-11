@@ -6,7 +6,7 @@
 namespace MCD
 {
 
-static inline constexpr bool EnableVulkanValidation = true;
+static inline constexpr bool EnableVulkanValidation = false;
 static inline constexpr std::string_view ProjectName = "CageModeler-App";
 static inline constexpr std::string_view ProjectVersion = "1.0";
 static inline constexpr int32_t ProjectVersionMajor { 1 };
