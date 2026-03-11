@@ -157,7 +157,7 @@ namespace
 
 	[[nodiscard]] std::optional<bool> ExtractJsonBoolValue(const std::string& objectText, const std::string& key)
 	{
-		const std::regex pattern("\"" + key + "\"\s*:\s*(true|false)");
+		const std::regex pattern("\"" + key + "\"\\s*:\\s*(true|false)");
 		std::smatch match;
 		if (std::regex_search(objectText, match, pattern) && match.size() > 1)
 		{
@@ -305,6 +305,14 @@ namespace
 			project._samples = ExtractJsonIntValue(objectText, "samples");
 			project._cubemapSize = ExtractJsonIntValue(objectText, "cubemapSize");
 			project._vertices = ExtractJsonIntArrayValue(objectText, "vertices");
+			if (!project._vertices.has_value())
+			{
+				project._vertices = ExtractJsonIntArrayValue(objectText, "selectedVertices");
+			}
+			if (!project._vertices.has_value())
+			{
+				project._vertices = ExtractJsonIntArrayValue(objectText, "influenceVertices");
+			}
 			config._projects.push_back(std::move(project));
 		}
 		return config;
@@ -472,6 +480,11 @@ void Editor::StartEvaluation()
 
 	const std::string configContent((std::istreambuf_iterator<char>(configFile)), std::istreambuf_iterator<char>());
 	const auto parsedConfig = ParseEvaluationConfig(configContent);
+	if (!parsedConfig.has_value())
+	{
+		LOG_ERROR("Failed to parse evaluation config '{}'.", configPath.string());
+		return;
+	}
 
 	const auto timingOutputPath = evaluationRoot / parsedConfig->_timingsFile;
 
