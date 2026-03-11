@@ -95,4 +95,6 @@ private:
     std::vector<SlotReadback> _slots;
     std::vector<uint32_t> _slotToDeformableIndex;
     bool _offset = false;
+
+    static constexpr uint32_t kMaxSlots = 64;
 };

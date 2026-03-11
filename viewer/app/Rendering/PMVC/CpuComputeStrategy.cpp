@@ -10,12 +10,12 @@
 
 uint32_t CpuComputeStrategy::RequiredRenderTargetCount() const
 {
-    return static_cast<uint32_t>(_deformableMesh._vertices.rows());
+    return std::min<uint32_t>(static_cast<uint32_t>(_deformableMesh._vertices.rows()), kMaxSlots);
 }
 
 void CpuComputeStrategy::Initialize()
 {
-    _targetCount = static_cast<int>(_deformableMesh._vertices.rows());
+    _targetCount = static_cast<int>(RequiredRenderTargetCount());
     _slotToDeformableIndex.assign(_targetCount, UINT32_MAX);
 
     _lambdaResults.resize(_deformableMesh._vertices.rows(), _cageMesh._vertices.rows());

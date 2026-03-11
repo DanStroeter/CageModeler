@@ -4,7 +4,7 @@
 
 uint32_t GpuMPComputeStrategy::RequiredRenderTargetCount() const
 {
-	return static_cast<uint32_t>(_deformableMesh._vertices.rows());
+	return std::min<uint32_t>(static_cast<uint32_t>(_deformableMesh._vertices.rows()), kMaxSlots);
 }
 
 void GpuMPComputeStrategy::Initialize()
@@ -12,7 +12,7 @@ void GpuMPComputeStrategy::Initialize()
 	//_slotSync.resize(_targetCount);
 	// Prepare slots
 	//_slotDoneValue.resize(_targetCount, 0ull);
-	_targetCount = static_cast<int>(_deformableMesh._vertices.rows());
+	_targetCount = static_cast<int>(RequiredRenderTargetCount());
 	_slotToDeformableIndex.assign(_targetCount, UINT32_MAX);
 
 	_lambdaResults.resize(
@@ -595,7 +595,7 @@ void GpuMPComputeStrategy::CreateSampler() {
 	samplerInfo.maxLod = 0.0f;
 	samplerInfo.mipLodBias = 0.0f;
 
-	// Clamp (doesn’t really matter since texelFetch ignores addressing)
+	// Clamp (doesnÂ’t really matter since texelFetch ignores addressing)
 	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;

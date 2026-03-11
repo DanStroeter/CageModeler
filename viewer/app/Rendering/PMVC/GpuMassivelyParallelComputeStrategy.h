@@ -145,4 +145,6 @@ private:
     VkSampler _depthSampler;
 
     std::vector<uint32_t> _slotToDeformableIndex;
+
+    static constexpr uint32_t kMaxSlots = 64;
 };
