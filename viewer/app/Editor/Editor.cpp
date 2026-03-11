@@ -624,6 +624,12 @@ void Editor::StartEvaluation()
 				}
 			}
 		}
+		const auto meshVertexCount = _projectData
+			? std::optional<int32_t>(static_cast<int32_t>(_projectData->_mesh._vertices.rows()))
+			: std::nullopt;
+		const auto cageVertexCount = _projectData
+			? std::optional<int32_t>(static_cast<int32_t>(_projectData->_cage._vertices.rows()))
+			: std::nullopt;
 		//_cubemapRenderer->Cleanup();
 		ClearEvaluationData();
 		
@@ -642,8 +648,8 @@ void Editor::StartEvaluation()
 			stageTimings._computeMs,
 			stageTimings._computeTotalMs,
 			stageTimings._deformationApplyMs,
-			_projectData ? std::optional<int32_t>(static_cast<int32_t>(_projectData->_mesh._vertices.rows())) : std::nullopt,
-			_projectData ? std::optional<int32_t>(static_cast<int32_t>(_projectData->_cage._vertices.rows())) : std::nullopt,
+						meshVertexCount,
+			cageVertexCount,
 			(*deformationType == DeformationType::PMVC) ? std::optional<std::string>(project._pmvcComputeType) : std::nullopt,
 			(*deformationType == DeformationType::PMVC) ? std::optional<bool>(project._pmvcUseOffset.value_or(false)) : std::nullopt,
 			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt });
