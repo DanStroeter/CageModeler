@@ -434,7 +434,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCreated(); });
 
 	_projectModel->_deformationType = DeformationType::PMVC;
-	_projectModel->_pmvcComputeType = PMVCComputeType::All;
+	_projectModel->_pmvcComputeType = PMVCComputeType::Cpu;
 	_projectModel->_pmvcUseOffset = false;
 	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
 	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
@@ -2049,8 +2049,11 @@ void Editor::ExportInfluenceColorMap(std::filesystem::path filepath,
 	std::optional<std::vector<int32_t>> selectedVertices) const
 {
 	CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
-	CheckFormat(_projectData->_parametrization.has_value(), "Cannot export influence map without parametrization data.");
-
+	if (!_projectData->_parametrization.has_value())
+	{
+		LOG_WARN("Skipping influence map export because parametrization data is missing.");
+		return;
+	}
 	auto weights = *_weightsData.LockRead();
 
 	_meshOperationSystem->ExecuteOperation<MeshExportInfluenceMapOperation>(
@@ -2077,6 +2080,7 @@ void Editor::ExportWeights(std::filesystem::path filepath) const
 	CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
 
 	const auto weightsData = _weightsData.LockRead();
+	const auto embedding = _projectData->_embedding.value_or(EigenMesh{ });
 
 	_meshOperationSystem->ExecuteOperation<MeshExportWeightsOperation>(
 		_projectData->_deformationType,
@@ -2085,7 +2089,7 @@ void Editor::ExportWeights(std::filesystem::path filepath) const
 		weightsData->_weights,
 		_projectData->_b,
 		_projectData->_bc,
-		*_projectData->_embedding,
+		embedding,
 		_projectData->_numBBWSteps);
 }
 
@@ -2258,12 +2262,15 @@ void Editor::UpdateMeshVertexColors(const bool shouldRenderInfluenceMap) const
 	{
 		CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
 
+
+
 		if (!_projectData->_parametrization.has_value())
 		{
 			LOG_WARN("Skipping influence map color rendering because parametrization data is missing.");
-			deformedMesh->SetColors(std::vector<glm::vec3>(deformedMesh->GetNumVertices(), glm::vec3(0.0f)), false);
+			//deformedMesh->SetColors(std::vector<glm::vec3>(deformedMesh->GetNumVertices(), glm::vec3(0.0f)), false);
 			return;
 		}
+
 
 		auto weights = *_weightsData.LockRead();
 
