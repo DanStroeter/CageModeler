@@ -450,8 +450,10 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCreated(); });
 
 	_projectModel->_deformationType = DeformationType::PMVC;
-	_projectModel->_pmvcComputeType = PMVCComputeType::Cpu;
+	_projectModel->_pmvcComputeType = PMVCComputeType::All;
 	_projectModel->_pmvcUseOffset = false;
+	_projectModel->_pmvcTargetCount = 64;
+	_projectModel->_cubemapSize = 32;
 	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
 	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
 	_projectModel->_meshFilepath = "assets/meshes/armadilloman.obj";
@@ -461,8 +463,8 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 
-	StartEvaluation();
-	//OnNewProjectCreated();
+	//StartEvaluation();
+	OnNewProjectCreated();
 //#endif
 }
 

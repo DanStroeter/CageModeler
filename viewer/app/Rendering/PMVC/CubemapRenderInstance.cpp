@@ -620,7 +620,7 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 	CubemapRenderTarget& target,
 	VkSemaphore timeline,
 	uint64_t signalValue,
-	uint32_t hitIndex)
+	uint32_t hitIndex = 0)
 {
 	assert(targetIndex < _cubemapRenderUnit.graphicsCmdPerTarget.size());
 
@@ -934,9 +934,11 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 			VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
 
 			timelineValue = copyDone;
-			computeStage->ConsumeAllSlots();
+
+			computeStage->ConsumeAllSlots(hit);
 			const auto computeEnd = std::chrono::steady_clock::now();
 			computeAccumulatedMs += std::chrono::duration<double, std::milli>(computeEnd - computeStart).count();
+			
 		}
 	}
 

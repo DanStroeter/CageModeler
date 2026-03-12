@@ -86,7 +86,7 @@ public:
         VkSemaphore signalSemaphore,
         uint64_t signalValue);
 
-    void ConsumeAllSlots();
+    void ConsumeAllSlots(uint64_t numPass);
 
 private:
     void CreatePipelineAndLayouts();

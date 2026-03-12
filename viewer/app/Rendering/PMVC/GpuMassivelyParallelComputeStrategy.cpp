@@ -440,7 +440,7 @@ Eigen::MatrixXd GpuMPComputeStrategy::Readback()
 	for (int i = 0; i < _lambdaResults.rows(); ++i) {
 		_lambdaResults.row(i) /= _wsumResults[i];
 	}
-	//WriteWeightsToFile("GpuMPComputeStrategy_Readback.txt");
+	WriteWeightsToFile("GpuMPComputeStrategy_Readback.txt");
 	return _lambdaResults;
 }
 
@@ -997,7 +997,7 @@ void GpuMPComputeStrategy::SubmitAllReadbackCopies(
 	VK_CHECK(vkQueueSubmit2(queue, 1, &submit2, VK_NULL_HANDLE));
 }
 
-void GpuMPComputeStrategy::ConsumeAllSlots()
+void GpuMPComputeStrategy::ConsumeAllSlots(uint64_t numPass)
 {
 	const size_t C = _cageMesh._vertices.rows();
 
@@ -1012,9 +1012,15 @@ void GpuMPComputeStrategy::ConsumeAllSlots()
 		const float wsum =
 			*(float*)_slots[slot].wsumStaging._mappedData;
 
-		for (size_t c = 0; c < C; ++c)
-			_lambdaResults(deformableIndex, c) = lambda[c];
-
-		_wsumResults[deformableIndex] = wsum;
+		for (size_t c = 0; c < C; ++c) {
+			if (numPass % 2 == 1)
+				_lambdaResults(deformableIndex, c) += lambda[c];
+			else if (numPass % 2 == 0)
+				_lambdaResults(deformableIndex, c) -= lambda[c];
+		}
+		if (numPass % 2 == 1)
+			_wsumResults[deformableIndex] += wsum;
+		else if (numPass % 2 == 0)
+			_wsumResults[deformableIndex] -= wsum;
 	}
 }
