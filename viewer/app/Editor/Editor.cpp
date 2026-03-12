@@ -716,6 +716,10 @@ void Editor::StartEvaluation()
 		{
 			timingOutput << ",\n      \"renderMs\": " << result._renderMs.value();
 		}
+		if (result._transferMs.has_value())
+		{
+			timingOutput << ",\n      \"transferMs\": " << result._transferMs.value();
+		}
 		if (result._computeMs.has_value())
 		{
 			timingOutput << ",\n      \"computeMs\": " << result._computeMs.value();
@@ -723,10 +727,6 @@ void Editor::StartEvaluation()
 		if (result._computeTotalMs.has_value())
 		{
 			timingOutput << ",\n      \"computeTotalMs\": " << result._computeTotalMs.value();
-		}
-		if (result._transferMs.has_value())
-		{
-			timingOutput << ",\n      \"transferMs\": " << result._transferMs.value();
 		}
 		if (result._deformationApplyMs.has_value())
 		{
