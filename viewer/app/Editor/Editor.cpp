@@ -475,8 +475,8 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 
-	//StartEvaluation();
-	OnNewProjectCreated();
+	StartEvaluation();
+	//OnNewProjectCreated();
 //#endif
 }
 
@@ -2158,13 +2158,18 @@ void Editor::ExportWeights(std::filesystem::path filepath) const
 	CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
 
 	const auto weightsData = _weightsData.LockRead();
+	const auto weightsToExport = DeformationTypeHelpers::IsPMVC(_projectData->_deformationType)
+		? weightsData->_weights.transpose()
+		: weightsData->_weights;
+
+	//const auto weightsData = _weightsData.LockRead();
 	const auto embedding = _projectData->_embedding.value_or(EigenMesh{ });
 
 	_meshOperationSystem->ExecuteOperation<MeshExportWeightsOperation>(
 		_projectData->_deformationType,
 		_projectData->_LBCWeightingScheme,
 		std::move(filepath),
-		weightsData->_weights,
+		std::move(weightsToExport),
 		_projectData->_b,
 		_projectData->_bc,
 		embedding,
