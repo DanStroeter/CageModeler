@@ -51,7 +51,7 @@ public:
 	void Initialize(uint32_t cubemapSize);
 	void Cleanup();
 
-	MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates(PMVCComputeType computeType, bool useOffset);
+	MeshOperationResult<MeshComputeWeightsOperationResult> ComputeCoordinates(PMVCComputeType computeType, bool useOffset, uint32_t targetCount = 64);
 	void DebugRenderCubemaps();
 	void DebugComputeCoordinates();
 

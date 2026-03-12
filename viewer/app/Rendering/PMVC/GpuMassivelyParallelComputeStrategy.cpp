@@ -4,7 +4,7 @@
 
 uint32_t GpuMPComputeStrategy::RequiredRenderTargetCount() const
 {
-	return std::min<uint32_t>(static_cast<uint32_t>(_deformableMesh._vertices.rows()), kMaxSlots);
+	return std::min<uint32_t>(static_cast<uint32_t>(_deformableMesh._vertices.rows()), static_cast<uint32_t>(_targetCount));
 }
 
 void GpuMPComputeStrategy::Initialize()

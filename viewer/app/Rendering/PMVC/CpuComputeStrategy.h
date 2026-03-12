@@ -26,7 +26,8 @@ public:
         const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
         EigenMesh& cageMesh,
         EigenMesh& deformableMesh,
-        bool offset)
+        bool offset,
+        uint32_t targetCount)
         : _device(device)
         , _transferQueueFamily(transferQueueFamily)
         , _faceSize(faceSize)
@@ -37,6 +38,7 @@ public:
         , _cageMesh(cageMesh)
         , _deformableMesh(deformableMesh)
         , _offset(offset)
+        , _maxTargetCount(targetCount == 0 ? 1u : targetCount)
     {
     }
 
@@ -100,5 +102,5 @@ private:
     uint32_t _cpuWorkerCount = 1;
     bool _offset = false;
 
-    static constexpr uint32_t kMaxSlots = 64;
+    uint32_t _maxTargetCount = 64;
 };

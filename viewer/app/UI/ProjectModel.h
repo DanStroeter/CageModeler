@@ -31,6 +31,7 @@ struct ProjectModelData
 		_pmvcUseOffset = other._pmvcUseOffset;
 		_renderInfluenceMap = other._renderInfluenceMap;
 		_cubemapSize = other._cubemapSize;
+		_pmvcTargetCount = other._pmvcTargetCount;
 	}
 
 	ProjectModelData(ProjectModelData&& other) noexcept
@@ -78,6 +79,7 @@ struct ProjectModelData
 		swap(lhs._pmvcUseOffset, rhs._pmvcUseOffset);
 		swap(lhs._renderInfluenceMap, rhs._renderInfluenceMap);
 		swap(lhs._cubemapSize, rhs._cubemapSize);
+		swap(lhs._pmvcTargetCount, rhs._pmvcTargetCount);
 	}
 
 	[[nodiscard]] bool IsFBX() const
@@ -118,9 +120,10 @@ struct ProjectModelData
 			lhs._scalingFactor == rhs._scalingFactor &&
 			lhs._interpolateWeights == rhs._interpolateWeights &&
 			lhs._findOffset == rhs._findOffset &&
-			lhs._noOffset == rhs._noOffset;
-		lhs._pmvcUseOffset == rhs._pmvcUseOffset;
-		lhs._cubemapSize == rhs._cubemapSize;
+			lhs._noOffset == rhs._noOffset &&
+			lhs._pmvcUseOffset == rhs._pmvcUseOffset &&
+			lhs._cubemapSize == rhs._cubemapSize &&
+			lhs._pmvcTargetCount == rhs._pmvcTargetCount;
 	}
 
 	[[nodiscard]] bool friend operator!=(const ProjectModelData& lhs, const ProjectModelData& rhs)
@@ -169,6 +172,7 @@ struct ProjectModelData
 	std::optional<std::filesystem::path> _parametersFilepath;
 
 	uint64_t _cubemapSize = 32;
+	uint64_t _pmvcTargetCount = 64;
 
 	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
 

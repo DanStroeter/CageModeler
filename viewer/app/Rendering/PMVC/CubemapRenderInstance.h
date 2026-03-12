@@ -62,6 +62,7 @@ public:
 		VkFormat format,
 		PMVCComputeType computeType,
 		bool useOffset,
+		uint32_t targetCount,
 
 		RenderResourceRef<Device> device,
 		RenderResourceRef<DescriptorPool> descriptorPool,
@@ -108,6 +109,7 @@ private:
 
 	//parameters 
 	unsigned int _cubemapSize;
+	uint32_t _targetCount = 64;
 	VkFormat _format;
 	PMVCComputeType _computeType;
 	std::optional<double> _renderMs;

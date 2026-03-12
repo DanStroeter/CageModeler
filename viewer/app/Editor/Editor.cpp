@@ -135,6 +135,7 @@ namespace
 		std::optional<std::string> _embedding;
 		std::optional<int32_t> _samples;
 		std::optional<int32_t> _cubemapSize;
+		std::optional<int32_t> _pmvcTargetCount;
 		std::optional<std::vector<int32_t>> _vertices;
 	};
 
@@ -304,6 +305,7 @@ namespace
 			project._embedding = ExtractJsonStringValue(objectText, "embedding");
 			project._samples = ExtractJsonIntValue(objectText, "samples");
 			project._cubemapSize = ExtractJsonIntValue(objectText, "cubemapSize");
+			project._pmvcTargetCount = ExtractJsonIntValue(objectText, "targetCount");
 			project._vertices = ExtractJsonIntArrayValue(objectText, "vertices");
 			if (!project._vertices.has_value())
 			{
@@ -340,6 +342,12 @@ namespace
 		if (project._cubemapSize.has_value() && project._cubemapSize.value() <= 0)
 		{
 			LOG_WARN("Skipping project {} due to invalid cubemapSize {} (must be > 0).", projectIndex, project._cubemapSize.value());
+			return false;
+		}
+
+		if (project._pmvcTargetCount.has_value() && project._pmvcTargetCount.value() <= 0)
+		{
+			LOG_WARN("Skipping project {} due to invalid targetCount {} (must be > 0).", projectIndex, project._pmvcTargetCount.value());
 			return false;
 		}
 
@@ -511,6 +519,7 @@ void Editor::StartEvaluation()
 		std::optional<std::string> _pmvcComputeType;
 		std::optional<bool> _pmvcUseOffset;
 		std::optional<int32_t> _cubemapSize;
+		std::optional<int32_t> _pmvcTargetCount;
 	};
 
 	std::vector<EvaluationResult> results;
@@ -551,6 +560,7 @@ void Editor::StartEvaluation()
 		_projectModel->_cageFilepath = evaluationRoot / project._cage;
 		_projectModel->_deformedCageFilepath = evaluationRoot / project._deformedCage;
 		_projectModel->_cubemapSize = project._cubemapSize.value_or(32);
+		_projectModel->_pmvcTargetCount = project._pmvcTargetCount.value_or(64);
 
 		const auto start = std::chrono::steady_clock::now();
 
@@ -606,7 +616,8 @@ void Editor::StartEvaluation()
 				std::nullopt,
 				(*deformationType == DeformationType::PMVC) ? std::optional<std::string>(project._pmvcComputeType) : std::nullopt,
 				(*deformationType == DeformationType::PMVC) ? std::optional<bool>(project._pmvcUseOffset.value_or(false)) : std::nullopt,
-				(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt });
+				(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt,
+			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._pmvcTargetCount.value_or(64)) : std::nullopt });
 			continue;
 		}
 
@@ -669,7 +680,8 @@ void Editor::StartEvaluation()
 			cageVertexCount,
 			(*deformationType == DeformationType::PMVC) ? std::optional<std::string>(project._pmvcComputeType) : std::nullopt,
 			(*deformationType == DeformationType::PMVC) ? std::optional<bool>(project._pmvcUseOffset.value_or(false)) : std::nullopt,
-			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt });
+			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt,
+			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._pmvcTargetCount.value_or(64)) : std::nullopt });
 		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
 	}
 
@@ -739,6 +751,10 @@ void Editor::StartEvaluation()
 		if (result._cubemapSize.has_value())
 		{
 			timingOutput << ",\n      \"cubemapSize\": " << result._cubemapSize.value();
+		}
+		if (result._pmvcTargetCount.has_value())
+		{
+			timingOutput << ",\n      \"targetCount\": " << result._pmvcTargetCount.value();
 		}
 		timingOutput << "\n    }" << (i + 1 < results.size() ? "," : "") << "\n";
 	}
@@ -1240,7 +1256,10 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 					_cubemapRenderer->Initialize(static_cast<uint32_t>(projectModelSnapshot->_cubemapSize));
 					_cubemapRenderer->SetCage(projectData->_cage);
 					_cubemapRenderer->SetMesh(projectData->_mesh);
-					promise->set_value(_cubemapRenderer->ComputeCoordinates(projectData->_pmvcComputeType, projectData->_pmvcUseOffset));
+					promise->set_value(_cubemapRenderer->ComputeCoordinates(
+					projectData->_pmvcComputeType,
+					projectData->_pmvcUseOffset,
+					static_cast<uint32_t>(projectModelSnapshot->_pmvcTargetCount)));
 					//promise->set_value(_cubemapRenderer->ComputeCoordinates(projectData->_deformationType));
 				}
 				catch (...)

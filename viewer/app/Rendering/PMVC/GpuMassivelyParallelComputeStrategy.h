@@ -25,7 +25,8 @@ public:
         const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
         EigenMesh& cageMesh,
         EigenMesh& deformableMesh,
-        bool offset)
+        bool offset,
+        uint32_t targetCount)
         : _device(device)
         , _transferQueueFamily(transferQueueFamily)
         , _faceSize(faceSize)
@@ -36,6 +37,7 @@ public:
         , _cageMesh(cageMesh)
         , _deformableMesh(deformableMesh)
         , _offset(offset)
+        , _targetCount(targetCount == 0 ? 1u : static_cast<int>(targetCount))
     {
     }
 
@@ -137,7 +139,7 @@ private:
     void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
     void WriteWeightsToFile(const std::string& filename);
 
-    int _targetCount = 3;
+    int _targetCount = 64;
 
     VkSampler _barySampler;
 
@@ -147,5 +149,5 @@ private:
 
     std::vector<uint32_t> _slotToDeformableIndex;
 
-    static constexpr uint32_t kMaxSlots = 64;
+
 };

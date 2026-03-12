@@ -34,6 +34,7 @@ CubemapRenderInstance::CubemapRenderInstance()
 	_format = VK_FORMAT_R32G32B32A32_SFLOAT;
 	_computeType = PMVCComputeType::Serial;
 	_pmvcUseOffset = false;
+	_targetCount = 64;
 	Initialize();
 }
 
@@ -43,6 +44,7 @@ CubemapRenderInstance::CubemapRenderInstance(
 	VkFormat format,
 	PMVCComputeType computeType,
 	bool useOffset,
+	uint32_t targetCount,
 
 	RenderResourceRef<Device> device,
 	RenderResourceRef<DescriptorPool> descriptorPool,
@@ -66,6 +68,7 @@ CubemapRenderInstance::CubemapRenderInstance(
 , _format(format)
 , _computeType(computeType)
 , _pmvcUseOffset(useOffset)
+, _targetCount(targetCount == 0 ? 1u : targetCount)
 , _device(std::move(device))
 , _descriptorPool(std::move(descriptorPool))
 , _resourceManager(std::move(resourceManager))
@@ -168,7 +171,8 @@ void CubemapRenderInstance::Initialize() {
 			_renderPipelineManager,
 			_cageMesh,
 			_deformableMesh, 
-			_pmvcUseOffset
+			_pmvcUseOffset,
+			_targetCount
 		);
 	}
 	else if (_computeType == PMVCComputeType::Ring) {
@@ -182,7 +186,8 @@ void CubemapRenderInstance::Initialize() {
 			_renderPipelineManager,
 			_cageMesh,
 			_deformableMesh,
-			_pmvcUseOffset
+			_pmvcUseOffset,
+			_targetCount
 		);
 	}
 	else if (_computeType == PMVCComputeType::All) {
@@ -196,7 +201,8 @@ void CubemapRenderInstance::Initialize() {
 			_renderPipelineManager,
 			_cageMesh,
 			_deformableMesh,
-			_pmvcUseOffset
+			_pmvcUseOffset,
+			_targetCount
 		);
 	}
 	else if (_computeType == PMVCComputeType::Cpu) {
@@ -210,7 +216,8 @@ void CubemapRenderInstance::Initialize() {
 			_renderPipelineManager,
 			_cageMesh,
 			_deformableMesh,
-			_pmvcUseOffset
+			_pmvcUseOffset,
+			_targetCount
 		);
 	}
 

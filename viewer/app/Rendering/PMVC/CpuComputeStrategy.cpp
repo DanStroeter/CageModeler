@@ -11,7 +11,7 @@
 
 uint32_t CpuComputeStrategy::RequiredRenderTargetCount() const
 {
-    return std::min<uint32_t>(static_cast<uint32_t>(_deformableMesh._vertices.rows()), kMaxSlots);
+    return std::min<uint32_t>(static_cast<uint32_t>(_deformableMesh._vertices.rows()), _maxTargetCount);
 }
 
 void CpuComputeStrategy::Initialize()
