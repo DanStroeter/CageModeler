@@ -622,6 +622,7 @@ void Editor::StartEvaluation()
 		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
 		if (project._vertices.has_value())
 		{
+			LOG_DEBUG("Exporting influence map for project '{}' with {} vertices.", projectName, project._vertices->size());
 			ExportInfluenceColorMap(projectOutputDir / "influence_map.obj", project._vertices);
 
 			std::ofstream selectedVerticesOutput(projectOutputDir / "influence_map_vertices.txt", std::ios::out | std::ios::trunc);

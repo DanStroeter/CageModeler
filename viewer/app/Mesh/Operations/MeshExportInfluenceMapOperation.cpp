@@ -26,17 +26,31 @@ void MeshExportInfluenceMapOperation::Execute()
 
 	if (!usesSomigliana)
 	{
-		const auto& weights = _params._interpolateWeights ? _params._weightsData.get()._interpolatedWeights : _params._weightsData.get()._weights;
+		const auto& sourceWeights =
+			_params._interpolateWeights
+			? _params._weightsData.get()._interpolatedWeights
+			: _params._weightsData.get()._weights;
+
+		auto weights = sourceWeights;
+
+		if (_params._deformationType == DeformationType::PMVC)
+		{
+			weights.transposeInPlace();
+		}
+		LOG_INFO("DEBUGGINGGGGG {} {}", weights.rows(), weights.cols());
 		const auto cageVerticesOffset = (_params._deformationType == DeformationType::Green ||
 			_params._deformationType == DeformationType::QGC ||
 			_params._deformationType == DeformationType::MLC ||
 			_params._deformationType == DeformationType::MEC ||
 			_params._deformationType == DeformationType::MVC ||
+			_params._deformationType == DeformationType::PMVC ||
 			_params._deformationType == DeformationType::QMVC ||
 			_params._interpolateWeights) ? 0 : _params._modelVerticesOffset;
 		const auto transposeW = _params._deformationType == DeformationType::Green ||
 			_params._deformationType == DeformationType::QGC ||
 			_params._deformationType == DeformationType::MLC ||
+			_params._deformationType == DeformationType::MVC ||
+			_params._deformationType == DeformationType::PMVC ||
 			_params._deformationType == DeformationType::MEC;
 
 		write_influence_color_map_OBJ(_params._outputFilepath.string(),

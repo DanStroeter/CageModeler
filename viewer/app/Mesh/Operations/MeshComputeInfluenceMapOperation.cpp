@@ -20,7 +20,9 @@ MeshComputeInfluenceMapOperation::ExecutionResult MeshComputeInfluenceMapOperati
 
 	if (!usesSomigliana)
 	{
-		weights = _params._interpolateWeights ? &_params._weightsData.get()._interpolatedWeights : &_params._weightsData.get()._weights;
+
+		const auto& weights = _params._interpolateWeights ? _params._weightsData.get()._interpolatedWeights : _params._weightsData.get()._weights;
+		
 		cageVerticesOffset = (_params._deformationType == DeformationType::Green ||
 			_params._deformationType == DeformationType::QGC ||
 			_params._deformationType == DeformationType::MLC ||
