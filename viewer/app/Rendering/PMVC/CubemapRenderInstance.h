@@ -66,6 +66,8 @@ public:
 		PMVCComputeType computeType,
 		bool useOffset,
 		uint32_t targetCount,
+		uint32_t hitCount,
+		bool omitNegative,
 
 		RenderResourceRef<Device> device,
 		RenderResourceRef<DescriptorPool> descriptorPool,
@@ -115,6 +117,8 @@ private:
 	//parameters 
 	unsigned int _cubemapSize;
 	uint32_t _targetCount = 64;
+	uint32_t _hitCount = 3;
+	bool _omitNegative = true;
 	VkFormat _format;
 	PMVCComputeType _computeType;
 	std::optional<double> _renderMs;
@@ -168,6 +172,4 @@ private:
 	MemoryMappedBuffer _indexBuffer;
 	MemoryMappedBuffer _vertexBuffer;
 	VkSampler _depthHistorySampler = VK_NULL_HANDLE;
-	uint32_t _allModeHitCount = 3;
-	bool _omitEverySecondHit = true;
 };

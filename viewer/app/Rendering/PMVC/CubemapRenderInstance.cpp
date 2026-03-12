@@ -35,6 +35,8 @@ CubemapRenderInstance::CubemapRenderInstance()
 	_computeType = PMVCComputeType::Serial;
 	_pmvcUseOffset = false;
 	_targetCount = 64;
+	_hitCount = 3;
+	_omitNegative = true;
 	Initialize();
 }
 
@@ -45,6 +47,8 @@ CubemapRenderInstance::CubemapRenderInstance(
 	PMVCComputeType computeType,
 	bool useOffset,
 	uint32_t targetCount,
+	uint32_t hitCount,
+	bool omitNegative,
 
 	RenderResourceRef<Device> device,
 	RenderResourceRef<DescriptorPool> descriptorPool,
@@ -71,6 +75,8 @@ CubemapRenderInstance::CubemapRenderInstance(
 , _computeType(computeType)
 , _pmvcUseOffset(useOffset)
 , _targetCount(targetCount == 0 ? 1u : targetCount)
+, _hitCount(hitCount == 0 ? 1u : hitCount)
+, _omitNegative(omitNegative)
 , _device(std::move(device))
 , _descriptorPool(std::move(descriptorPool))
 , _resourceManager(std::move(resourceManager))
@@ -889,7 +895,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 			VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
 		}
 
-		for (uint32_t hit = 0; hit < _allModeHitCount; ++hit)
+		for (uint32_t hit = 0; hit < _hitCount; ++hit)
 		{
 			const auto renderStart = std::chrono::steady_clock::now();
 			uint64_t renderDone = timelineValue;
@@ -914,7 +920,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 			const auto renderEnd = std::chrono::steady_clock::now();
 			renderAccumulatedMs += std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
 
-			if (_omitEverySecondHit && ((hit + 1) % 2u == 0u))
+			if (_omitNegative && ((hit + 1) % 2u == 0u))
 			{
 				continue;
 			}
