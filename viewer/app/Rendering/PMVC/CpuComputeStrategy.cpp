@@ -398,10 +398,10 @@ void CpuComputeStrategy::ComputeOnCpu(uint32_t deformableIndex, const SlotReadba
                 float w = _solidAngles[texelIdx];
                 if (!_offset) {
                     const float depth = DecodeDepthSample(depthBytes + texelIdx * _depthBytesPerTexel);
-                    /*if (depth >= kDepthEpsilon)
+                    if (depth >= 0.999999f) //kdepthepsilon
                     {
                         continue;
-                    }*/
+                    }
 
                     w *= (1.0f - depth);
                 }

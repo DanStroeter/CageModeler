@@ -37,7 +37,6 @@ void MeshExportInfluenceMapOperation::Execute()
 		{
 			weights.transposeInPlace();
 		}
-		LOG_INFO("DEBUGGINGGGGG {} {}", weights.rows(), weights.cols());
 		const auto cageVerticesOffset = (_params._deformationType == DeformationType::Green ||
 			_params._deformationType == DeformationType::QGC ||
 			_params._deformationType == DeformationType::MLC ||
