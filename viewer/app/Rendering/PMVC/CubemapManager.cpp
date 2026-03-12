@@ -1,6 +1,8 @@
 ﻿#include <Rendering/PMVC/CubemapManager.h>
 
 #include <Rendering/PMVC/CubemapRenderInstance.h>
+
+#include <chrono>
 #include <Rendering/Commands/RenderCommandScheduler.h>
 #include <Rendering/Core/RenderProxyCollector.h>
 #include <Rendering/Core/RenderResourceManager.h>
@@ -440,6 +442,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 
 
 
+	const auto instanceInitStart = std::chrono::steady_clock::now();
 	CubemapRenderInstance instance(
 		*this,
 		_cubemapSize,
@@ -466,6 +469,8 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 		_indexBuffer,
 		_vertexBuffer
 	);
+	const auto instanceInitEnd = std::chrono::steady_clock::now();
+	const auto instanceInitMs = std::chrono::duration<double, std::milli>(instanceInitEnd - instanceInitStart).count();
 	CubemapWorkRange range{};
 	range.first = 0;
 	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
@@ -484,5 +489,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 		std::move(psiQuad),
 		instance.GetRenderMs(),
 		instance.GetComputeMs(),
-		instance.GetComputeTotalMs()};
+		instance.GetComputeTotalMs(),
+		instance.GetTransferMs(),
+		instanceInitMs};
 }

@@ -249,6 +249,7 @@ private:
 		std::optional<double> _renderMs;
 		std::optional<double> _computeMs;
 		std::optional<double> _computeTotalMs;
+		std::optional<double> _transferMs;
 		std::optional<double> _deformationApplyMs;
 	};
 
