@@ -58,6 +58,7 @@ void CubemapManager::Initialize(uint32_t cubemapSize)
 		CreateDescriptorSetLayouts();
 		_cubemapPipelineHandle = CreateCubemapRenderPipeline(false);
 		_cubemapPipelineHandleCpu = CreateCubemapRenderPipeline(true);
+		_cubemapPipelineHitHandle = CreateCubemapRenderPipeline(false, true);
 		//SphereWeightInitialization(512);
 		init = true;
 	}
@@ -65,8 +66,10 @@ void CubemapManager::Initialize(uint32_t cubemapSize)
 		_cubemapSize = cubemapSize;
 		_renderPipelineManager->ReleasePipeline(_cubemapPipelineHandle);
 		_renderPipelineManager->ReleasePipeline(_cubemapPipelineHandleCpu);
+		_renderPipelineManager->ReleasePipeline(_cubemapPipelineHitHandle);
 		_cubemapPipelineHandle = CreateCubemapRenderPipeline(false);
 		_cubemapPipelineHandleCpu = CreateCubemapRenderPipeline(true);
+		_cubemapPipelineHitHandle = CreateCubemapRenderPipeline(false, true);
 	}
 }
 
@@ -148,9 +151,18 @@ void CubemapManager::CreateDescriptorSetLayouts() {
 	std::array<VkDescriptorSetLayoutBinding, 1> layoutBindings{ layoutBinding };
 
 	_matricesLayout = _descriptorPool->CreateDescriptorSetLayout(layoutBindings);
+
+	VkDescriptorSetLayoutBinding depthHistoryBinding{};
+	depthHistoryBinding.binding = 0;
+	depthHistoryBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	depthHistoryBinding.descriptorCount = 1;
+	depthHistoryBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	std::array<VkDescriptorSetLayoutBinding, 1> depthHistoryBindings{ depthHistoryBinding };
+	_depthHistoryLayout = _descriptorPool->CreateDescriptorSetLayout(depthHistoryBindings);
 }
 
-PipelineHandle CubemapManager::CreateCubemapRenderPipeline(bool cpuTransfer)
+PipelineHandle CubemapManager::CreateCubemapRenderPipeline(bool cpuTransfer, bool depthPeelPass)
 {
 	VkVertexInputBindingDescription bindingDesc{};
 	bindingDesc.binding = 0;
@@ -203,8 +215,10 @@ PipelineHandle CubemapManager::CreateCubemapRenderPipeline(bool cpuTransfer)
 	msaa.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-	// Only the matrices layout is needed for cubemap rendering
-	std::array descriptorSetLayouts{ _matricesLayout->GetReference() };
+	std::array<VkDescriptorSetLayout, 2> descriptorSetLayouts{
+		_matricesLayout->GetReference(),
+		depthPeelPass ? _depthHistoryLayout->GetReference() : VK_NULL_HANDLE
+	};
 
 	VkViewport viewport{};
 	viewport.x = 0.0f;
@@ -219,7 +233,7 @@ PipelineHandle CubemapManager::CreateCubemapRenderPipeline(bool cpuTransfer)
 	scissor.extent = { _cubemapSize, _cubemapSize };
 
 	VkPushConstantRange pushConstantRange{};
-	pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 	pushConstantRange.offset = 0;
 	pushConstantRange.size = sizeof(CubemapPushConstants);
 
@@ -234,10 +248,10 @@ PipelineHandle CubemapManager::CreateCubemapRenderPipeline(bool cpuTransfer)
 		.SetRenderPass(renderPass)
 		.SetColorBlendAttachments(std::span(&colorBlendAttachment, 1))
 		.SetDepthStencilState(depthStencil)
-		.SetDescriptorSetLayouts(std::span(descriptorSetLayouts))
+		.SetDescriptorSetLayouts(depthPeelPass ? std::span(descriptorSetLayouts) : std::span(descriptorSetLayouts.data(), size_t(1)))
 		.SetSubpassIndex(0)
 		.SetShaderModule(ShaderModuleType::Vertex, "assets/shaders/Cubemap.vert.spv")
-		.SetShaderModule(ShaderModuleType::Fragment, "assets/shaders/Cubemap.frag.spv")
+		.SetShaderModule(ShaderModuleType::Fragment, depthPeelPass ? "assets/shaders/CubemapHit.frag.spv" : "assets/shaders/Cubemap.frag.spv")
 		.AddPushConstantRange(pushConstantRange)
 		.SetMultisampleState(msaa)
 		.SetViewportAndScissor(viewport, scissor)
@@ -436,6 +450,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	assert(_resourceManager && "ResourceManager is null");
 	assert(_renderPipelineManager && "RenderPipelineManager is null");
 	assert(_matricesLayout && "MatricesLayout is null");
+	assert(_depthHistoryLayout && "DepthHistoryLayout is null");
 	CreateVertexBufferFromMesh();
 	CreateIndexBufferFromMesh();
 
@@ -464,8 +479,10 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 		_renderPassCpu,
 		_cubemapPipelineHandle,
 		_cubemapPipelineHandleCpu,
+		_cubemapPipelineHitHandle,
 
 		_matricesLayout,
+		_depthHistoryLayout,
 
 		_indexBuffer,
 		_vertexBuffer

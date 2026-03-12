@@ -28,6 +28,7 @@ struct ComputePushConstants
 struct CubemapPushConstants {
 	glm::mat4 view;
 	glm::mat4 proj;
+	int faceIndex;
 };
 
 struct CubemapWorkRange
@@ -63,7 +64,7 @@ private:
 	VkRenderPass CreateRenderPass(VkFormat format, bool cpuTransfer);
 	void CreateCommandPool(uint32_t queueFamilyIndex);
 	void CreateDescriptorSetLayouts();
-	PipelineHandle CreateCubemapRenderPipeline(bool cpuTransfer);
+	PipelineHandle CreateCubemapRenderPipeline(bool cpuTransfer, bool depthPeelPass = false);
 	void CreateVertexBufferFromMesh();
 	void CreateIndexBufferFromMesh();
 	//void SphereWeightInitialization(uint32_t size);
@@ -97,6 +98,7 @@ private:
 	VkRenderPass _renderPassCpu;
 	PipelineHandle _cubemapPipelineHandle;
 	PipelineHandle _cubemapPipelineHandleCpu;
+	PipelineHandle _cubemapPipelineHitHandle;
 
 	//buffers
 	MemoryMappedBuffer _indexBuffer;
@@ -105,6 +107,7 @@ private:
 	//descriptors
 	RenderResourceRef < DescriptorPool> _descriptorPool;
 	RenderResourceRef < DescriptorSetLayout> _matricesLayout;
+	RenderResourceRef < DescriptorSetLayout> _depthHistoryLayout;
 
 	//friend class CubemapRenderInstance; //TODO remove and fix dependencies!
 	//friend class GpuSerialComputeStrategy;
