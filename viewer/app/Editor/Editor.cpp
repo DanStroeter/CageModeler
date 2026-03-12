@@ -620,7 +620,7 @@ void Editor::StartEvaluation()
 		ExportWeights(projectOutputDir / "weights.dmat");
 		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
 		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
-		/*if (project._vertices.has_value())
+		if (project._vertices.has_value())
 		{
 			ExportInfluenceColorMap(projectOutputDir / "influence_map.obj", project._vertices);
 
@@ -636,7 +636,7 @@ void Editor::StartEvaluation()
 					selectedVerticesOutput << vertexIdx << "\n";
 				}
 			}
-		}*/
+		}
 		const auto meshVertexCount = _projectData
 			? std::optional<int32_t>(static_cast<int32_t>(_projectData->_mesh._vertices.rows()))
 			: std::nullopt;
@@ -2062,11 +2062,13 @@ void Editor::ExportInfluenceColorMap(std::filesystem::path filepath,
 	std::optional<std::vector<int32_t>> selectedVertices) const
 {
 	CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
-	if (!_projectData->_parametrization.has_value())
+	if (!selectedVertices.has_value() && !_projectData->_parametrization.has_value())
 	{
-		LOG_WARN("Skipping influence map export because parametrization data is missing.");
+		LOG_WARN("Skipping influence map export because parametrization data is missing and no selected vertices were provided.");
 		return;
 	}
+
+	auto parametrization = _projectData->_parametrization.value_or(Parametrization { });
 	auto weights = *_weightsData.LockRead();
 
 	_meshOperationSystem->ExecuteOperation<MeshExportInfluenceMapOperation>(
@@ -2075,7 +2077,7 @@ void Editor::ExportInfluenceColorMap(std::filesystem::path filepath,
 		_projectData->_somiglianaDeformer,
 		_projectData->_mesh,
 		_projectData->_cage,
-		*_projectData->_parametrization,
+		std::move(parametrization),
 		std::move(selectedVertices),
 		std::move(filepath),
 		std::move(weights),
