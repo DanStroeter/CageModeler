@@ -169,5 +169,5 @@ private:
 	MemoryMappedBuffer _vertexBuffer;
 	VkSampler _depthHistorySampler = VK_NULL_HANDLE;
 	uint32_t _allModeHitCount = 3;
-	bool _omitEverySecondHit = false;
+	bool _omitEverySecondHit = true;
 };

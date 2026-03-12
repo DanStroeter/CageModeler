@@ -936,6 +936,7 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 			timelineValue = copyDone;
 
 			computeStage->ConsumeAllSlots(hit);
+			
 			const auto computeEnd = std::chrono::steady_clock::now();
 			computeAccumulatedMs += std::chrono::duration<double, std::milli>(computeEnd - computeStart).count();
 			
