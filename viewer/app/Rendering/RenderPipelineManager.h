@@ -192,11 +192,11 @@ private:
 	[[nodiscard]] VkShaderModule CreateShaderModule(const std::vector<char>& shaderCode) const;
 
 private:
-	/// Maximum number of pipelines created.
-	static constexpr auto MaximumNumberPipelines = 32;
+	/// Initial number of pipeline slots. The manager grows on demand.
+	static constexpr auto InitialNumberPipelines = 32;
 
 	std::vector<bool> _allocatedPipelines;
-	std::array<PipelineObject, MaximumNumberPipelines> _pipelines;
+	std::vector<PipelineObject> _pipelines;
 	RenderResourceRef<Device> _device;
 };
 
