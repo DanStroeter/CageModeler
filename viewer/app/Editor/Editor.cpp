@@ -460,10 +460,10 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCreated(); });
 
 	_projectModel->_deformationType = DeformationType::PMVC;
-	_projectModel->_pmvcComputeType = PMVCComputeType::All;
-	_projectModel->_pmvcUseOffset = false;
-	_projectModel->_pmvcTargetCount = 64;
-	_projectModel->_pmvcHitCount = 3;
+	_projectModel->_pmvcComputeType = PMVCComputeType::Cpu;
+	_projectModel->_pmvcUseOffset = true;
+	_projectModel->_pmvcTargetCount = 256;
+	_projectModel->_pmvcHitCount = 1;
 	_projectModel->_pmvcOmitNegative = true;
 	_projectModel->_cubemapSize = 32;
 	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
@@ -577,7 +577,7 @@ void Editor::StartEvaluation()
 		_projectModel->_deformedCageFilepath = evaluationRoot / project._deformedCage;
 		_projectModel->_cubemapSize = project._cubemapSize.value_or(32);
 		_projectModel->_pmvcTargetCount = project._pmvcTargetCount.value_or(64);
-		_projectModel->_pmvcHitCount = project._pmvcHitCount.value_or(3);
+		_projectModel->_pmvcHitCount = project._pmvcHitCount.value_or(1);
 		_projectModel->_pmvcOmitNegative = project._pmvcOmitNegative.value_or(true);
 
 		const auto start = std::chrono::steady_clock::now();
