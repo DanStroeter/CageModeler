@@ -778,11 +778,11 @@ void Editor::StartEvaluation()
 		{
 			timingOutput << ",\n      \"targetCount\": " << result._pmvcTargetCount.value();
 		}
-		if (result._pmvcHitCount.has_value() && result._pmvcComputeType.has_value() && result._pmvcComputeType == PMVCComputeType::All)
+		if (result._pmvcHitCount.has_value() && result._pmvcComputeType.has_value() && result._pmvcComputeType.value() == "All")
 		{
 			timingOutput << ",\n      \"hitCount\": " << result._pmvcHitCount.value();
 		}
-		if (result._pmvcOmitNegative.has_value() && result._pmvcComputeType.has_value() && result._pmvcComputeType == PMVCComputeType::All)
+		if (result._pmvcOmitNegative.has_value() && result._pmvcComputeType.has_value() && result._pmvcComputeType.value() == "All")
 		{
 			timingOutput << ",\n      \"omitNegative\": " << (result._pmvcOmitNegative.value() ? "true" : "false");
 		}
