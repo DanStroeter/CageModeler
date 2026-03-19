@@ -636,7 +636,7 @@ void Editor::StartEvaluation()
 				(*deformationType == DeformationType::PMVC) ? std::optional<bool>(project._pmvcUseOffset.value_or(false)) : std::nullopt,
 				(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt,
 			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._pmvcTargetCount.value_or(64)) : std::nullopt,
-			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._pmvcHitCount.value_or(3)) : std::nullopt,
+			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._pmvcHitCount.value_or(1)) : std::nullopt,
 			(*deformationType == DeformationType::PMVC) ? std::optional<bool>(project._pmvcOmitNegative.value_or(true)) : std::nullopt });
 			continue;
 		}
@@ -702,7 +702,7 @@ void Editor::StartEvaluation()
 			(*deformationType == DeformationType::PMVC) ? std::optional<bool>(project._pmvcUseOffset.value_or(false)) : std::nullopt,
 			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt,
 			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._pmvcTargetCount.value_or(64)) : std::nullopt,
-			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._pmvcHitCount.value_or(3)) : std::nullopt,
+			(*deformationType == DeformationType::PMVC) ? std::optional<int32_t>(project._pmvcHitCount.value_or(1)) : std::nullopt,
 			(*deformationType == DeformationType::PMVC) ? std::optional<bool>(project._pmvcOmitNegative.value_or(true)) : std::nullopt });
 		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
 	}
@@ -778,11 +778,11 @@ void Editor::StartEvaluation()
 		{
 			timingOutput << ",\n      \"targetCount\": " << result._pmvcTargetCount.value();
 		}
-		if (result._pmvcHitCount.has_value())
+		if (result._pmvcHitCount.has_value() && result._pmvcComputeType.has_value() && result._pmvcComputeType == PMVCComputeType::All)
 		{
 			timingOutput << ",\n      \"hitCount\": " << result._pmvcHitCount.value();
 		}
-		if (result._pmvcOmitNegative.has_value())
+		if (result._pmvcOmitNegative.has_value() && result._pmvcComputeType.has_value() && result._pmvcComputeType == PMVCComputeType::All)
 		{
 			timingOutput << ",\n      \"omitNegative\": " << (result._pmvcOmitNegative.value() ? "true" : "false");
 		}
