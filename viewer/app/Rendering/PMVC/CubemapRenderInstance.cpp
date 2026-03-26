@@ -672,7 +672,7 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 		VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
 
 		CubemapPushConstants push{};
-		push.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.01f, 1000.0f);
+		push.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.001f, 1000.0f);
 		push.proj[1][1] *= -1.0f;
 		push.view = ComputeCubemapViewMatrix(face, camPos);
 		push.faceIndex = static_cast<int>(face);

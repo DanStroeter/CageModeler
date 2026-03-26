@@ -460,9 +460,9 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCreated(); });
 
 	_projectModel->_deformationType = DeformationType::PMVC;
-	_projectModel->_pmvcComputeType = PMVCComputeType::Cpu;
-	_projectModel->_pmvcUseOffset = true;
-	_projectModel->_pmvcTargetCount = 256;
+	_projectModel->_pmvcComputeType = PMVCComputeType::All;
+	_projectModel->_pmvcUseOffset = false;
+	_projectModel->_pmvcTargetCount = 32;
 	_projectModel->_pmvcHitCount = 1;
 	_projectModel->_pmvcOmitNegative = true;
 	_projectModel->_cubemapSize = 32;
@@ -476,7 +476,7 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	_projectOptionsPanel->SetModelData(_projectModel);
 
 	StartEvaluation();
-	//OnNewProjectCreated();
+	OnNewProjectCreated();
 //#endif
 }
 
