@@ -1771,9 +1771,15 @@ void Editor::OnMouseClickReleased(const InputActionParams& actionParams)
 			return;
 		}
 
+		const bool useOriginalMeshForOffsetPMVC = _projectData->_pmvcUseOffset &&
+			DeformationTypeHelpers::IsPMVC(_projectData->_deformationType);
+		auto meshForRecompute = useOriginalMeshForOffsetPMVC
+			? _projectData->_mesh
+			: _scene->GetMesh(_deformedMeshHandle)->CopyAsEigen();
+
 		// Re-compute the deformed mesh and update the render proxy.
 		_threadPool->Submit([this,
-			mesh = _scene->GetMesh(_deformedMeshHandle)->CopyAsEigen(),
+			mesh = std::move(meshForRecompute),
 			cage = _projectData->_cage,
 			deformedMesh = _scene->GetMesh(_deformedCageHandle)->CopyAsEigen(),
 			somiglianaDeformer = _projectData->_somiglianaDeformer,
@@ -2005,9 +2011,15 @@ void Editor::OnSequencerNumFramesChanged(const uint32_t currentFrameIndex, const
 		return;
 	}
 
+	const bool useOriginalMeshForOffsetPMVC = _projectData->_pmvcUseOffset &&
+		DeformationTypeHelpers::IsPMVC(_projectData->_deformationType);
+	auto meshForRecompute = useOriginalMeshForOffsetPMVC
+		? _projectData->_mesh
+		: _scene->GetMesh(_deformedMeshHandle)->CopyAsEigen();
+
 	// Re-compute the deformed mesh and update the render proxy.
 	_threadPool->Submit([this,
-		mesh = _scene->GetMesh(_deformedMeshHandle)->CopyAsEigen(),
+		mesh = std::move(meshForRecompute),
 		cage = _projectData->_cage,
 		deformedMesh = _scene->GetMesh(_deformedCageHandle)->CopyAsEigen(),
 		somiglianaDeformer = _projectData->_somiglianaDeformer,
