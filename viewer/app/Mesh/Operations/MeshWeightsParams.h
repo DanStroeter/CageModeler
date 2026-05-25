@@ -20,7 +20,8 @@ enum class DeformationType : uint8_t
 	Green,
 	QGC,
 	Somigliana,
-	PMVC
+	PMVC,
+	PMVCO
 };
 
 enum class PMVCComputeType : uint8_t
@@ -79,6 +80,11 @@ struct DeformationTypeHelpers
 		else if (deformationType == DeformationType::PMVC) {
 			return "PMVC";
 		}
+		else if (deformationType == DeformationType::PMVCO)
+		{
+			return "PMVCO";
+		}
+
 		return { };
 	}
 
@@ -88,7 +94,7 @@ struct DeformationTypeHelpers
 	}
 	[[nodiscard]] static bool IsPMVC(const DeformationType deformationType)
 	{
-		return deformationType == DeformationType::PMVC;
+		return deformationType == DeformationType::PMVC || deformationType == DeformationType::PMVCO;
 	}
 	[[nodiscard]] static bool CanInterpolateWeights(const DeformationType deformationType)
 	{

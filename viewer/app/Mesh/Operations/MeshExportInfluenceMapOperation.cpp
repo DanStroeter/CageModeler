@@ -33,7 +33,7 @@ void MeshExportInfluenceMapOperation::Execute()
 
 		auto weights = sourceWeights;
 
-		if (_params._deformationType == DeformationType::PMVC)
+		if (DeformationTypeHelpers::IsPMVC(_params._deformationType))
 		{
 			weights.transposeInPlace();
 		}
@@ -42,14 +42,14 @@ void MeshExportInfluenceMapOperation::Execute()
 			_params._deformationType == DeformationType::MLC ||
 			_params._deformationType == DeformationType::MEC ||
 			_params._deformationType == DeformationType::MVC ||
-			_params._deformationType == DeformationType::PMVC ||
+			DeformationTypeHelpers::IsPMVC(_params._deformationType) ||
 			_params._deformationType == DeformationType::QMVC ||
 			_params._interpolateWeights) ? 0 : _params._modelVerticesOffset;
 		const auto transposeW = _params._deformationType == DeformationType::Green ||
 			_params._deformationType == DeformationType::QGC ||
 			_params._deformationType == DeformationType::MLC ||
 			_params._deformationType == DeformationType::MVC ||
-			_params._deformationType == DeformationType::PMVC ||
+			DeformationTypeHelpers::IsPMVC(_params._deformationType) ||
 			_params._deformationType == DeformationType::MEC;
 
 		write_influence_color_map_OBJ(_params._outputFilepath.string(),

@@ -147,6 +147,25 @@ struct ProjectModelData
 		return _deformationType != DeformationType::Somigliana && _renderInfluenceMap;
 	}
 
+	void ApplyPMVCPreset()
+	{
+		if (_deformationType == DeformationType::PMVC)
+		{
+			_pmvcComputeType = PMVCComputeType::Ring;
+			_pmvcUseOffset = false;
+			_pmvcTargetCount = 64;
+			_pmvcOmitNegative = true;
+		}
+		else if (_deformationType == DeformationType::PMVCO)
+		{
+			_pmvcComputeType = PMVCComputeType::Ring;
+			_pmvcUseOffset = true;
+			_pmvcTargetCount = 64;
+			_pmvcHitCount = 1;
+			_pmvcOmitNegative = true;
+		}
+	}
+
 	/**
 	 * @return Check if the files exist, otherwise we will end up with errors.
 	 */
@@ -163,7 +182,7 @@ struct ProjectModelData
 	}
 
 	DeformationType _deformationType = DeformationType::Green;
-	PMVCComputeType _pmvcComputeType = PMVCComputeType::All;
+	PMVCComputeType _pmvcComputeType = PMVCComputeType::Ring;
 	LBC::DataSetup::WeightingScheme _LBCWeightingScheme = LBC::DataSetup::WeightingScheme::SQUARE;
 	CageGenerationMethod _cageGenerationType = CageGenerationMethod::CoarseBoundingCagesByXian;
 
@@ -179,7 +198,7 @@ struct ProjectModelData
 
 	uint64_t _cubemapSize = 32;
 	uint64_t _pmvcTargetCount = 64;
-	uint64_t _pmvcHitCount = 3;
+	uint64_t _pmvcHitCount = 1;
 	bool _pmvcOmitNegative = true;
 
 	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
