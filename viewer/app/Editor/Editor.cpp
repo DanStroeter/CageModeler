@@ -378,7 +378,6 @@ namespace
 			{ "qgc", DeformationType::QGC },
 			{ "somigliana", DeformationType::Somigliana },
 			{ "pmvc", DeformationType::PMVC },
-			{ "raytracing", DeformationType::Raytracing }
 		};
 
 		const auto it = mapping.find(ToLower(value));
@@ -424,11 +423,10 @@ Editor::Editor(const SubsystemPtr<InputSubsystem>& inputSubsystem,
 		}});
 }
 
-void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, const std::shared_ptr<CubemapManager>& cubemapRenderer, const std::shared_ptr<Raytracer>& raytracer)
+void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, const std::shared_ptr<CubemapManager>& cubemapRenderer)
 {
 	_scene = std::make_unique<Scene>(sceneRenderer);
 	_cubemapRenderer = cubemapRenderer;
-	_raytracer = raytracer;
 
 	// Sets up all the scene lights before initializing the renderer. Hacky!
 	CreateSceneLights();
@@ -1300,26 +1298,7 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 				}
 			});
 		}
-		else if (projectModelSnapshot->_deformationType == DeformationType::Raytracing)
-		{
-			auto promise = std::make_shared<std::promise<WeightsResult>>();
-			future = promise->get_future();
-
-			_mainThreadQueue->Push([this, projectData, promise]() mutable
-			{
-				try
-				{
-					_raytracer->SetCage(projectData->_cage);
-					_raytracer->SetMesh(projectData->_mesh);
-					_raytracer->Initialize();
-					promise->set_value(_raytracer->ComputeCoordinates());
-				}
-				catch (...)
-				{
-					promise->set_exception(std::current_exception());
-				}
-			});
-		}
+		
 		else
 		{
 			std::promise<WeightsResult> promise;

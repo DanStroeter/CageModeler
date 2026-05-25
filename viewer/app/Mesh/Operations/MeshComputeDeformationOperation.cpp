@@ -146,11 +146,6 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 				vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices;
 			//}
 		}
-		else if (_params._deformationType == DeformationType::Raytracing)
-		{
-			LOG_ERROR("PMVCRaytracing not implemented yet!");
-			return ExecutionResult("Failed to compute PMVC deformation");
-		}
 		else if (_params._deformationType == DeformationType::Somigliana)
 		{
 			std::vector<point3d> verts_deformed_somig(_params._mesh._vertices.rows()), cage_deformed_somig(_params._cage._vertices.rows());

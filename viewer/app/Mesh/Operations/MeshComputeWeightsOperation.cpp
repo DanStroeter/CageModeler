@@ -186,13 +186,6 @@ MeshComputeWeightsOperation::ExecutionResult MeshComputeWeightsOperation::Execut
 		LOG_ERROR("PMVCLipman implemented elsewhere, method shouldnt be called with this parameter!");
 		return ExecutionResult("Failed to compute PMVC weights");
 	}
-	else if (_params._deformationType == DeformationType::Raytracing)
-	{
-		LOG_ERROR("PMVCRaytracing implemented elsewhere, method shouldnt be called with this parameter!");
-		return ExecutionResult("Failed to compute PMVC weights");
-	}
-
-
 	if (DeformationTypeHelpers::RequiresEmbedding(_params._deformationType))
 	{
 		weights  = (weights.array().colwise() / weights.array().rowwise().sum()).eval();

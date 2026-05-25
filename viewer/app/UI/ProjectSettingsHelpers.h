@@ -27,8 +27,7 @@ struct ProjecSettingsHelpers
 	"PMVCAllOffset",
 	"PMVCAllNoOffset",
 	"PMVCCpuOffset",
-	"PMVCCpuNoOffset",
-	"Raytracing"
+	"PMVCCpuNoOffset"
 	};
 
 	static constexpr std::array LBCWeightingSchemeNames = {

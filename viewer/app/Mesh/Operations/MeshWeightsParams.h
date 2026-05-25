@@ -20,8 +20,7 @@ enum class DeformationType : uint8_t
 	Green,
 	QGC,
 	Somigliana,
-	PMVC,
-	Raytracing
+	PMVC
 };
 
 enum class PMVCComputeType : uint8_t
@@ -80,11 +79,6 @@ struct DeformationTypeHelpers
 		else if (deformationType == DeformationType::PMVC) {
 			return "PMVC";
 		}
-		else if (deformationType == DeformationType::Raytracing)
-		{
-			return "Raytracing";
-		}
-
 		return { };
 	}
 
