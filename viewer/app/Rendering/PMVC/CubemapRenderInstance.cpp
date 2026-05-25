@@ -18,11 +18,83 @@
 #include <Thread/ThreadPool.h>
 
 #include <algorithm>
-#include <chrono>
 #include <exception>
 #include <future>
 #include <mutex>
 #include <thread>
+#include <chrono>
+#include <limits>
+#include <cmath>
+
+namespace
+{
+	[[nodiscard]] glm::vec3 ToGlmVec3(const Eigen::Ref<const Eigen::RowVectorXd>& row)
+	{
+		return glm::vec3(
+			static_cast<float>(row(0)),
+			static_cast<float>(row(1)),
+			static_cast<float>(row(2))
+		);
+	}
+
+	[[nodiscard]] float PointToTriangleDistance(
+		const glm::vec3& point,
+		const glm::vec3& a,
+		const glm::vec3& b,
+		const glm::vec3& c)
+	{
+		const glm::vec3 ab = b - a;
+		const glm::vec3 ac = c - a;
+		const glm::vec3 ap = point - a;
+		const float d1 = glm::dot(ab, ap);
+		const float d2 = glm::dot(ac, ap);
+		if (d1 <= 0.0f && d2 <= 0.0f)
+			return glm::length(ap);
+
+		const glm::vec3 bp = point - b;
+		const float d3 = glm::dot(ab, bp);
+		const float d4 = glm::dot(ac, bp);
+		if (d3 >= 0.0f && d4 <= d3)
+			return glm::length(bp);
+
+		const float vc = d1 * d4 - d3 * d2;
+		if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f)
+		{
+			const float v = d1 / (d1 - d3);
+			return glm::length(point - (a + v * ab));
+		}
+
+		const glm::vec3 cp = point - c;
+		const float d5 = glm::dot(ab, cp);
+		const float d6 = glm::dot(ac, cp);
+		if (d6 >= 0.0f && d5 <= d6)
+			return glm::length(cp);
+
+		const float vb = d5 * d2 - d1 * d6;
+		if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f)
+		{
+			const float w = d2 / (d2 - d6);
+			return glm::length(point - (a + w * ac));
+		}
+
+		const float va = d3 * d6 - d5 * d4;
+		if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f)
+		{
+			const glm::vec3 bc = c - b;
+			const float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+			return glm::length(point - (b + w * bc));
+		}
+
+		const glm::vec3 normal = glm::cross(ab, ac);
+		const float normalLen = glm::length(normal);
+		if (normalLen <= std::numeric_limits<float>::epsilon())
+		{
+			return std::min({ glm::length(ap), glm::length(bp), glm::length(cp) });
+		}
+
+		return std::abs(glm::dot(point - a, normal / normalLen));
+	}
+}
 
 CubemapRenderInstance::~CubemapRenderInstance() {
 	Cleanup();
@@ -94,6 +166,7 @@ CubemapRenderInstance::CubemapRenderInstance(
 , _vertexBuffer(std::move(vertexBuffer))
 , _cubemapPipelineHandleCpu(cubemapPipelineHandleCpu)
 {
+	UpdateProjectionPlanes();
 	Initialize();
 }
 
@@ -280,6 +353,73 @@ void CubemapRenderInstance::Initialize() {
 	CreateSyncObjects();
 	//_sphereWeightCalculator = SphereWeightCalculator();
 	//_sphereWeightCalculator.SphereWeightInitialization(_cubemapSize, _cubemapManager._device, _cubemapManager._resourceManager, _graphicCommandPool);
+}
+
+void CubemapRenderInstance::UpdateProjectionPlanes()
+{
+	if (_cageMesh._vertices.rows() == 0 || _cageMesh._vertices.cols() < 3)
+	{
+		return;
+	}
+
+	float maxCageVertexDistance = 0.0f;
+	for (int i = 0; i < _cageMesh._vertices.rows(); ++i)
+	{
+		const glm::vec3 a = ToGlmVec3(_cageMesh._vertices.row(i));
+		for (int j = i + 1; j < _cageMesh._vertices.rows(); ++j)
+		{
+			const glm::vec3 b = ToGlmVec3(_cageMesh._vertices.row(j));
+			maxCageVertexDistance = std::max(maxCageVertexDistance, glm::distance(a, b));
+		}
+	}
+
+	const float computedFarPlane = std::max(maxCageVertexDistance, 1e-3f);
+	_projectionFarPlane = computedFarPlane;
+
+	if (_deformableMesh._vertices.rows() == 0 || _deformableMesh._vertices.cols() < 3 || _cageMesh._faces.cols() < 3)
+	{
+		_projectionNearPlane = 1e-4f;
+		return;
+	}
+
+	float minMeshToCageTriangleDistance = std::numeric_limits<float>::max();
+	for (int meshVertexIdx = 0; meshVertexIdx < _deformableMesh._vertices.rows(); ++meshVertexIdx)
+	{
+		const glm::vec3 point = ToGlmVec3(_deformableMesh._vertices.row(meshVertexIdx));
+		for (int faceIdx = 0; faceIdx < _cageMesh._faces.rows(); ++faceIdx)
+		{
+			const int v0Idx = _cageMesh._faces(faceIdx, 0);
+			const int v1Idx = _cageMesh._faces(faceIdx, 1);
+			const int v2Idx = _cageMesh._faces(faceIdx, 2);
+			if (v0Idx < 0 || v1Idx < 0 || v2Idx < 0 ||
+				v0Idx >= _cageMesh._vertices.rows() ||
+				v1Idx >= _cageMesh._vertices.rows() ||
+				v2Idx >= _cageMesh._vertices.rows())
+			{
+				continue;
+			}
+
+			const glm::vec3 a = ToGlmVec3(_cageMesh._vertices.row(v0Idx));
+			const glm::vec3 b = ToGlmVec3(_cageMesh._vertices.row(v1Idx));
+			const glm::vec3 c = ToGlmVec3(_cageMesh._vertices.row(v2Idx));
+			minMeshToCageTriangleDistance = std::min(
+				minMeshToCageTriangleDistance,
+				PointToTriangleDistance(point, a, b, c));
+		}
+	}
+
+	if (!std::isfinite(minMeshToCageTriangleDistance))
+	{
+		_projectionNearPlane = 1e-4f;
+		return;
+	}
+
+	const float epsilon = 1e-4f;
+	_projectionNearPlane = std::max(minMeshToCageTriangleDistance, epsilon);
+	if (_projectionNearPlane >= _projectionFarPlane)
+	{
+		_projectionNearPlane = std::max(_projectionFarPlane * 0.001f, epsilon);
+	}
 }
 
 CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
@@ -672,7 +812,7 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 		VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
 
 		CubemapPushConstants push{};
-		push.proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.001f, 1000.0f);
+		push.proj = glm::perspective(glm::radians(90.0f), 1.0f, _projectionNearPlane, _projectionFarPlane);
 		push.proj[1][1] *= -1.0f;
 		push.view = ComputeCubemapViewMatrix(face, camPos);
 		push.faceIndex = static_cast<int>(face);

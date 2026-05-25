@@ -124,6 +124,8 @@ private:
 	std::optional<double> _computeMs;
 	std::optional<double> _computeTotalMs;
 	std::optional<double> _transferMs;
+	float _projectionNearPlane = 0.001f;
+	float _projectionFarPlane = 1000.0f;
 
 	//init functions
 	void Initialize();
@@ -133,6 +135,7 @@ private:
 	void CreateCommandPool(uint32_t queueFamilyIndex);
 	void UpdateMatricesDescriptorSet();
 	void CreateSyncObjects();
+	void UpdateProjectionPlanes();
 
 	void RecordAndSubmitCubemapRender(uint32_t cubemapIdx, uint32_t targetIndex, const glm::vec3& camPos,
 		CubemapRenderTarget& target, VkSemaphore timeline, uint64_t signalValue, uint32_t hitIndex); //TODO submit cubemap at once not in 6 parts
