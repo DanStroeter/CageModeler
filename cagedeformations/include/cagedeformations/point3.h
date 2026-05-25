@@ -58,9 +58,6 @@ public:
         // IMPORTANT NOTE: if you have a weird compilation error here, it is probably because you are trying to 
         // assign a wrong variable to a point3.
         // For example:
-        // bool myBoolean = true;
-        // point3d myPoint = 2; // will give an error
-        // point3d myPoint = myBoolean; // will give an error
         // The compiler will complain about the [] operator
         v[0] = (T)(p[0]);
         v[1] = (T)(p[1]);
@@ -259,20 +256,10 @@ public:
     }
 
     //    inline static point3< T > RandOrientation (  )
-    //    {
-    //        T rx = -1.f + 2.f * (float)(rand()) / (float)( RAND_MAX );
-    //        T ry = -1.f + 2.f * (float)(rand()) / (float)( RAND_MAX );
-    //        T rz = -1.f + 2.f * (float)(rand()) / (float)( RAND_MAX );
-    //        point3<T> orientation( rx , ry , rz );
     //        orientation.normalize();
-    //        return orientation;
-    //    }
 
     //    Choose z uniformly distributed in [-1,1].
     //    Choose t uniformly distributed on [0, 2*pi).
-    //    Let r = sqrt(1-z^2).
-    //    Let x = r * cos(t).
-    //    Let y = r * sin(t).
 
     inline static point3< T > RandOrientation (  )
     {
@@ -342,7 +329,6 @@ public:
 
     static
     point3<T> slerp( point3<T> const& p0, point3<T> const& p1, double t) {
-        // convention: t=0 -> p0. t=1 -> p1
         double angle = atan2(point3<T>::cross(p0, p1).norm(), point3<T>::dot(p0, p1));
         double sin_1_minus_t = sin((1 - t) * angle);
         double sin_t = sin((t)*angle);
@@ -802,10 +788,6 @@ public:
     double radius()
     {
         return getMinInterval() * 0.75;
-        //        return getMinInterval() * 0.55;
-        //        return getMinInterval() * 0.66;
-        //        return getMinInterval() * 0.55;
-        //        return getMinInterval() * 1.0;
     }
 };
 }
@@ -913,7 +895,6 @@ public:
     inline
     void splitAlongAxis( char axis , T value , BBOX<T> & bbox1 , BBOX<T> & bbox2 )
     {
-        // for safety:
         value = std::max<T>( std::min<T>( value , BB[axis] ) , bb[axis] );
         point3<T> BB1 = BB;
         BB1[axis] = value;
@@ -1520,7 +1501,6 @@ public:
             U(8) = -U(8);
             return U*Vt;
         }
-        // else
         return res;
     }
 
@@ -1538,7 +1518,6 @@ public:
             set(U*Vt);
             return;
         }
-        // else
         set(res);
     }
 
@@ -1555,7 +1534,6 @@ public:
             set(U*S*Vt);
             return;
         }
-        // else
         set(res);
     }
 
@@ -1572,7 +1550,6 @@ public:
             set(U* S * Vt);
             return;
         }
-        // else
         set(res);
     }
 
@@ -1591,7 +1568,6 @@ public:
         const point3<T> & VtB2_col2 = ( Vt * B2 ).getCol(2);
         T lambda = sx * VtB2_col2[0] * VtB2_col2[0]  +  sy * VtB2_col2[1] * VtB2_col2[1]  +  sz * VtB2_col2[2] * VtB2_col2[2];
 
-        // if( (U*Vt).determinant() < 0 ){ lambda = -lambda; }
 
         mat33<T> NewScales = mat33<T>::Identity();
         NewScales(2,2) = lambda;

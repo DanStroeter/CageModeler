@@ -136,14 +136,8 @@ void Camera::Update(const double deltaTime)
 		// const auto intersectionPoint = RayPlaneIntersection(eyePosition, cameraDir, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
 		// // If we are behind the plane, just use a position that is slightly in front of the camera.
-		// if (!intersectionPoint.has_value())
-		// {
 		// 	_pointOfInterest = eyePosition + DistanceFromEyeNoIntersection * cameraDir;
-		// }
-		// else
-		// {
 		// 	_pointOfInterest = intersectionPoint.value();
-		// }
 
 		_pointOfInterest = newPointOfInterest;
 		_viewInfo._view = glm::lookAt(newEyePosition, newPointOfInterest, glm::vec3(0.0f, 1.0f, 0.0f));

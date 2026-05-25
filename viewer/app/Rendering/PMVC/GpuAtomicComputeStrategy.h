@@ -10,7 +10,6 @@
 #include <Rendering/PMVC/CubemapRenderInstance.h>
 #include <Rendering/PMVC/SphereWeightCalculator.h>
 
-//class SphereWeightCalculator;
 
 class GpuAtomicComputeStrategy final : public ICubemapComputeStrategy
 {

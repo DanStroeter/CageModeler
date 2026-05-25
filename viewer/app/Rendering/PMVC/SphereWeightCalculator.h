@@ -88,7 +88,6 @@ public:
         };
 
         // Map corners to sphere
-        //struct Point3D { double x, y, z; };
         Point3D corners_sphere[4];
 
         for (int i = 0; i < 4; ++i) {
@@ -340,7 +339,6 @@ private:
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffer;
 
-        //VkQueue graphicsQueue = device->GetQueue(TQ_Graphics, 0);
         VkQueue graphicsQueue = device->GetDeviceQueue(
 			device->GetQueueFamilies()._graphics.value(),
 			0);

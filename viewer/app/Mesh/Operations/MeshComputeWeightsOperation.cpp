@@ -4,7 +4,6 @@
 #include <cagedeformations/MaximumEntropyCoordinates.h>
 #include <cagedeformations/MaximumLikelihoodCoordinates.h>
 #include <cagedeformations/WeightInterpolation.h>
-//#include <cagedeformations/PoisitveMeanValueCoordinatesLipman.h>
 #include <igl/boundary_conditions.h>
 #include <igl/harmonic.h>
 #include <igl/bbw.h>

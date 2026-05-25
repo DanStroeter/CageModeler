@@ -8,7 +8,6 @@
 #include <Rendering/Core/DescriptorPool.h>
 #include <Rendering/Core/RenderResourceManager.h>
 #include <Rendering/PMVC/CubemapRenderInstance.h>
-//#include <Rendering/PMVC/SphereWeightCalculator.h>
 
 class GpuSerialComputeStrategy final : public ICubemapComputeStrategy
 {

@@ -1174,7 +1174,6 @@ void computeFloaterBarycentricCoordinatesInPlanarQuad(
 	const double A3 = nq.dot((quad_vertices[3] - eta).cross(quad_vertices[0] - eta)) / 2;
 	const double B0 = nq.dot((quad_vertices[3] - eta).cross(quad_vertices[1] - eta)) / 2;
 	const double B1 = nq.dot((quad_vertices[0] - eta).cross(quad_vertices[2] - eta)) / 2;
-	// double B2 = point_t::dot(nq , point_t::cross(q1-eta,q3-eta)) / 2;
 	const double B3 = nq.dot((quad_vertices[2] - eta).cross(quad_vertices[0] - eta)) / 2;
 
 	const double D = std::max<double>(0.0, B0 * B0 + B1 * B1 + 2 * A0 * A2 + 2 * A1 * A3);

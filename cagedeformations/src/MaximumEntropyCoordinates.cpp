@@ -8,7 +8,6 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
-// #include <igl/Timer.h>
 #include <igl/vertex_triangle_adjacency.h>
 
 void calculateMaximumEntropyCoordinates(const Eigen::MatrixXd &cage_v, const Eigen::MatrixXi &cage_f, const Eigen::MatrixXd &model_v, Eigen::MatrixXd &mec, const int mec_flag)
@@ -16,7 +15,6 @@ void calculateMaximumEntropyCoordinates(const Eigen::MatrixXd &cage_v, const Eig
     int nv = cage_v.cols();
     int nf = cage_f.cols();
 
-    // std::unique_ptr<igl::Timer> timer;
     // timer = std::make_unique<igl::Timer>();
 
     Eigen::MatrixXd shifted_cage_v = cage_v;
@@ -24,16 +22,11 @@ void calculateMaximumEntropyCoordinates(const Eigen::MatrixXd &cage_v, const Eig
     mec.resize(nv, model_v.cols());
 
     std::vector<std::vector<int>> allAdjFaces;
-    // std::vector<int> adjFaces;
     std::vector< std::vector< int > > VF;
-    //  std::vector< std::vector< int > > VFi; //allAdjFaces
     igl::vertex_triangle_adjacency(nv, cage_f, VF, allAdjFaces);
     // get adjacent faces of each vertex
-    // for (int i = 0; i < nv; ++i)
-    // {
     //     adjFaces = findAdjacentFacesOfIndexV(cage_f, i);
     //     allAdjFaces.push_back(adjFaces);
-    // }
 
     for (int ii = 0; ii < model_v.cols(); ++ii)
     {
@@ -65,11 +58,9 @@ void calculateMaximumEntropyCoordinates(const Eigen::MatrixXd &cage_v, const Eig
             // timer->start();
             gradient = -shifted_cage_v*Zi;
             // timer->stop();
-            // std::cout << " took " << timer->getElapsedTime() << "seconds\n";
             double Z = Zi.sum();
             gradient /= Z;
 
-            // std::cout << "gradient.norm(): " << gradient.norm() << std::endl;
 
             if (std::isnan(gradient.norm())) 
             {
@@ -80,7 +71,6 @@ void calculateMaximumEntropyCoordinates(const Eigen::MatrixXd &cage_v, const Eig
             if (gradient.norm() < error)
             {
                 mec.col(ii) = Zi / Z;
-                // std::cout << ii << "-------------------------------------------------------------:" << (cage_v * mec.col(ii) - model_v.col(ii)).norm() << std::endl; // for test
                 if ((cage_v * mec.col(ii) - model_v.col(ii)).norm()>1e-7)
                     std::cerr<< "---------------- The maximum entropy coordinates of the " << ii << "-th point may be wrong, as c*lambda-v=" << (cage_v * mec.col(ii) - model_v.col(ii)).norm() << " > 1e-7" << std::endl;
                 break;
@@ -99,11 +89,9 @@ void calculateMaximumEntropyCoordinates(const Eigen::MatrixXd &cage_v, const Eig
             Hessian -= (SUMZivi * SUMZivi.transpose());
             Hessian /= (Z * Z);
 
-            // std::cout << "Hessian: " << std::endl << Hessian << std::endl;
             
             // determine Newton search direction
             SUMZivi = -Hessian.colPivHouseholderQr().solve(gradient);
-            // std::cout << "SUMZivi: " << std::endl << SUMZivi << std::endl;
             // SUMZivi = -Hessian.inverse() * gradient;
 
             if (gradient.norm() > 1e-4) {
@@ -127,22 +115,8 @@ void calculateMaximumEntropyCoordinates(const Eigen::MatrixXd &cage_v, const Eig
     }
 }
 
-// std::vector<int> findAdjacentFacesOfIndexV(const Eigen::MatrixXi &faces, int indexOfVertex)
-// {
-//     std::vector<int> adjacentFaces;
-//     for (int i = 0; i < faces.cols(); ++i)
-//     {
-//         for (int j = 0; j < 3; ++j)
-//         {
-//             if (faces(j, i) == indexOfVertex)
-//             {
 //                 adjacentFaces.push_back(i);
 //                 break;
-//             }
-//         }
-//     }
-//     return adjacentFaces;
-// }
 
 void priorFunctions(const Eigen::Vector3d v, const Eigen::MatrixXd &cage_v, const Eigen::MatrixXi &cage_f, std::vector<std::vector<int>> adjs, Eigen::VectorXd &priors, int mec_flag)
 {

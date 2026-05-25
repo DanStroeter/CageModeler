@@ -57,8 +57,6 @@ namespace BiharmonicCoordinates3D
 		if (fabs(det) < 0.0000000001) // then you're on the limit case where you cover half the sphere
 			return 0; // chances are that you are outside the triangle
 
-	//	if (fabs(det) < 0.0000000001) // then you're on the limit case where you cover half the sphere
-	//		return 2.0 * M_PI; // that is particularly shitty, because the sign is difficult to estimate...
 
 		T al = a.norm(), bl = b.norm(), cl = c.norm();
 
@@ -1041,7 +1039,6 @@ namespace BiharmonicCoordinates3D
 
 		point3d t[3] = { v0, v1, v2 };
 		double psi_SingleHarmonic = h_psi(eta, &t[0]);
-		//	point3d psi_gradient = bh_psi_gradient(eta, v0, v1, v2); // works just as well
 		point3d psi_gradient = bh_psi_gradient_in_tangent_plane(eta, v0, v1, v2); // works just as well
 
 		phi0 = -d * point3d::dot(psi_gradient, r0) + 0.5 * d * gamma0 * psi_SingleHarmonic;
@@ -1057,7 +1054,6 @@ namespace BiharmonicCoordinates3D
 		
 		point3d t[3] = { v0, v1, v2 };
 		double psi_SingleHarmonic = h_psi(eta, &t[0]);
-		//	point3d psi_gradient = bh_psi_gradient(eta, v0, v1, v2); // works just as well
 		point3d psi_gradient = bh_psi_gradient_in_tangent_plane(eta, v0, v1, v2); // works just as well
 
 		point3d r0 = point3d::cross(n, v2 - v1); r0 /= point3d::dot(r0, v0 - v1);
@@ -1151,7 +1147,6 @@ namespace BiharmonicCoordinates3D
 		point3d h_psi_grad;
 		h_psi_with_derivatives(eta, &t[0], h_psi, h_psi_grad);
 
-		//	point3d bh_psi_grad = bh_psi_gradient(eta, v0, v1, v2); // works just as well
 		point3d bh_psi_grad = bh_psi_gradient_in_tangent_plane(eta, v0, v1, v2); // works just as well
 		mat33d bh_psi_H = bh_psi_Hessian(eta, v0, v1, v2);
 
@@ -2546,7 +2541,6 @@ namespace BiharmonicCoordinates3D
 
 
 		Eigen::MatrixXd A(samples_on_triangles.size() + n_Dirichlet_constraints, cage_triangles.size() + cage_vertices.size());
-	//	Eigen::MatrixXd 
 		B = Eigen::MatrixXd(samples_on_triangles.size() + n_Dirichlet_constraints, cage_triangles.size() + cage_vertices.size());
 
 		// fill A :
@@ -3079,17 +3073,7 @@ namespace BiharmonicCoordinates3D
 			}
 		}
 
-		//std::cout << "\t f" << std::endl;
-		//std::cout << "\t\t dims:" << std::endl;
-		//std::cout << H_hPhi.rows() << "  " << H_hPhi.cols() << std::endl;
-		//std::cout << H_bhPhi.rows() << "  " << H_bhPhi.cols() << "  " << ConstrainedBiH_13_C11.rows() << "  " << ConstrainedBiH_13_C11.cols() << std::endl;
-		//std::cout << H_bhPsi.rows() << "  " << H_bhPsi.cols() << "  " << ConstrainedBiH_13_C12.rows() << "  " << ConstrainedBiH_13_C12.cols() << std::endl;
 
-		//std::cout << "\t\t dims second:" << std::endl;
-		//std::cout << H_hPsi.rows() << "  " << H_hPsi.cols() << std::endl;
-		//std::cout << H_bhPhi.rows() << "  " << H_bhPhi.cols() << "  " << ConstrainedBiH_13_C21.rows() << "  " << ConstrainedBiH_13_C21.cols() << std::endl;
-		//std::cout << H_bhPsi.rows() << "  " << H_bhPsi.cols() << "  " << ConstrainedBiH_13_C22.rows() << "  " << ConstrainedBiH_13_C22.cols() << std::endl;
-		//std::cout << "\t f2" << std::endl;
 
 		B = H_hPhi + H_bhPhi * ConstrainedBiH_13_C11 + H_bhPsi * ConstrainedBiH_13_C12;
 		C = H_hPsi + H_bhPhi * ConstrainedBiH_13_C21 + H_bhPsi * ConstrainedBiH_13_C22;
@@ -3200,17 +3184,7 @@ namespace BiharmonicCoordinates3D
 			}
 		}
 
-		//std::cout << "\t f" << std::endl;
-		//std::cout << "\t\t dims:" << std::endl;
-		//std::cout << H_hPhi.rows() << "  " << H_hPhi.cols() << std::endl;
-		//std::cout << H_bhPhi.rows() << "  " << H_bhPhi.cols() << "  " << ConstrainedBiH_13_C11.rows() << "  " << ConstrainedBiH_13_C11.cols() << std::endl;
-		//std::cout << H_bhPsi.rows() << "  " << H_bhPsi.cols() << "  " << ConstrainedBiH_13_C12.rows() << "  " << ConstrainedBiH_13_C12.cols() << std::endl;
 
-		//std::cout << "\t\t dims second:" << std::endl;
-		//std::cout << H_hPsi.rows() << "  " << H_hPsi.cols() << std::endl;
-		//std::cout << H_bhPhi.rows() << "  " << H_bhPhi.cols() << "  " << ConstrainedBiH_13_C21.rows() << "  " << ConstrainedBiH_13_C21.cols() << std::endl;
-		//std::cout << H_bhPsi.rows() << "  " << H_bhPsi.cols() << "  " << ConstrainedBiH_13_C22.rows() << "  " << ConstrainedBiH_13_C22.cols() << std::endl;
-		//std::cout << "\t f2" << std::endl;
 
 		B = nnD_hPhi + nnD_bhPhi * ConstrainedBiH_13_C11 + nnD_bhPsi * ConstrainedBiH_13_C12;
 		C = nnD_hPsi + nnD_bhPhi * ConstrainedBiH_13_C21 + nnD_bhPsi * ConstrainedBiH_13_C22;
@@ -3275,7 +3249,6 @@ namespace BiharmonicCoordinates3D
 			h_phi_T, h_psi_T
 		);
 
-		//Eigen::MatrixXd L_hPhi( samples_on_triangles.size(), cage_vertices.size());
 		// = 0
 
 		Eigen::MatrixXd L_bhPhi(samples_on_triangles.size(), cage_vertices.size());
@@ -3285,7 +3258,6 @@ namespace BiharmonicCoordinates3D
 			}
 		}
 
-		//Eigen::MatrixXd L_hPsi(samples_on_triangles.size(), cage_triangles.size());
 		// = 0
 
 		Eigen::MatrixXd L_bhPsi(samples_on_triangles.size(), cage_triangles.size());

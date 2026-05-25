@@ -8,12 +8,8 @@
 #include <Eigen/Geometry>
 #include <igl/vertex_triangle_adjacency.h>
 
-// #include <iomanip>
-// #include <igl/Timer.h>
 
-// #include <nlopt.h>
 
-// #include <fstream>
 
 void computeIntegralUnitNormals(const Eigen::MatrixXd &v, const Eigen::MatrixXi &f, Eigen::MatrixXd &transMatrix, Eigen::MatrixXd &normalized_integral_outward_allfaces)
 {
@@ -69,18 +65,13 @@ void calculateMaximumLikelihoodCoordinates(const Eigen::MatrixXd &cage_v, const 
     std::vector<int> adjFaces;
 
     std::vector< std::vector< int > > VF;
-    //  std::vector< std::vector< int > > VFi; //allAdjFaces
     igl::vertex_triangle_adjacency(nv, cage_f, VF, allAdjFaces);
     // get adjacent faces of each vertex
-    // for (int i = 0; i < nv; ++i)
-    // {
     //     adjFaces = findAdjacentFaces(cage_f, i);
     //     allAdjFaces.push_back(adjFaces);
-    // }
 
     for (int ii = 0; ii < model_v.cols(); ++ii)
     {
-        // Eigen::VectorXd mlc = Eigen::VectorXd::Zero(nv);
         std::vector<Eigen::MatrixXd> transMatrixGroup;
         Eigen::MatrixXd transMatrix = Eigen::MatrixXd::Identity(nv, nv);
 
@@ -91,11 +82,8 @@ void calculateMaximumLikelihoodCoordinates(const Eigen::MatrixXd &cage_v, const 
         v = cage_v.colwise() - model_v.col(ii);
         transMatrix.diagonal()  = (1.0 / v.colwise().norm().array()).matrix();
         // timer->stop();
-        // std::cout << " took " << timer->getElapsedTime() << "seconds\n";
-        // Eigen::MatrixXd v1 = v;
         transMatrixGroup.push_back(transMatrix);
         v *= transMatrix;
-        // std::cout << v.transpose() << std::endl;
 
         // 2. smooth
         Eigen::MatrixXd tempVar;
@@ -106,7 +94,6 @@ void calculateMaximumLikelihoodCoordinates(const Eigen::MatrixXd &cage_v, const 
 
         Eigen::MatrixXd normalized_integral_outward_allfaces;
         computeIntegralUnitNormals(v, cage_f, tempVar, normalized_integral_outward_allfaces);
-        // Eigen::MatrixXd v2 = v;
         v = Eigen::MatrixXd::Zero(3, nv);
 
         for (int i = 0; i < nv; ++i)
@@ -127,11 +114,8 @@ void calculateMaximumLikelihoodCoordinates(const Eigen::MatrixXd &cage_v, const 
 
         transMatrixGroup.push_back(transMatrix);
 
-        // std::cout << v2*transMatrix -v << std::endl;
 
         Eigen::Vector3d x(0, 0, 0);
-        // double minf;
-        // nlopt_opt opt;
         // opt = nlopt_create(NLOPT_LD_TNEWTON, 3);  // Choose an optimization algorithm
         // // std::cout << std::fixed << std::setprecision(5) << v << std::endl;
         // // std::fstream os("d:/a.txt");
@@ -139,9 +123,6 @@ void calculateMaximumLikelihoodCoordinates(const Eigen::MatrixXd &cage_v, const 
         // // os.close();
         // nlopt_set_min_objective(opt, f, &v);  // Set the objective function
         // nlopt_set_xtol_rel(opt, 1e-10);  // Set optimization options if needed
-        // if (nlopt_optimize(opt, x.data(), &minf) < 0) {
-        // std::cerr << "NLopt optimization failed!" << std::endl;
-        // } 
         
         // nlopt_destroy(opt);
 
@@ -197,76 +178,36 @@ void calculateMaximumLikelihoodCoordinates(const Eigen::MatrixXd &cage_v, const 
         {
             mlc(i, ii) = 1 / (nv + x[0] * v(0, i) + x[1] * v(1, i) + x[2] * v(2, i));
         }
-        // std::cout << ii << "-------------------------------------------------------------:" << (v * mlc.col(ii)).norm() << std::endl; // for test
-        // std::cout << mlc.col(ii).sum()<<std::endl;
-        // std::cout << mlc << std::endl;
         while (!transMatrixGroup.empty())
         {
             mlc.col(ii) = transMatrixGroup.back() * mlc.col(ii);
             transMatrixGroup.pop_back();
         }
-        // std::cout << ii << "--------------------------------------------:" << (v1 * mlc.col(ii)).norm() << std::endl; // for test
-        // std::cout << mlc.col(ii).sum() << std::endl;
 
         mlc.col(ii) /= mlc.col(ii).sum();
-        // std::cout << mlc.col(ii).sum() << std::endl;
-        // std::cout << ii << "--------------------------------------------:" << (v1 * mlc.col(ii)).norm() << std::endl; // for test
-        // std::cout << ii << "-------------------------------------------------------------:" << ((cage_v.colwise() - model_v.col(ii))*mlc.col(ii)).norm() << std::endl; // for test
         if ((cage_v * mlc.col(ii) - model_v.col(ii)).norm()>1e-7)
             std::cerr<< "---------------- The maximum likelihood coordinates of the " << ii << "-th point may be wrong, as c*lambda-v=" << (cage_v * mlc.col(ii) - model_v.col(ii)).norm() << " > 1e-7" << std::endl;
     }
 }
 
-// std::vector<int> findAdjacentFaces(const Eigen::MatrixXi &faces, int indexOfVertex)
-// {
-//     std::vector<int> adjacentFaces;
-//     for (int i = 0; i < faces.cols(); ++i)
-//     {
-//         for (int j = 0; j < 3; ++j)
-//         {
-//             if (faces(j, i) == indexOfVertex)
-//             {
 //                 adjacentFaces.push_back(i);
 //                 break;
-//             }
-//         }
-//     }
-//     return adjacentFaces;
-// }
 
 Eigen::VectorXd f_gradient(Eigen::VectorXd x, Eigen::MatrixXd v)
 {
-    // int n = v.cols();
-    // Eigen::Vector3d g(0, 0, 0);
-    // for (int i = 0; i < n; ++i)
-    // {
     //     g -= v.col(i) / (n + x.dot(v.col(i)));
-    // }
     return -v * (1 / (((v.transpose()*x).array() + 1.0*v.cols()))).matrix();
 }
 
 Eigen::MatrixXd f_Hessian(Eigen::VectorXd x, Eigen::MatrixXd v)
 {
-    //  std::unique_ptr<igl::Timer> timer;
     // timer = std::make_unique<igl::Timer>();
-    // int n = v.cols();
 
     // timer->start();
-    // Eigen::Matrix3d H = Eigen::Matrix3d::Zero();
 
-    // for (int i = 0; i < 3; ++i)
-    // {
-    //     for (int j = i; j < 3; ++j)
-    //     {
-    //         for (int k = 0; k < n; ++k)
-    //         {
     //             H(i, j) += v(i, k) * v(j, k) / ((n + x.dot(v.col(k))) * (n + x.dot(v.col(k))));
-    //         }
     //         H(j, i) = H(i, j);
-    //     }
-    // }
     // timer->stop();
-    // std::cout << " took " << timer->getElapsedTime() << "seconds\n";
 
     // timer->start();
     Eigen::Matrix3d H = Eigen::Matrix3d::Zero();
@@ -280,7 +221,6 @@ Eigen::MatrixXd f_Hessian(Eigen::VectorXd x, Eigen::MatrixXd v)
         }
     }
     // timer->stop();
-    // std::cout << " took " << timer->getElapsedTime() << "seconds\n";
     return H;
 }
 

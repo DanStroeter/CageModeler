@@ -72,16 +72,10 @@ private:
 	PipelineHandle CreateCubemapRenderPipeline(bool cpuTransfer, bool depthPeelPass = false);
 	void CreateVertexBufferFromMesh();
 	void CreateIndexBufferFromMesh();
-	//void SphereWeightInitialization(uint32_t size);
-	//float ComputeSphereWeight(int px, int py, int faceSize, int face);
-	//uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
-	//VkCommandBuffer BeginOneTimeCommands();
-	//void EndOneTimeCommands(VkCommandBuffer cmd);
 
 	//helper functions:
 	float ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
 	float ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices);
-	//glm::mat4 ComputeCubemapViewMatrix(uint32_t faceIndex, const glm::vec3& pos);
 	std::vector<CubemapVertex> CreateCubemapVertexBuffer(const PolygonMesh& mesh);
 
 	//resources:
@@ -120,8 +114,4 @@ private:
 	uint32_t _cubemapSize;
 	VkFormat _format;
 
-	//VkImage        _solidAngleImage = VK_NULL_HANDLE;
-	//VkDeviceMemory _solidAngleMemory = VK_NULL_HANDLE;
-	//VkImageView    _solidAngleArrayView = VK_NULL_HANDLE;
-	//VkSampler      _solidAngleSampler = VK_NULL_HANDLE;
 };

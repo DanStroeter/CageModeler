@@ -848,9 +848,6 @@ void Raytracer::CreateShaderBindingTable(const VkRayTracingPipelineCreateInfoKHR
 	uint32_t handleAlignment = _rtProperties.shaderGroupHandleAlignment;
 	uint32_t baseAlignment = _rtProperties.shaderGroupBaseAlignment;
 
-	//uint32_t raygenSize = alignUp(handleSize, handleAlignment);
-	//uint32_t missSize = alignUp(handleSize, handleAlignment);
-	//uint32_t hitSize = alignUp(handleSize, handleAlignment);
 
 	uint32_t handleSizeAligned = alignUp(handleSize, handleAlignment);
 	uint32_t raygenStride = alignUp(handleSizeAligned, baseAlignment);
@@ -863,8 +860,6 @@ void Raytracer::CreateShaderBindingTable(const VkRayTracingPipelineCreateInfoKHR
 	uint32_t hitSize = alignUp(hitStride, baseAlignment);
 	// Calculate offsets
 	uint32_t raygenOffset = 0;
-	//uint32_t missOffset = alignUp(raygenSize, baseAlignment);
-	//uint32_t hitOffset = alignUp(missOffset + missSize, baseAlignment);
 	uint32_t missOffset = raygenOffset + raygenSize;
 	uint32_t hitOffset = missOffset + missSize;
 
@@ -1124,9 +1119,7 @@ void Raytracer::CreateReadbackResources()
 	std::vector<std::byte> readbackStorage(static_cast<size_t>(hitBufferSize));
 
 	_readback.stagingBuffer = _resourceManager->CreateBufferAndMapMemory(
-		//std::span<std::byte>((std::byte*)_readback.mappedData,
 			//static_cast<size_t>(hitBufferSize)),
-		//std::span<std::byte>{},
 		std::span(readbackStorage),
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
@@ -1254,7 +1247,6 @@ std::vector<Raytracer::HitBufferData> Raytracer::GetHitResults()
 {
 	WaitForReadbackComplete();
 
-	//uint32_t hitCount = _readback.size;
 	const uint32_t hitCount = static_cast<uint32_t>(_readback.size / sizeof(HitBufferData));
 	//const uint32_t hitCount = _pushConstants.vertexCount *
 	//_pushConstants.raysPerVertex*

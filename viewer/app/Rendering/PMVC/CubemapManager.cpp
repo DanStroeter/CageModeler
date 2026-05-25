@@ -193,7 +193,6 @@ PipelineHandle CubemapManager::CreateCubemapRenderPipeline(bool cpuTransfer, boo
 	vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescs.size());
 	vertexInputInfo.pVertexAttributeDescriptions = attributeDescs.data();
 
-	// Blend state (disable blending, write all channels)
 	VkPipelineColorBlendAttachmentState colorBlendAttachment{};
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
 		VK_COLOR_COMPONENT_G_BIT |

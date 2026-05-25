@@ -1649,10 +1649,7 @@ void Editor::OnMouseClickPressed(const InputActionParams& actionParams)
 	// const auto currentMouseRay = viewInfo.DeprojectScreenToWorldRay(mousePosition);
 	// const auto meshHitResult = _scene->QueryClosestMesh(currentMouseRay);
 	//
-	// if (meshHitResult.has_value())
-	// {
 	// 	camera.SetPointOfInterest(meshHitResult->_worldPosition);
-	// }
 
 	const auto& camera = _cameraSubsystem->GetCamera();
 	const auto& viewInfo = camera.GetViewInfo();

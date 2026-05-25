@@ -17,9 +17,7 @@ void calculateMaximumLikelihoodCoordinates(const Eigen::MatrixXd& cage_v, const 
 
 void computeIntegralUnitNormals(const Eigen::MatrixXd& cage_v_sphere, const Eigen::MatrixXi& cage_f, Eigen::MatrixXd& transMatrix, Eigen::MatrixXd& integral_outward_allfaces);
 
-// std::vector<int> findAdjacentFaces(const Eigen::MatrixXi &faces, int indexOfVertex);
 
 Eigen::VectorXd f_gradient(Eigen::VectorXd x, Eigen::MatrixXd v);
 Eigen::MatrixXd f_Hessian(Eigen::VectorXd x, Eigen::MatrixXd v);
 double f(Eigen::VectorXd x, Eigen::MatrixXd v);
-// double f(unsigned n, const double *x, double *grad, void *data);

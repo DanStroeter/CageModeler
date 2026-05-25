@@ -52,7 +52,6 @@ void interpolateWeightsInEmbedding(const Eigen::MatrixXd& V, const Eigen::Matrix
 			break;
 		}
 		assert(found);
-		//std::cout << (static_cast<float>(i) / static_cast<float>(V.rows())) * 100.f << "%\n";
 	}
 
 	igl::lbs_matrix(V, W_interpolated, M);

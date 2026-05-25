@@ -51,7 +51,6 @@ public:
         uint32_t slot,
         VkSemaphore timeline) {
     }
-    //void Destroy();
 
 private:
     struct Slot

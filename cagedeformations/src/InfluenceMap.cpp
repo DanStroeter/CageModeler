@@ -104,7 +104,6 @@ void write_influence_color_map_OBJ(const std::string & file_name, const Eigen::M
 			val = std::log(1 + val) / std::log(1 + 100);
 			assert(val >= 0. && val <= 1.);
 			return val;
-			//return (val - min_influence) / (max_influence - min_influence);
 		};
 
 		V_colors.row(i) = HSVtoRGB(240. * (1. - interpolate(influences(i))), 100., 100.);

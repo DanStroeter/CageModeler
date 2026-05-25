@@ -191,7 +191,6 @@ private:
         HitBufferData* mappedData = nullptr;
 
         VkCommandBuffer copyCmd = VK_NULL_HANDLE;
-        //VkFence copyCompleteFence = VK_NULL_HANDLE;
     };
 
     ReadbackData _readback;
@@ -208,6 +207,4 @@ private:
     VkDeviceAddress GetBufferAddress(const Buffer& buffer) const;
 
     // Cleanup
-    //void Cleanup();
-    //void CleanupShaders();
 };

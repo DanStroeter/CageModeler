@@ -96,9 +96,7 @@ HazardPointerGuard<T> HazardPointer<T>::Acquire(std::atomic<T*>& data)
 
 	while (ptr->_data.exchange(data.load(std::memory_order_acquire))) {}
 	// do
-	// {
 	// 	ptr->_data = data.load(std::memory_order_acquire);
-	// } while (ptr->_data != data);
 
 	return HazardPointerGuard(ptr);
 }

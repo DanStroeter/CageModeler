@@ -261,23 +261,10 @@ MeshGeometry MeshLibrary::MakeScale(const GizmoInteractionAxis axis)
 
 std::optional<EigenMesh> MeshLibrary::LoadMesh(const std::filesystem::path& filepath, const float scale)
 {
-	// if (filepath.extension() == ".fbx")
-	// {
-	// 	if (!load_fbx_file(filepath, vertices, indices, scale))
-	// 	{
 	// 		LOG_ERROR("Could not load mesh at filepath {}.", filepath.string().c_str());
 	//
-	// 		return;
-	// 	}
-	// }
-	// else if (filepath.extension() == ".obj")
-	// {
 
-	// }
-	// else if (filepath.extension() == ".msh")
-	// {
 	//
-	// }
 
 	Eigen::MatrixXd vertices;
 	Eigen::MatrixXi indices;

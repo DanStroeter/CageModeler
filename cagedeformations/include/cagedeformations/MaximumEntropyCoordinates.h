@@ -15,7 +15,6 @@ namespace Eigen
 
 void calculateMaximumEntropyCoordinates(const Eigen::MatrixXd &cage_v, const Eigen::MatrixXi &cage_f, const Eigen::MatrixXd &v, Eigen::MatrixXd &mec, const int mec_flag);
 
-// std::vector<int> findAdjacentFacesOfIndexV(const Eigen::MatrixXi &faces, int indexOfVertex);
 
 void priorFunctions(const Eigen::Vector3d v, const Eigen::MatrixXd &cage_v, const Eigen::MatrixXi &cage_f, std::vector<std::vector<int>> adjs, Eigen::VectorXd &priors, int mec_flag);
 

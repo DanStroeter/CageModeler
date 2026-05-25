@@ -10,7 +10,6 @@
 #include <glm/vec3.hpp>
 #include <Mesh/GeometryUtils.h>
 #include <Rendering/PMVC/CubemapManager.h>
-//#include <Rendering/PMVC/CubemapRenderInstance.h>
 #include <Rendering/PMVC/SphereWeightCalculator.h>
 #include <Mesh/Operations/MeshWeightsParams.h>
 #include <optional>
