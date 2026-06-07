@@ -12,15 +12,13 @@ extern "C" {
 }
 
 template <class Mat, class Vec>
-static int lapacksvd(Mat &A, Mat &U, Mat &VT, Vec &diagS) {
-  int m = A.rows(), n = A.cols(), info = -1, min_mn = std::min(m, n);
-  int lwork = std::max(3*min_mn+std::max(m,n), 5*min_mn);
-  Eigen::VectorXd w(lwork);
-  static char sS[] = "S";
-  dgesvd_(sS, sS, &m, &n, A.data(), &m,
-          diagS.data(), U.data(), &m,
-          VT.data(), &min_mn, w.data(), &lwork, &info);
-  return info;
+static int lapacksvd(Mat& A, Mat& U, Mat& VT, Vec& diagS) {
+    // 使用 Eigen 的 JacobiSVD 替代 LAPACK
+    Eigen::JacobiSVD<Mat> svd(A, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    U = svd.matrixU();
+    VT = svd.matrixV().transpose();  // 注意：原 lapacksvd 返回的是 VT，即 V^T
+    diagS = svd.singularValues();
+    return 0;  // 成功返回 0
 }
 
 void somig_deformer_3::set_mesh(const face_t &face, const vert_t &vert)

@@ -43,3 +43,8 @@ void load_cage(Eigen::MatrixXd& V, const std::vector<std::vector<int>>& polys, E
 
 bool load_cage(std::string const& file_name, Eigen::MatrixXd& V, Eigen::VectorXi& P, Eigen::MatrixXi& CF,
 	double scaling_factor, bool triangulate_quads, Eigen::MatrixXd* V_embedding = nullptr, bool find_offset = false);
+//BGC related code begin
+bool load_bezier_surface_cage(const std::string& file_name, int bezier_dim, Eigen::MatrixXd& V, Eigen::MatrixXi& CF, std::vector<int>& num_vertices_per_line);
+void computePointCross(Eigen::MatrixXd& V, Eigen::MatrixXi& CF, std::vector<Eigen::MatrixXd>& patch_point_cross, std::vector<int>& num_vertices_per_line);
+void computeNormalBezier(Eigen::MatrixXd& V, Eigen::MatrixXi& CF, std::vector<Eigen::MatrixXd>& patchNormals, std::vector<int>& num_vertices_per_line, int dim);
+//BGC related code end
