@@ -290,7 +290,7 @@ int main(int argc, char** argv)
 		//12 13 14 15 (u=v=1)                    0 (u=1, v=w=0)
 		//8 9 10 11                            1   2
 		//4 5 6 7                            3    4    5
-		//0(u=0, v=0) 1 2 3(u=1, v=0)     6 (v=1, u=w=0)789 (w=1, u=0,v=0)   
+		//0(u=0, v=0) 1 2 3(u=1, v=0)     6 (v=1, u=w=0)789 (w=1, u=v=0)   
 		load_bezier_surface_cage(cageFile, bezierDim, C, CF, numVerticesPerLine);
 	}
 	if (somigliana)
