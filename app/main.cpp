@@ -100,7 +100,7 @@ int main(int argc, char** argv)
 	const bool scale = static_cast<bool>(vm.count("scale"));
 	const bool influence = static_cast<bool>(vm.count("influence"));
 	const bool load_deformed_cage = static_cast<bool>(vm.count("cage-deformed"));
-	const bool interpolate_weights = static_cast<bool>(vm.count("interpolate-weights")) && !(QMVC || QGC || MEC || green || MVC || MLC || somigliana);
+	const bool interpolate_weights = static_cast<bool>(vm.count("interpolate-weights")) && !(QMVC || QGC || BGC || MEC || green || MVC || MLC || somigliana);
 	const bool no_offset = static_cast<bool>(vm.count("no-offset")) || interpolate_weights;
 	const bool measure_time = static_cast<bool>(vm.count("time"));
 
