@@ -1649,7 +1649,7 @@ void calcNewPositionsTriQuad(const Eigen::MatrixXd& C, const Eigen::MatrixXd& C_
 	}
 }
 
-
+//BGC related code begin
 //Pre compute coeff
 std::vector<std::vector<double>> precompute_binomials(int max_degree)
 {
@@ -1667,7 +1667,7 @@ std::vector<std::vector<double>> precompute_binomials(int max_degree)
 	return binom;
 }
 
-//BGC related code begin
+
 static std::vector<std::vector<double>> binom = precompute_binomials(5);
 
 
@@ -1929,7 +1929,7 @@ Eigen::VectorXd bezier_triangle_sheet_n(double u, double v, int n) {
 			3 * v * v * w,
 			3 * v * w * w,
 			w* w* w;
-
+		return result;
 	}
 	
 	int index = 0;
@@ -2006,6 +2006,7 @@ Eigen::VectorXd bezier_triangle_sheet_v_n(double u, double v, int n)
 			6 * v * (1 - u - v) - 3 * v * v,
 			3 * (1 - u - v) * (1 - u - v) - 6 * v * (1 - u - v),
 			-3 * (1 - u - v) * (1 - u - v);
+		return result;
 	}
 	
 	for (int i = n; i >= 0; i--)
