@@ -29,7 +29,8 @@ enum class PMVCComputeType : uint8_t
 	Serial,
 	Ring,
 	All,
-	Cpu
+	Cpu,
+	ThreeHit
 };
 
 struct DeformationTypeHelpers

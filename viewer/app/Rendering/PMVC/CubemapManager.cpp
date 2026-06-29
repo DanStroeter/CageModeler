@@ -448,7 +448,10 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	const bool useOffset,
 	const uint32_t targetCount,
 	const uint32_t hitCount,
-	const bool omitNegative) {
+	const bool omitNegative,
+	const float alpha,
+	const float beta,
+	const float theta) {
 	assert(_device && "Device is null");
 	assert(_descriptorPool && "DescriptorPool is null");
 	assert(_resourceManager && "ResourceManager is null");
@@ -471,6 +474,9 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 		targetCount,
 		hitCount,
 		omitNegative,
+		alpha,
+		beta,
+		theta,
 
 		_device,
 		_descriptorPool,

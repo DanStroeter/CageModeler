@@ -326,6 +326,42 @@ void ProjectSettingsPanel::Layout()
 					ImGui::InputScalar("##PMVCHitCount", ImGuiDataType_U64, &_modifiedProjectModel._pmvcHitCount);
 					ImGui::EndDisabled();
 				}
+
+				ImGui::TableNextRow();
+				{
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextEx("Alpha (hit 1)");
+					ImGui::SameLine();
+					UIHelpers::HelpMarker("Three-hit PMVC variant: weight of the first hit contributions.");
+
+					ImGui::TableSetColumnIndex(1);
+					UIHelpers::SetRightAligned(100.0f);
+					ImGui::InputFloat("##PMVCAlpha", &_modifiedProjectModel._pmvcAlpha, 0.0f, 0.0f, "%.3f");
+				}
+
+				ImGui::TableNextRow();
+				{
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextEx("Beta (hit 2)");
+					ImGui::SameLine();
+					UIHelpers::HelpMarker("Three-hit PMVC variant: weight of the second hit contributions (subtracted by default).");
+
+					ImGui::TableSetColumnIndex(1);
+					UIHelpers::SetRightAligned(100.0f);
+					ImGui::InputFloat("##PMVCBeta", &_modifiedProjectModel._pmvcBeta, 0.0f, 0.0f, "%.3f");
+				}
+
+				ImGui::TableNextRow();
+				{
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextEx("Theta (hit 3)");
+					ImGui::SameLine();
+					UIHelpers::HelpMarker("Three-hit PMVC variant: weight of the third hit contributions.");
+
+					ImGui::TableSetColumnIndex(1);
+					UIHelpers::SetRightAligned(100.0f);
+					ImGui::InputFloat("##PMVCTheta", &_modifiedProjectModel._pmvcTheta, 0.0f, 0.0f, "%.3f");
+				}
 			}
 			ImGui::EndDisabled();
 

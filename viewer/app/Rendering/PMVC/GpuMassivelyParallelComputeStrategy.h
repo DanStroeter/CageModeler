@@ -25,7 +25,11 @@ public:
         EigenMesh& cageMesh,
         EigenMesh& deformableMesh,
         bool offset,
-        uint32_t targetCount)
+        uint32_t targetCount,
+        bool threeHitVariant = false,
+        float alpha = 1.0f,
+        float beta = -1.0f,
+        float theta = 1.0f)
         : _device(device)
         , _transferQueueFamily(transferQueueFamily)
         , _faceSize(faceSize)
@@ -37,6 +41,10 @@ public:
         , _deformableMesh(deformableMesh)
         , _offset(offset)
         , _targetCount(targetCount == 0 ? 1u : static_cast<int>(targetCount))
+        , _threeHitVariant(threeHitVariant)
+        , _alpha(alpha)
+        , _beta(beta)
+        , _theta(theta)
     {
     }
 
@@ -87,9 +95,31 @@ public:
 
     void ConsumeAllSlots(uint64_t numPass);
 
+    // Three-hit variant: record a compute dispatch that combines two rendered
+    // hits (color + depth) into the lambda/wsum buffers. Set A is weighted by
+    // weightA, set B by weightB. Passing weightB == 0 (and any valid B views)
+    // evaluates only set A, which is used for the theta-weighted third hit.
+    void RecordCombinedCompute(
+        uint32_t slot,
+        uint32_t deformableIndex,
+        VkImageView colorViewA,
+        VkImageView depthViewA,
+        VkImageView colorViewB,
+        VkImageView depthViewB,
+        float weightA,
+        float weightB);
+
 private:
     void CreatePipelineAndLayouts();
     void AllocateResources();
+    void CreateCombinedPipelineAndLayout();
+    void AllocateCombinedResources();
+    void UpdateCombinedDescriptorSet(
+        uint32_t slot,
+        VkImageView colorViewA,
+        VkImageView depthViewA,
+        VkImageView colorViewB,
+        VkImageView depthViewB);
 
     const uint32_t kDispatchGroupSize = 8;
 
@@ -148,5 +178,21 @@ private:
 
     std::vector<uint32_t> _slotToDeformableIndex;
 
+    // Three-hit variant resources.
+    bool _threeHitVariant = false;
+    float _alpha = 1.0f;
+    float _beta = -1.0f;
+    float _theta = 1.0f;
 
+    PipelineHandle _combinedPipeline;
+    RenderResourceRef<DescriptorSetLayout> _combinedLayout;
+    std::vector<VkDescriptorSet> _combinedDescriptorSets = {};
+};
+
+struct ThreeHitPushConstants
+{
+    glm::ivec2 uFaceSize;
+    int uNumTriangles;
+    float uWeightA;
+    float uWeightB;
 };

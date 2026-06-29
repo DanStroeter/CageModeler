@@ -34,6 +34,9 @@ struct ProjectModelData
 		_pmvcTargetCount = other._pmvcTargetCount;
 		_pmvcHitCount = other._pmvcHitCount;
 		_pmvcOmitNegative = other._pmvcOmitNegative;
+		_pmvcAlpha = other._pmvcAlpha;
+		_pmvcBeta = other._pmvcBeta;
+		_pmvcTheta = other._pmvcTheta;
 	}
 
 	ProjectModelData(ProjectModelData&& other) noexcept
@@ -84,6 +87,9 @@ struct ProjectModelData
 		swap(lhs._pmvcTargetCount, rhs._pmvcTargetCount);
 		swap(lhs._pmvcHitCount, rhs._pmvcHitCount);
 		swap(lhs._pmvcOmitNegative, rhs._pmvcOmitNegative);
+		swap(lhs._pmvcAlpha, rhs._pmvcAlpha);
+		swap(lhs._pmvcBeta, rhs._pmvcBeta);
+		swap(lhs._pmvcTheta, rhs._pmvcTheta);
 	}
 
 	[[nodiscard]] bool IsFBX() const
@@ -129,7 +135,10 @@ struct ProjectModelData
 			lhs._cubemapSize == rhs._cubemapSize &&
 			lhs._pmvcTargetCount == rhs._pmvcTargetCount &&
 			lhs._pmvcHitCount == rhs._pmvcHitCount &&
-			lhs._pmvcOmitNegative == rhs._pmvcOmitNegative;
+			lhs._pmvcOmitNegative == rhs._pmvcOmitNegative &&
+			lhs._pmvcAlpha == rhs._pmvcAlpha &&
+			lhs._pmvcBeta == rhs._pmvcBeta &&
+			lhs._pmvcTheta == rhs._pmvcTheta;
 	}
 
 	[[nodiscard]] bool friend operator!=(const ProjectModelData& lhs, const ProjectModelData& rhs)
@@ -200,6 +209,12 @@ struct ProjectModelData
 	uint64_t _pmvcTargetCount = 64;
 	uint64_t _pmvcHitCount = 1;
 	bool _pmvcOmitNegative = true;
+
+	/// Three-hit PMVC variant weights. The first hit is weighted by alpha, the
+	/// second hit by beta (subtracted by default) and the third hit by theta.
+	float _pmvcAlpha = 1.0f;
+	float _pmvcBeta = -1.0f;
+	float _pmvcTheta = 1.0f;
 
 	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
 

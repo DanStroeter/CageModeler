@@ -57,6 +57,12 @@ void GpuMPComputeStrategy::Initialize()
 	);
 	CreateSampler();
 	CreateDepthSampler();
+
+	if (_threeHitVariant)
+	{
+		CreateCombinedPipelineAndLayout();
+		AllocateCombinedResources();
+	}
 }
 
 void GpuMPComputeStrategy::Cleanup()
@@ -587,6 +593,248 @@ void GpuMPComputeStrategy::AllocateResources()
 		_vertexListBuffer._deviceBuffer,
 		vertexList.size() * sizeof(uint32_t)
 	);
+}
+
+void GpuMPComputeStrategy::CreateCombinedPipelineAndLayout()
+{
+	std::vector<VkDescriptorSetLayoutBinding> bindings{
+		// Bary texture A (first hit)
+		{ 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		// Vertex index list
+		{ 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		// lambda output
+		{ 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		// wsum output
+		{ 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		// Solid angle lookup
+		{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		// Depth texture A (first hit)
+		{ 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		// Bary texture B (second hit)
+		{ 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		// Depth texture B (second hit)
+		{ 7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
+	};
+
+	_combinedLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
+
+	ComputePipelineObjectProxy proxy;
+	proxy._renderPipelineManager = _renderPipelineManager;
+	proxy._shaderModule = "assets/shaders/PMVCComputeThreeHit.comp.spv";
+	proxy._descriptorSetLayouts = { _combinedLayout };
+
+	VkPushConstantRange range{};
+	range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	range.offset = 0;
+	range.size = sizeof(ThreeHitPushConstants);
+	proxy._pushConstantRanges = { range };
+
+	_combinedPipeline = proxy.Build();
+}
+
+void GpuMPComputeStrategy::AllocateCombinedResources()
+{
+	_combinedDescriptorSets.resize(_targetCount);
+
+	std::vector<VkDescriptorSetLayout> layouts(
+		_targetCount,
+		_combinedLayout->GetReference()
+	);
+
+	VkDescriptorSetAllocateInfo allocInfo{
+		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO
+	};
+	allocInfo.descriptorPool = _descriptorPool;
+	allocInfo.descriptorSetCount = _targetCount;
+	allocInfo.pSetLayouts = layouts.data();
+
+	VK_CHECK(vkAllocateDescriptorSets(
+		_device,
+		&allocInfo,
+		_combinedDescriptorSets.data()
+	));
+}
+
+void GpuMPComputeStrategy::UpdateCombinedDescriptorSet(
+	uint32_t slot,
+	VkImageView colorViewA,
+	VkImageView depthViewA,
+	VkImageView colorViewB,
+	VkImageView depthViewB)
+{
+	VkDescriptorImageInfo baryAInfo{};
+	baryAInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	baryAInfo.imageView = colorViewA;
+	baryAInfo.sampler = _barySampler;
+
+	VkDescriptorBufferInfo vertexListInfo{
+		_vertexListBuffer._deviceBuffer, 0, VK_WHOLE_SIZE
+	};
+
+	VkDescriptorBufferInfo lambdaInfo{
+		_slots[slot].lambda._deviceBuffer, 0, VK_WHOLE_SIZE
+	};
+
+	VkDescriptorBufferInfo wsumInfo{
+		_slots[slot].wsum._deviceBuffer, 0, VK_WHOLE_SIZE
+	};
+
+	VkDescriptorImageInfo weightInfo{};
+	weightInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	weightInfo.imageView = _sphereWeightCalculator._solidAngleArrayView;
+	weightInfo.sampler = _sphereWeightCalculator._solidAngleSampler;
+
+	VkDescriptorImageInfo depthAInfo{};
+	depthAInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+	depthAInfo.imageView = depthViewA;
+	depthAInfo.sampler = _depthSampler;
+
+	VkDescriptorImageInfo baryBInfo{};
+	baryBInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	baryBInfo.imageView = colorViewB;
+	baryBInfo.sampler = _barySampler;
+
+	VkDescriptorImageInfo depthBInfo{};
+	depthBInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+	depthBInfo.imageView = depthViewB;
+	depthBInfo.sampler = _depthSampler;
+
+	std::array<VkWriteDescriptorSet, 8> writes{};
+
+	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_combinedDescriptorSets[slot], 0, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &baryAInfo };
+
+	writes[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_combinedDescriptorSets[slot], 1, 0, 1,
+		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &vertexListInfo };
+
+	writes[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_combinedDescriptorSets[slot], 2, 0, 1,
+		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &lambdaInfo };
+
+	writes[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_combinedDescriptorSets[slot], 3, 0, 1,
+		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &wsumInfo };
+
+	writes[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_combinedDescriptorSets[slot], 4, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &weightInfo };
+
+	writes[5] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_combinedDescriptorSets[slot], 5, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &depthAInfo };
+
+	writes[6] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_combinedDescriptorSets[slot], 6, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &baryBInfo };
+
+	writes[7] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_combinedDescriptorSets[slot], 7, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &depthBInfo };
+
+	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+}
+
+void GpuMPComputeStrategy::RecordCombinedCompute(
+	uint32_t slot,
+	uint32_t deformableIndex,
+	VkImageView colorViewA,
+	VkImageView depthViewA,
+	VkImageView colorViewB,
+	VkImageView depthViewB,
+	float weightA,
+	float weightB)
+{
+	assert(slot < _computeCommandBuffers.size());
+	assert(slot < _combinedDescriptorSets.size());
+	assert(slot < _slotToDeformableIndex.size());
+
+	_slotToDeformableIndex[slot] = deformableIndex;
+
+	VkCommandBuffer cmd = _computeCommandBuffers[slot];
+	VK_CHECK(vkResetCommandBuffer(cmd, 0));
+
+	VkCommandBufferBeginInfo begin{
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+	};
+	VK_CHECK(vkBeginCommandBuffer(cmd, &begin));
+
+	UpdateCombinedDescriptorSet(slot, colorViewA, depthViewA, colorViewB, depthViewB);
+
+	auto& pipe = _renderPipelineManager->GetPipelineObject(_combinedPipeline);
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipe._handle);
+	vkCmdBindDescriptorSets(
+		cmd,
+		VK_PIPELINE_BIND_POINT_COMPUTE,
+		pipe._pipelineLayout,
+		0, 1,
+		&_combinedDescriptorSets[slot],
+		0, nullptr
+	);
+
+	ThreeHitPushConstants pc{};
+	pc.uFaceSize = { (int)_faceSize, (int)_faceSize };
+	pc.uNumTriangles = _cageMesh._faces.rows();
+	pc.uWeightA = weightA;
+	pc.uWeightB = weightB;
+
+	vkCmdPushConstants(
+		cmd,
+		pipe._pipelineLayout,
+		VK_SHADER_STAGE_COMPUTE_BIT,
+		0, sizeof(pc), &pc
+	);
+
+	vkCmdFillBuffer(cmd, _slots[slot].lambda._deviceBuffer, 0, VK_WHOLE_SIZE, 0);
+	vkCmdFillBuffer(cmd, _slots[slot].wsum._deviceBuffer, 0, VK_WHOLE_SIZE, 0);
+
+	VkBufferMemoryBarrier clearBarrier[2]{};
+	for (int i = 0; i < 2; ++i)
+	{
+		clearBarrier[i].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+		clearBarrier[i].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		clearBarrier[i].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		clearBarrier[i].offset = 0;
+		clearBarrier[i].size = VK_WHOLE_SIZE;
+	}
+
+	clearBarrier[0].buffer = _slots[slot].lambda._deviceBuffer;
+	clearBarrier[1].buffer = _slots[slot].wsum._deviceBuffer;
+
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		0,
+		0, nullptr,
+		2, clearBarrier,
+		0, nullptr
+	);
+
+	uint32_t groupsX = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize;
+	uint32_t groupsY = (_faceSize + kDispatchGroupSize - 1) / kDispatchGroupSize;
+	vkCmdDispatch(cmd, groupsX, groupsY, 6);
+
+	VkBufferMemoryBarrier postBarrier[2]{};
+	for (int i = 0; i < 2; ++i)
+	{
+		postBarrier[i] = clearBarrier[i];
+		postBarrier[i].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		postBarrier[i].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	}
+
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0, nullptr,
+		2, postBarrier,
+		0, nullptr
+	);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
 }
 
 void GpuMPComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, const CubemapRenderTarget& target)

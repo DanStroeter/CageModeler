@@ -121,6 +121,9 @@ CubemapRenderInstance::CubemapRenderInstance(
 	uint32_t targetCount,
 	uint32_t hitCount,
 	bool omitNegative,
+	float alpha,
+	float beta,
+	float theta,
 
 	RenderResourceRef<Device> device,
 	RenderResourceRef<DescriptorPool> descriptorPool,
@@ -149,6 +152,10 @@ CubemapRenderInstance::CubemapRenderInstance(
 , _targetCount(targetCount == 0 ? 1u : targetCount)
 , _hitCount(hitCount == 0 ? 1u : hitCount)
 , _omitNegative(omitNegative)
+, _threeHitVariant(computeType == PMVCComputeType::ThreeHit)
+, _alpha(alpha)
+, _beta(beta)
+, _theta(theta)
 , _device(std::move(device))
 , _descriptorPool(std::move(descriptorPool))
 , _resourceManager(std::move(resourceManager))
@@ -218,6 +225,11 @@ void CubemapRenderInstance::Cleanup()
 			if (view != VK_NULL_HANDLE)
 				vkDestroyImageView(_device, view, nullptr);
 		}
+		for (auto view : target.faceViewsSecond)
+		{
+			if (view != VK_NULL_HANDLE)
+				vkDestroyImageView(_device, view, nullptr);
+		}
 		for (const auto& depthViewSet : target.depthViews)
 		{
 			for (auto view : depthViewSet)
@@ -230,6 +242,9 @@ void CubemapRenderInstance::Cleanup()
 		if (target.cubemapView != VK_NULL_HANDLE)
 			vkDestroyImageView(_device, target.cubemapView, nullptr);
 
+		if (target.cubemapViewSecond != VK_NULL_HANDLE)
+			vkDestroyImageView(_device, target.cubemapViewSecond, nullptr);
+
 		for (auto depthViewArray : target.depthViewsArray)
 		{
 			if (depthViewArray != VK_NULL_HANDLE)
@@ -240,6 +255,11 @@ void CubemapRenderInstance::Cleanup()
 			vkDestroyImage(_device, target.cubemapImage, nullptr);
 		if (target.cubemapMemory != VK_NULL_HANDLE)
 			vkFreeMemory(_device, target.cubemapMemory, nullptr);
+
+		if (target.cubemapImageSecond != VK_NULL_HANDLE)
+			vkDestroyImage(_device, target.cubemapImageSecond, nullptr);
+		if (target.cubemapMemorySecond != VK_NULL_HANDLE)
+			vkFreeMemory(_device, target.cubemapMemorySecond, nullptr);
 
 		for (auto depthImage : target.depthImages)
 		{
@@ -308,6 +328,25 @@ void CubemapRenderInstance::Initialize() {
 			_deformableMesh,
 			_pmvcUseOffset,
 			_targetCount
+		);
+	}
+	else if (_computeType == PMVCComputeType::ThreeHit) {
+		_computeStage = std::make_unique<GpuMPComputeStrategy>(
+			_device,
+			_device->GetQueueFamilies()._graphics.value(),
+			_cubemapSize,
+			_format,
+			_descriptorPool,
+			_resourceManager,
+			_renderPipelineManager,
+			_cageMesh,
+			_deformableMesh,
+			_pmvcUseOffset,
+			_targetCount,
+			true,
+			_alpha,
+			_beta,
+			_theta
 		);
 	}
 	else if (_computeType == PMVCComputeType::Cpu) {
@@ -518,6 +557,51 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	VK_CHECK(vkCreateImageView(_device, &cubeViewInfo, nullptr, &target.cubemapView));
 
 	// ---------------------------------------------------------------------
+	// Create the second color cubemap (three-hit variant only).
+	// The first hit color must survive while the second hit is rendered, so we
+	// render the two hits into two distinct color images and combine them in the
+	// compute shader afterwards.
+	// ---------------------------------------------------------------------
+	if (_threeHitVariant)
+	{
+		VK_CHECK(vkCreateImage(_device, &imageInfo, nullptr, &target.cubemapImageSecond));
+
+		VkMemoryRequirements memReqSecond{};
+		vkGetImageMemoryRequirements(_device, target.cubemapImageSecond, &memReqSecond);
+
+		VkMemoryAllocateInfo allocInfoSecond{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+		allocInfoSecond.allocationSize = memReqSecond.size;
+		allocInfoSecond.memoryTypeIndex = FindMemoryType(memReqSecond.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+		VK_CHECK(vkAllocateMemory(_device, &allocInfoSecond, nullptr, &target.cubemapMemorySecond));
+		VK_CHECK(vkBindImageMemory(_device, target.cubemapImageSecond, target.cubemapMemorySecond, 0));
+
+		for (uint32_t face = 0; face < 6; ++face)
+		{
+			VkImageViewCreateInfo viewInfoSecond{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+			viewInfoSecond.image = target.cubemapImageSecond;
+			viewInfoSecond.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			viewInfoSecond.format = _format;
+			viewInfoSecond.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			viewInfoSecond.subresourceRange.levelCount = 1;
+			viewInfoSecond.subresourceRange.baseArrayLayer = face;
+			viewInfoSecond.subresourceRange.layerCount = 1;
+			VK_CHECK(vkCreateImageView(_device, &viewInfoSecond, nullptr, &target.faceViewsSecond[face]));
+		}
+
+		VkImageViewCreateInfo cubeViewInfoSecond{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+		cubeViewInfoSecond.image = target.cubemapImageSecond;
+		cubeViewInfoSecond.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+		cubeViewInfoSecond.format = _format;
+		cubeViewInfoSecond.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		cubeViewInfoSecond.subresourceRange.baseMipLevel = 0;
+		cubeViewInfoSecond.subresourceRange.levelCount = 1;
+		cubeViewInfoSecond.subresourceRange.baseArrayLayer = 0;
+		cubeViewInfoSecond.subresourceRange.layerCount = 6;
+		VK_CHECK(vkCreateImageView(_device, &cubeViewInfoSecond, nullptr, &target.cubemapViewSecond));
+	}
+
+	// ---------------------------------------------------------------------
 	// Create depth images (ping-pong)
 	// ---------------------------------------------------------------------
 	VkFormat depthFormat = _device->FindDepthFormat();
@@ -606,8 +690,15 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	{
 		for (uint32_t face = 0; face < 6; ++face)
 		{
+			// In the three-hit variant the second ping-pong slot renders into the
+			// dedicated second color image so the first hit is not overwritten.
+			VkImageView colorAttachment =
+				(_threeHitVariant && pingPong == 1)
+				? target.faceViewsSecond[face]
+				: target.faceViews[face];
+
 			VkImageView attachments[2] = {
-				target.faceViews[face],
+				colorAttachment,
 				target.depthViews[pingPong][face]
 			};
 
@@ -1099,6 +1190,178 @@ void CubemapRenderInstance::ComputeCoordinatesGPUMP(
 	_computeTotalMs = std::chrono::duration<double, std::milli>(readbackEnd - totalStart).count();
 }
 
+void CubemapRenderInstance::ComputeCoordinatesGPUMPThreeHit(
+	const CubemapWorkRange& range,
+	Eigen::MatrixXd& weights)
+{
+	const auto totalStart = std::chrono::steady_clock::now();
+	LOG_DEBUG("ComputeCoordinatesGPUMPThreeHit (alpha={}, beta={}, theta={})",
+		_alpha, _beta, _theta);
+
+	auto* computeStage = static_cast<GpuMPComputeStrategy*>(_computeStage.get());
+	const auto vertices = BuildDeformableVertexPositions();
+
+	const uint32_t end = std::min<uint32_t>(
+		range.first + range.count,
+		static_cast<uint32_t>(vertices.size())
+	);
+	const uint32_t cubemapCount = end > range.first ? end - range.first : 0;
+	const uint32_t slotCount = static_cast<uint32_t>(_cubemapRenderUnit.targets.size());
+	double renderAccumulatedMs = 0.0;
+	double computeAccumulatedMs = 0.0;
+
+	if (cubemapCount == 0 || slotCount == 0)
+	{
+		weights = computeStage->Readback();
+		return;
+	}
+
+	VkSemaphore timeline = _timelines[0];
+	uint64_t& timelineValue = _slotDoneValue[0];
+
+	const bool hasSecondHit = _hitCount >= 2;
+
+	const auto waitTimeline = [&](uint64_t value)
+	{
+		VkSemaphoreWaitInfo waitInfo{};
+		waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+		waitInfo.semaphoreCount = 1;
+		waitInfo.pSemaphores = &timeline;
+		waitInfo.pValues = &value;
+		VK_CHECK(vkWaitSemaphores(_device, &waitInfo, UINT64_MAX));
+	};
+
+	for (uint32_t batchStart = 0; batchStart < cubemapCount; batchStart += slotCount)
+	{
+		const uint32_t batchCount = std::min(slotCount, cubemapCount - batchStart);
+
+		if (timelineValue > 0)
+		{
+			waitTimeline(timelineValue);
+		}
+
+		// -------------------------------------------------------------
+		// Render the first hit (and the second hit) into their dedicated
+		// color/depth targets so both are available to the compute shader.
+		// -------------------------------------------------------------
+		const auto renderStart = std::chrono::steady_clock::now();
+		uint64_t renderDone = timelineValue;
+		for (uint32_t slot = 0; slot < batchCount; ++slot)
+		{
+			const uint32_t cubemapIdx = range.first + batchStart + slot;
+			CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
+			renderDone = ++timelineValue;
+			RecordAndSubmitCubemapRender(
+				cubemapIdx, slot, vertices[cubemapIdx], target, timeline, renderDone, 0);
+		}
+		if (hasSecondHit)
+		{
+			for (uint32_t slot = 0; slot < batchCount; ++slot)
+			{
+				const uint32_t cubemapIdx = range.first + batchStart + slot;
+				CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
+				renderDone = ++timelineValue;
+				RecordAndSubmitCubemapRender(
+					cubemapIdx, slot, vertices[cubemapIdx], target, timeline, renderDone, 1);
+			}
+		}
+		const auto renderEnd = std::chrono::steady_clock::now();
+		renderAccumulatedMs += std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
+
+		// -------------------------------------------------------------
+		// Combined compute: alpha * firstHit + beta * secondHit, evaluated
+		// per ray by sampling both rendered textures in a single dispatch.
+		// -------------------------------------------------------------
+		const auto computeStart = std::chrono::steady_clock::now();
+		// SubmitAllComputes always submits every slot's command buffer, so record
+		// all of them. Slots beyond the current batch are marked with the
+		// UINT32_MAX sentinel so ConsumeAllSlots skips their (stale) results.
+		for (uint32_t slot = 0; slot < slotCount; ++slot)
+		{
+			CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
+			const uint32_t cubemapIdx = (slot < batchCount)
+				? range.first + batchStart + slot
+				: UINT32_MAX;
+			computeStage->RecordCombinedCompute(
+				slot,
+				cubemapIdx,
+				target.cubemapView,
+				target.depthViewsArray[0],
+				hasSecondHit ? target.cubemapViewSecond : target.cubemapView,
+				hasSecondHit ? target.depthViewsArray[1] : target.depthViewsArray[0],
+				_alpha,
+				hasSecondHit ? _beta : 0.0f);
+		}
+
+		uint64_t computeDone = ++timelineValue;
+		computeStage->SubmitAllComputes(timeline, renderDone, timeline, computeDone);
+
+		uint64_t copyDone = ++timelineValue;
+		computeStage->SubmitAllReadbackCopies(timeline, computeDone, timeline, copyDone);
+
+		waitTimeline(copyDone);
+		timelineValue = copyDone;
+		computeStage->ConsumeAllSlots(0);
+
+		// -------------------------------------------------------------
+		// Remaining hits (the third hit and beyond) are weighted by theta
+		// and accumulated with their own single-texture compute pass.
+		// -------------------------------------------------------------
+		for (uint32_t hit = 2; hit < _hitCount; ++hit)
+		{
+			uint64_t hitRenderDone = timelineValue;
+			for (uint32_t slot = 0; slot < batchCount; ++slot)
+			{
+				const uint32_t cubemapIdx = range.first + batchStart + slot;
+				CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
+				hitRenderDone = ++timelineValue;
+				RecordAndSubmitCubemapRender(
+					cubemapIdx, slot, vertices[cubemapIdx], target, timeline, hitRenderDone, hit);
+			}
+
+			for (uint32_t slot = 0; slot < slotCount; ++slot)
+			{
+				CubemapRenderTarget& target = _cubemapRenderUnit.targets[slot];
+				const uint32_t cubemapIdx = (slot < batchCount)
+					? range.first + batchStart + slot
+					: UINT32_MAX;
+				const VkImageView colorView = (hit % 2u == 0u) ? target.cubemapView : target.cubemapViewSecond;
+				const VkImageView depthView = target.depthViewsArray[hit % 2u];
+				computeStage->RecordCombinedCompute(
+					slot,
+					cubemapIdx,
+					colorView,
+					depthView,
+					colorView,
+					depthView,
+					_theta,
+					0.0f);
+			}
+
+			uint64_t hitComputeDone = ++timelineValue;
+			computeStage->SubmitAllComputes(timeline, hitRenderDone, timeline, hitComputeDone);
+
+			uint64_t hitCopyDone = ++timelineValue;
+			computeStage->SubmitAllReadbackCopies(timeline, hitComputeDone, timeline, hitCopyDone);
+
+			waitTimeline(hitCopyDone);
+			timelineValue = hitCopyDone;
+			computeStage->ConsumeAllSlots(0);
+		}
+		const auto computeEnd = std::chrono::steady_clock::now();
+		computeAccumulatedMs += std::chrono::duration<double, std::milli>(computeEnd - computeStart).count();
+	}
+
+	const auto readbackStart = std::chrono::steady_clock::now();
+	weights = computeStage->Readback();
+	const auto readbackEnd = std::chrono::steady_clock::now();
+	computeAccumulatedMs += std::chrono::duration<double, std::milli>(readbackEnd - readbackStart).count();
+
+	_renderMs = renderAccumulatedMs;
+	_computeMs = computeAccumulatedMs;
+	_computeTotalMs = std::chrono::duration<double, std::milli>(readbackEnd - totalStart).count();
+}
+
 void CubemapRenderInstance::ComputeCoordinatesGPUAtomic(
 	const CubemapWorkRange& range, Eigen::MatrixXd& weights)
 {
@@ -1462,6 +1725,9 @@ void CubemapRenderInstance::ComputeCoordinates(
 	}
 	else if (_computeType == PMVCComputeType::All) {
 		ComputeCoordinatesGPUMP(range, weights);
+	}
+	else if (_computeType == PMVCComputeType::ThreeHit) {
+		ComputeCoordinatesGPUMPThreeHit(range, weights);
 	}
 	else if (_computeType == PMVCComputeType::Cpu) {
 		ComputeCoordinatesCpu(range, weights);

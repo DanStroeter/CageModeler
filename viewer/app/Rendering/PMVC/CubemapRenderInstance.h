@@ -25,6 +25,13 @@ struct CubemapRenderTarget
 	VkImageView    cubemapView;
 	std::array<VkImageView, 6> faceViews;
 
+	// Second color cubemap, only allocated for the three-hit PMVC variant so the
+	// first hit color is preserved while the second hit is rendered.
+	VkImage        cubemapImageSecond = VK_NULL_HANDLE;
+	VkDeviceMemory cubemapMemorySecond = VK_NULL_HANDLE;
+	VkImageView    cubemapViewSecond = VK_NULL_HANDLE;
+	std::array<VkImageView, 6> faceViewsSecond{};
+
 	VkImage        depthImage = VK_NULL_HANDLE;
 	VkDeviceMemory depthMemory = VK_NULL_HANDLE;
 	VkImageView    depthView = VK_NULL_HANDLE;
@@ -67,6 +74,9 @@ public:
 		uint32_t targetCount,
 		uint32_t hitCount,
 		bool omitNegative,
+		float alpha,
+		float beta,
+		float theta,
 
 		RenderResourceRef<Device> device,
 		RenderResourceRef<DescriptorPool> descriptorPool,
@@ -98,6 +108,9 @@ public:
 	void ComputeCoordinatesGPUMP(
 		const CubemapWorkRange& range,
 		Eigen::MatrixXd& weights);
+	void ComputeCoordinatesGPUMPThreeHit(
+		const CubemapWorkRange& range,
+		Eigen::MatrixXd& weights);
 	void ComputeCoordinates(const CubemapWorkRange& range, Eigen::MatrixXd& weights);
 	[[nodiscard]] std::optional<double> GetRenderMs() const { return _renderMs; }
 	[[nodiscard]] std::optional<double> GetComputeMs() const { return _computeMs; }
@@ -118,6 +131,10 @@ private:
 	uint32_t _targetCount = 64;
 	uint32_t _hitCount = 3;
 	bool _omitNegative = true;
+	bool _threeHitVariant = false;
+	float _alpha = 1.0f;
+	float _beta = -1.0f;
+	float _theta = 1.0f;
 	VkFormat _format;
 	PMVCComputeType _computeType;
 	std::optional<double> _renderMs;
