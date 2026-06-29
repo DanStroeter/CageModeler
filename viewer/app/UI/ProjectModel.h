@@ -160,7 +160,12 @@ struct ProjectModelData
 	{
 		if (_deformationType == DeformationType::PMVC)
 		{
-			_pmvcComputeType = PMVCComputeType::Ring;
+			// Preserve an explicitly selected three-hit variant (and its hit count)
+			// instead of forcing the Ring preset.
+			if (_pmvcComputeType != PMVCComputeType::ThreeHit)
+			{
+				_pmvcComputeType = PMVCComputeType::Ring;
+			}
 			_pmvcUseOffset = false;
 			_pmvcTargetCount = 64;
 			_pmvcOmitNegative = true;

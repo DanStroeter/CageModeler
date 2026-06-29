@@ -477,10 +477,12 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCreated(); });
 
 	_projectModel->_deformationType = DeformationType::PMVC;
-	_projectModel->_pmvcComputeType = PMVCComputeType::Ring;
+	// Use the three-hit PMVC variant for the default startup project so the new
+	// per-ray combined-hit implementation is exercised on launch.
+	_projectModel->_pmvcComputeType = PMVCComputeType::ThreeHit;
 	_projectModel->_pmvcUseOffset = false;
 	_projectModel->_pmvcTargetCount = 64;
-	_projectModel->_pmvcHitCount = 1;
+	_projectModel->_pmvcHitCount = 3;
 	_projectModel->_pmvcOmitNegative = true;
 	_projectModel->_pmvcAlpha = 1.0f;
 	_projectModel->_pmvcBeta = -1.0f;
