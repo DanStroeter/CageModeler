@@ -1,0 +1,109 @@
+#version 450
+#extension GL_EXT_shader_atomic_float : require
+
+// PMVC weight accumulation using the precomputed heat-method interior distances instead
+// of the rasterized (Euclidean) depth. Identical to PMVCComputeAtmoicDepth.comp except
+// that the depth entering the weight is reconstructed from the barycentric interpolation
+// of the three cage vertex interior distances of the hit triangle. The depth texture is
+// still sampled for the no-hit test so the depth peeling passes of the multi-hit (ring)
+// variant keep working unchanged.
+
+// Rendered barycentric + triangle index image
+layout(binding = 0) uniform sampler2DArray uBaryTex;
+
+// Triangle vertex index list (3 indices per triangle)
+layout(std430, binding = 1) readonly buffer VertexList {
+    uint vertexList[];
+};
+
+// Output λ values (one buffer per dispatch / cubemap)
+layout(std430, binding = 2) buffer LambdaOut {
+    float lambda[];
+};
+
+// Output wsum (single float per dispatch / cubemap)
+layout(std430, binding = 3) buffer WSumOut {
+    float wsum[];
+};
+
+// Solid angle lookup (per face)
+layout(binding = 4) uniform sampler2DArray uSolidAngleTex;
+
+// Depth cubemap (only used for the no-hit / peel test)
+layout(binding = 5) uniform sampler2DArray uDepthTex;
+
+// Interior distance table: interiorDist[meshVertexIdx * numCageVertices + cageVertexIdx]
+layout(std430, binding = 6) readonly buffer InteriorDistances {
+    float interiorDist[];
+};
+
+// Push constants
+layout(push_constant) uniform Params {
+    ivec2 uFaceSize;        // cubemap face resolution
+    int   uNumTriangles;    // number of triangles in cage mesh
+    int   uNumCageVertices; // number of cage vertices (table row stride)
+    int   uMeshVertexIdx;   // deformable vertex this cubemap belongs to
+    float uNearPlane;       // near plane of the cubemap projection
+    float uFarPlane;        // far plane of the cubemap projection
+} params;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+void main()
+{
+    uint x    = gl_GlobalInvocationID.x;
+    uint y    = gl_GlobalInvocationID.y;
+    uint face = gl_GlobalInvocationID.z;
+
+    if (x >= uint(params.uFaceSize.x) ||
+        y >= uint(params.uFaceSize.y) ||
+        face >= 6u)
+    {
+        return;
+    }
+
+    vec4 tex = texelFetch(uBaryTex, ivec3(x, y, face), 0);
+    uint tri = uint(tex.a * float(params.uNumTriangles) + 0.5);
+    if (tri >= uint(params.uNumTriangles))
+        return;
+
+    // Sample raw depth from cubemap face. 1.0 means no geometry hit (clear value).
+    float depth = texelFetch(uDepthTex, ivec3(x, y, face), 0).r;
+    if (depth >= 0.999999)
+        return;
+
+    uint i0 = vertexList[tri * 3 + 0];
+    uint i1 = vertexList[tri * 3 + 1];
+    uint i2 = vertexList[tri * 3 + 2];
+
+    // Interior distance from this cubemap's mesh vertex to the hit point: the cubemap
+    // render encodes the barycentric coordinates of the hit in RGB, reuse them to
+    // interpolate the three per-cage-vertex interior distances of the hit triangle.
+    uint tableBase = uint(params.uMeshVertexIdx) * uint(params.uNumCageVertices);
+    float interiorDistance =
+        tex.r * interiorDist[tableBase + i0] +
+        tex.g * interiorDist[tableBase + i1] +
+        tex.b * interiorDist[tableBase + i2];
+
+    // Re-encode the interior distance exactly like the rasterizer encoded the Euclidean
+    // distance: eye-space depth is distance * cos(theta) of the texel direction, mapped
+    // through the [0, 1] perspective depth of the cubemap projection.
+    float u = (2.0 * (float(x) + 0.5) / float(params.uFaceSize.x)) - 1.0;
+    float v = (2.0 * (float(y) + 0.5) / float(params.uFaceSize.y)) - 1.0;
+    float cosTheta = inversesqrt(1.0 + u * u + v * v);
+    float zEye = max(interiorDistance * cosTheta, 1e-6);
+    float interiorDepth = clamp(
+        (params.uFarPlane * (zEye - params.uNearPlane)) / (zEye * (params.uFarPlane - params.uNearPlane)),
+        0.0, 1.0);
+
+    float depthWeight = 1.0 - interiorDepth;
+    float solidAngle = texelFetch(uSolidAngleTex, ivec3(x, y, face), 0).r;
+    float w = solidAngle * depthWeight;
+    if (w <= 0.0)
+        return;
+
+    atomicAdd(lambda[i0], tex.r * w);
+    atomicAdd(lambda[i1], tex.g * w);
+    atomicAdd(lambda[i2], tex.b * w);
+    atomicAdd(wsum[0], w);
+}

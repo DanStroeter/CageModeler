@@ -2,6 +2,10 @@
 
 #include <Rendering/PMVC/CubemapRenderInstance.h>
 
+#include <cagedeformations/InteriorDistance.h>
+
+#include <Logging/Logging.h>
+
 #include <chrono>
 #include <Rendering/Commands/RenderCommandScheduler.h>
 #include <Rendering/Core/RenderProxyCollector.h>
@@ -443,6 +447,45 @@ void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
 	}
 }
 
+void CubemapManager::EnsureInteriorDistanceTable()
+{
+	// The memo hash covers only vertex counts and face topology on purpose: cage vertex
+	// positions moving during deformation must not trigger a recompute, only topology
+	// changes (adding/removing cage vertices or faces) invalidate the table.
+	auto hashCombine = [](std::size_t& seed, std::size_t value)
+	{
+		seed ^= value + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+	};
+
+	std::size_t hash = 0;
+	hashCombine(hash, static_cast<std::size_t>(_cageMesh._vertices.rows()));
+	hashCombine(hash, static_cast<std::size_t>(_deformableMesh._vertices.rows()));
+	hashCombine(hash, static_cast<std::size_t>(_cageMesh._faces.rows()));
+	for (Eigen::Index i = 0; i < _cageMesh._faces.size(); ++i)
+	{
+		hashCombine(hash, static_cast<std::size_t>(*(_cageMesh._faces.data() + i)));
+	}
+
+	if (hash == _interiorDistanceTableHash && _interiorDistances.size() > 0)
+	{
+		LOG_DEBUG("Reusing cached interior distance table ({} cage x {} mesh vertices).",
+			_interiorDistances.rows(), _interiorDistances.cols());
+		return;
+	}
+
+	LOG_INFO("Computing heat-method interior distance table ({} cage x {} mesh vertices).",
+		_cageMesh._vertices.rows(), _deformableMesh._vertices.rows());
+	const auto start = std::chrono::steady_clock::now();
+
+	InteriorDistanceParams params;
+	computeInteriorDistances(_cageMesh._vertices, _cageMesh._faces, _deformableMesh._vertices, params, _interiorDistances);
+	_interiorDistanceTableHash = hash;
+
+	const auto end = std::chrono::steady_clock::now();
+	LOG_INFO("Interior distance table computed in {} ms.",
+		std::chrono::duration<double, std::milli>(end - start).count());
+}
+
 MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCoordinates(
 	PMVCComputeType computeType,
 	const bool useOffset,
@@ -452,6 +495,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	const float alpha,
 	const float beta,
 	const float theta) {
+	const bool useInteriorDistance) {
 	assert(_device && "Device is null");
 	assert(_descriptorPool && "DescriptorPool is null");
 	assert(_resourceManager && "ResourceManager is null");
@@ -461,8 +505,21 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	CreateVertexBufferFromMesh();
 	CreateIndexBufferFromMesh();
 
-
-
+	// The offset variant weights by solid angle only, there is no distance in its
+	// formula for the interior distance to replace.
+	const Eigen::MatrixXf* interiorDistances = nullptr;
+	if (useInteriorDistance && useOffset)
+	{
+		LOG_WARN("Interior distance PMVC is not available with the offset (PMVCO) variant, using the offset shader instead.");
+	}
+	else if (useInteriorDistance)
+	{
+		EnsureInteriorDistanceTable();
+		if (_interiorDistances.size() > 0)
+		{
+			interiorDistances = &_interiorDistances;
+		}
+	}
 
 	const auto instanceInitStart = std::chrono::steady_clock::now();
 	CubemapRenderInstance instance(
@@ -477,6 +534,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 		alpha,
 		beta,
 		theta,
+		interiorDistances,
 
 		_device,
 		_descriptorPool,

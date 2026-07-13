@@ -92,6 +92,12 @@ void GpuSerialComputeStrategy::Cleanup()
 		_vertexListBuffer = Buffer();
 	}
 
+	if (_interiorDistanceBuffer._deviceBuffer != VK_NULL_HANDLE)
+	{
+		_interiorDistanceBuffer.ReleaseResource(_device);
+		_interiorDistanceBuffer = Buffer();
+	}
+
 	for (auto& slot : _slots)
 	{
 		if (slot.lambda._deviceBuffer != VK_NULL_HANDLE)
@@ -181,6 +187,10 @@ void GpuSerialComputeStrategy::DispatchAfterRender(
 	ComputePushConstants pc{};
 	pc.uFaceSize = { (int)_faceSize, (int)_faceSize };
 	pc.uNumTriangles = _cageMesh._faces.rows();
+	pc.uNumCageVertices = static_cast<int>(_cageMesh._vertices.rows());
+	pc.uMeshVertexIdx = static_cast<int>(deformableIndex);
+	pc.uNearPlane = _interiorDistance.nearPlane;
+	pc.uFarPlane = _interiorDistance.farPlane;
 
 	vkCmdPushConstants(
 		cmd,
@@ -478,11 +488,17 @@ void GpuSerialComputeStrategy::CreatePipelineAndLayouts() {
 		{2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
 		// wsum output
 		{3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT},
-		// 
+		//
 		{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
-		// 
+		//
 		 { 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
 	};
+
+	if (UseInteriorDistanceShader())
+	{
+		// Interior distance table
+		bindings.push_back({ 6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT });
+	}
 
 	_computeLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
 
@@ -490,6 +506,10 @@ void GpuSerialComputeStrategy::CreatePipelineAndLayouts() {
 	proxy._renderPipelineManager = _renderPipelineManager;
 	if (_offset) {
 		proxy._shaderModule = "assets/shaders/PMVCComputeAtmoic.comp.spv";
+	}
+	else if (UseInteriorDistanceShader())
+	{
+		proxy._shaderModule = "assets/shaders/PMVCComputeInteriorDist.comp.spv";
 	}
 	else
 	{
@@ -666,6 +686,37 @@ void GpuSerialComputeStrategy::AllocateResources()
 		_vertexListBuffer._deviceBuffer,
 		vertexList.size() * sizeof(uint32_t)
 	);
+
+	// --------------------------------------------------
+	// Interior distance table (column-major Eigen storage: one column of cage-vertex
+	// distances per mesh vertex, so the raw data already matches the shader indexing
+	// interiorDist[meshVertexIdx * numCageVertices + cageVertexIdx]).
+	// --------------------------------------------------
+	if (UseInteriorDistanceShader())
+	{
+		const Eigen::MatrixXf& table = *_interiorDistance.distances;
+		const VkDeviceSize tableBytes = static_cast<VkDeviceSize>(table.size()) * sizeof(float);
+
+		auto tableStaging = _resourceManager->CreateBufferAndCopy(
+			std::span<const float>(table.data(), static_cast<size_t>(table.size())),
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+		);
+
+		_interiorDistanceBuffer = _resourceManager->AllocateDeviceBuffer(
+			tableBytes,
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+		);
+
+		CopyBuffer(
+			tableStaging._deviceBuffer,
+			_interiorDistanceBuffer._deviceBuffer,
+			tableBytes
+		);
+	}
 }
 
 void GpuSerialComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, const CubemapRenderTarget& target)
@@ -698,7 +749,12 @@ void GpuSerialComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, co
 	weightInfo.imageView = _sphereWeightCalculator._solidAngleArrayView;
 	weightInfo.sampler = _sphereWeightCalculator._solidAngleSampler;
 
-	std::array<VkWriteDescriptorSet, 6> writes{};
+	VkDescriptorBufferInfo interiorDistanceInfo{
+		_interiorDistanceBuffer._deviceBuffer, 0, VK_WHOLE_SIZE
+	};
+
+	std::array<VkWriteDescriptorSet, 7> writes{};
+	uint32_t writeCount = 6;
 
 	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 		_computeDescriptorSets[slotIndex], 0, 0, 1,
@@ -723,8 +779,15 @@ void GpuSerialComputeStrategy::UpdateComputeDescriptorSet(uint32_t slotIndex, co
 		_computeDescriptorSets[slotIndex], 5, 0, 1,
 		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &depthImageInfo };
 
+	if (UseInteriorDistanceShader())
+	{
+		writes[6] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+			_computeDescriptorSets[slotIndex], 6, 0, 1,
+			VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &interiorDistanceInfo };
+		writeCount = 7;
+	}
 
-	vkUpdateDescriptorSets(_device, writes.size(), writes.data(), 0, nullptr);
+	vkUpdateDescriptorSets(_device, writeCount, writes.data(), 0, nullptr);
 }
 
 void GpuSerialComputeStrategy::CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size)

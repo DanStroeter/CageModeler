@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <cassert>
 #include <cstddef>
@@ -397,10 +398,38 @@ void CpuComputeStrategy::ComputeOnCpu(uint32_t deformableIndex, const SlotReadba
                 }
                 float w = _solidAngles[texelIdx];
                 if (!_offset) {
-                    const float depth = DecodeDepthSample(depthBytes + texelIdx * _depthBytesPerTexel);
+                    float depth = DecodeDepthSample(depthBytes + texelIdx * _depthBytesPerTexel);
                     if (depth >= 0.999999f) //kdepthepsilon
                     {
                         continue;
+                    }
+
+                    if (UseInteriorDistance())
+                    {
+                        // Mirror of PMVCComputeInteriorDist.comp: swap the rasterized depth
+                        // for the barycentric interpolation of the precomputed interior
+                        // distances of the hit triangle's cage vertices, re-encoded through
+                        // the same [0, 1] perspective depth mapping.
+                        const uint32_t v0 = _vertexList[tri * 3 + 0];
+                        const uint32_t v1 = _vertexList[tri * 3 + 1];
+                        const uint32_t v2 = _vertexList[tri * 3 + 2];
+
+                        const Eigen::MatrixXf& table = *_interiorDistance.distances;
+                        const float interiorDistance =
+                            b0 * table(v0, deformableIndex) +
+                            b1 * table(v1, deformableIndex) +
+                            b2 * table(v2, deformableIndex);
+
+                        const float size = static_cast<float>(_faceSize);
+                        const float u = (2.0f * (static_cast<float>(x) + 0.5f) / size) - 1.0f;
+                        const float v = (2.0f * (static_cast<float>(y) + 0.5f) / size) - 1.0f;
+                        const float cosTheta = 1.0f / std::sqrt(1.0f + u * u + v * v);
+                        const float zEye = std::max(interiorDistance * cosTheta, 1e-6f);
+                        const float nearPlane = _interiorDistance.nearPlane;
+                        const float farPlane = _interiorDistance.farPlane;
+                        depth = std::clamp(
+                            (farPlane * (zEye - nearPlane)) / (zEye * (farPlane - nearPlane)),
+                            0.0f, 1.0f);
                     }
 
                     w *= (1.0f - depth);

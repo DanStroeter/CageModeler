@@ -46,6 +46,11 @@ public:
     void Initialize() override;
     void Cleanup() override;
 
+    void SetInteriorDistance(const InteriorDistanceSettings& settings) override
+    {
+        _interiorDistance = settings;
+    }
+
     void RecordReadback(uint32_t slot, const CubemapRenderTarget& target, uint32_t deformableIndex);
     void SubmitAllReadbacks(VkSemaphore waitSemaphore, uint64_t waitValue, VkSemaphore signalSemaphore, uint64_t signalValue);
     void ConsumeAllSlots();
@@ -101,6 +106,13 @@ private:
     std::unique_ptr<ThreadPool> _threadPool;
     uint32_t _cpuWorkerCount = 1;
     bool _offset = false;
+
+    // Interior-distance PMVC variant, CPU mirror of PMVCComputeInteriorDist.comp.
+    [[nodiscard]] bool UseInteriorDistance() const
+    {
+        return !_offset && _interiorDistance.IsEnabled();
+    }
+    InteriorDistanceSettings _interiorDistance;
 
     uint32_t _maxTargetCount = 64;
 };

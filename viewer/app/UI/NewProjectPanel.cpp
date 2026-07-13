@@ -312,6 +312,21 @@ void NewProjectPanel::Layout()
 					ImGui::InputScalar("##PMVCHitCount", ImGuiDataType_U64, &_model->_pmvcHitCount);
 					ImGui::EndDisabled();
 				}
+
+				ImGui::TableNextRow();
+				{
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextEx("Interior Distance");
+					ImGui::SameLine();
+					UIHelpers::HelpMarker("Weights PMVC with heat-method interior distances instead of Euclidean depth, so distances respect the cage interior. Not available for PMVCO.");
+
+					ImGui::TableSetColumnIndex(1);
+					UIHelpers::SetRightAligned(25.0f);
+
+					ImGui::BeginDisabled(_model->_deformationType == DeformationType::PMVCO);
+					ImGui::Checkbox("##PMVCInteriorDistance", &_model->_pmvcUseInteriorDistance);
+					ImGui::EndDisabled();
+				}
 			}
 			ImGui::EndDisabled();
 

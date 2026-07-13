@@ -45,6 +45,11 @@ public:
     void Initialize() override;
     void Cleanup() override;
 
+    void SetInteriorDistance(const InteriorDistanceSettings& settings) override
+    {
+        _interiorDistance = settings;
+    }
+
     void DispatchAfterRender(
         uint32_t deformableIndex,
         uint32_t slot,
@@ -123,6 +128,16 @@ private:
     VkSampler _barySampler;
 
 	bool _offset = false;
+
+    // Interior-distance PMVC variant: table uploaded once, consumed by the
+    // PMVCComputeInteriorDist compute shader instead of the rasterized depth.
+    [[nodiscard]] bool UseInteriorDistanceShader() const
+    {
+        return !_offset && _interiorDistance.IsEnabled();
+    }
+    InteriorDistanceSettings _interiorDistance;
+    Buffer _interiorDistanceBuffer;
+
     void CreateDepthSampler();
     VkSampler _depthSampler;
 };
