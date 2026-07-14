@@ -21,19 +21,21 @@ struct ComputePushConstants {
 };
 
 /**
- * Configuration for the interior-distance PMVC variant: when a distance table is set the
- * strategies swap the depth-based (Euclidean) weighting for the barycentric interpolation
- * of the precomputed heat-method interior distances. The table has one row per cage
- * vertex and one column per deformable mesh vertex.
+ * Configuration for the interior-distance PMVC variant: when a detour table is set the
+ * strategies lengthen the rasterized (Euclidean) hit distance by the barycentric
+ * interpolation of the precomputed heat-method interior detours (interior distance minus
+ * Euclidean distance, zero wherever the cage is convex from the mesh vertex, so the
+ * variant reduces exactly to the Euclidean weighting on locally convex cages). The table
+ * has one row per cage vertex and one column per deformable mesh vertex.
  */
 struct InteriorDistanceSettings {
-    const Eigen::MatrixXf* distances = nullptr;
+    const Eigen::MatrixXf* detours = nullptr;
     float nearPlane = 1e-4f;
     float farPlane = 1.0f;
 
     [[nodiscard]] bool IsEnabled() const
     {
-        return distances != nullptr && distances->size() > 0;
+        return detours != nullptr && detours->size() > 0;
     }
 };
 

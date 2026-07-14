@@ -246,14 +246,21 @@ double depthFromEyeZ(double zEye, double nearPlane, double farPlane)
 	return std::clamp(depth, 0.0, 1.0);
 }
 
+/// Inverse of depthFromEyeZ, matching the reconstruction in PMVCComputeInteriorDist.comp.
+double eyeZFromDepth(double depth, double nearPlane, double farPlane)
+{
+	return (farPlane * nearPlane) / (farPlane - depth * (farPlane - nearPlane));
+}
+
 struct PMVCMirrorParams
 {
 	int faceSize = 32;
 	uint32_t hitCount = 1;
 	bool omitNegative = true;
 	/// nullptr = existing Euclidean variant (weight from rasterized depth); otherwise the
-	/// interior-distance table (rows = cage vertices, cols = mesh vertices).
-	const Eigen::MatrixXf* interiorDistances = nullptr;
+	/// interior detour table (rows = cage vertices, cols = mesh vertices, entries are
+	/// interior minus Euclidean distance, >= 0).
+	const Eigen::MatrixXf* interiorDetours = nullptr;
 };
 
 /// Near/far plane heuristics copied from CubemapRenderInstance::UpdateProjectionPlanes.
@@ -336,9 +343,10 @@ void computeProjectionPlanes(const TestMesh& cage, const Eigen::MatrixXd& meshVe
  * uses the k-th nearest intersection (the CPU equivalent of the depth peeling passes in
  * GpuMPComputeStrategy). Per texel and pass the weight is
  *     w = solidAngle * (1 - depth)
- * where depth is the rasterized depth value for the Euclidean variant and the depth
- * reconstructed from the barycentric interpolation of the three cage vertex interior
- * distances for the interior-distance variant.
+ * where depth is the rasterized depth value for the Euclidean variant; the
+ * interior-distance variant lengthens the rasterized hit distance by the barycentric
+ * interpolation of the three cage vertex interior detours before re-encoding, so it
+ * reduces exactly to the Euclidean variant wherever the detours vanish.
  */
 Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& meshVertices,
 	const PMVCMirrorParams& params)
@@ -408,16 +416,17 @@ Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& m
 						}
 
 						double depth = rasterDepth;
-						if (params.interiorDistances != nullptr)
+						if (params.interiorDetours != nullptr)
 						{
 							const int i0 = cage.F(hit.triangle, 0);
 							const int i1 = cage.F(hit.triangle, 1);
 							const int i2 = cage.F(hit.triangle, 2);
-							const double interpolated =
-								hit.b0 * (*params.interiorDistances)(i0, meshIdx) +
-								hit.b1 * (*params.interiorDistances)(i1, meshIdx) +
-								hit.b2 * (*params.interiorDistances)(i2, meshIdx);
-							depth = depthFromEyeZ(interpolated * cosTheta, nearPlane, farPlane);
+							const double detour =
+								hit.b0 * (*params.interiorDetours)(i0, meshIdx) +
+								hit.b1 * (*params.interiorDetours)(i1, meshIdx) +
+								hit.b2 * (*params.interiorDetours)(i2, meshIdx);
+							const double zEye = eyeZFromDepth(rasterDepth, nearPlane, farPlane);
+							depth = depthFromEyeZ(zEye + std::max(detour, 0.0) * cosTheta, nearPlane, farPlane);
 						}
 
 						const double w = solidAngle * (1.0 - depth);
@@ -616,9 +625,10 @@ void testPhase5WeightParity()
 {
 	std::cout << "\n=== Phase 5: Euclidean vs interior-distance PMVC weight diff (convex cage) ===" << std::endl;
 
-	// Finely tessellated convex cage so the barycentric interpolation of per-vertex
-	// distances is a good approximation of the per-pixel hit distance.
-	const TestMesh cube = makeSubdividedCube(2.0, 4);
+	// Deliberately coarse convex cage (12 triangles): the detour formulation must match
+	// the Euclidean variant here too, unlike interpolating absolute per-vertex distances
+	// which overestimates the hit distance mid-triangle on coarse cages.
+	const TestMesh cube = makeSubdividedCube(2.0, 1);
 	Eigen::MatrixXd samples(4, 3);
 	samples << 1.0, 1.0, 1.0,
 		0.6, 0.7, 0.8,
@@ -629,36 +639,37 @@ void testPhase5WeightParity()
 	euclidParams.faceSize = 32;
 	const Eigen::MatrixXd euclidWeights = computePMVCMirror(cube, samples, euclidParams);
 
-	// First with the analytic Euclidean table: isolates the error of swapping the
-	// per-pixel depth for barycentrically interpolated per-vertex distances.
+	// With exact distances the detours are all zero and the variant must reduce exactly
+	// to the Euclidean weights.
 	const Eigen::MatrixXf analyticTable = euclideanDistanceTable(cube, samples);
+	const Eigen::MatrixXf zeroDetours = (analyticTable - analyticTable).cwiseMax(0.f);
 	PMVCMirrorParams analyticParams = euclidParams;
-	analyticParams.interiorDistances = &analyticTable;
+	analyticParams.interiorDetours = &zeroDetours;
 	const Eigen::MatrixXd analyticWeights = computePMVCMirror(cube, samples, analyticParams);
 
 	const double analyticMax = (analyticWeights - euclidWeights).cwiseAbs().maxCoeff();
-	const double analyticMean = (analyticWeights - euclidWeights).cwiseAbs().mean();
-	std::cout << "analytic table (interpolation error only): max=" << analyticMax << " mean=" << analyticMean << std::endl;
-	check(analyticMax < 5e-3, "analytic-distance variant matches Euclidean PMVC weights closely");
+	std::cout << "zero-detour variant (must reduce to Euclidean exactly): max=" << analyticMax << std::endl;
+	check(analyticMax < 1e-12, "zero-detour interior variant reduces exactly to Euclidean PMVC weights");
 
-	// Then with the actual heat-method table: adds the voxel-resolution error.
+	// Then with the actual heat-method detours: only the clamped voxel-scale solver
+	// noise remains on a convex cage.
 	InteriorDistanceParams distanceParams;
 	distanceParams.resolution = 48;
 	Eigen::MatrixXf heatTable;
 	computeInteriorDistances(cube.V, cube.F, samples, distanceParams, heatTable);
+	const Eigen::MatrixXf heatDetours = (heatTable - analyticTable).cwiseMax(0.f);
 
-	const double tableMax = (heatTable - analyticTable).cwiseAbs().maxCoeff();
-	std::cout << "heat table vs analytic table: max distance error=" << tableMax
+	std::cout << "heat-method detours on the convex cage: max=" << heatDetours.maxCoeff()
 		<< " (voxel size " << 2.0 / distanceParams.resolution << ")" << std::endl;
 
 	PMVCMirrorParams heatParams = euclidParams;
-	heatParams.interiorDistances = &heatTable;
+	heatParams.interiorDetours = &heatDetours;
 	const Eigen::MatrixXd heatWeights = computePMVCMirror(cube, samples, heatParams);
 
 	const double heatMaxDeviation = (heatWeights - euclidWeights).cwiseAbs().maxCoeff();
 	const double heatMeanDeviation = (heatWeights - euclidWeights).cwiseAbs().mean();
-	std::cout << "heat-method table: weight deviation max=" << heatMaxDeviation << " mean=" << heatMeanDeviation << std::endl;
-	check(heatMaxDeviation < 2e-2, "interior-distance PMVC matches Euclidean PMVC on a convex cage (voxel-scale deviation)");
+	std::cout << "heat-method detours: weight deviation max=" << heatMaxDeviation << " mean=" << heatMeanDeviation << std::endl;
+	check(heatMaxDeviation < 3e-2, "interior-distance PMVC matches Euclidean PMVC on a coarse convex cage (voxel-scale deviation)");
 	check(heatWeights.allFinite(), "interior-distance weights are finite");
 
 	double rowSumError = 0.0;
@@ -683,12 +694,13 @@ void testPhase6MultiHit()
 	distanceParams.resolution = 48;
 	Eigen::MatrixXf table;
 	computeInteriorDistances(uCage.V, uCage.F, samples, distanceParams, table);
+	const Eigen::MatrixXf detours = (table - euclideanDistanceTable(uCage, samples)).cwiseMax(0.f);
 
 	// hitCount = 1 must reduce exactly to the single-hit variant.
 	PMVCMirrorParams singleHit;
 	singleHit.faceSize = 16;
 	singleHit.hitCount = 1;
-	singleHit.interiorDistances = &table;
+	singleHit.interiorDetours = &detours;
 	const Eigen::MatrixXd single = computePMVCMirror(uCage, samples, singleHit);
 
 	PMVCMirrorParams nHitAsSingle = singleHit;

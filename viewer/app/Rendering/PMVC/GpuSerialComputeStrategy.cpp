@@ -688,13 +688,13 @@ void GpuSerialComputeStrategy::AllocateResources()
 	);
 
 	// --------------------------------------------------
-	// Interior distance table (column-major Eigen storage: one column of cage-vertex
-	// distances per mesh vertex, so the raw data already matches the shader indexing
-	// interiorDist[meshVertexIdx * numCageVertices + cageVertexIdx]).
+	// Interior detour table (column-major Eigen storage: one column of cage-vertex
+	// detours per mesh vertex, so the raw data already matches the shader indexing
+	// interiorDetour[meshVertexIdx * numCageVertices + cageVertexIdx]).
 	// --------------------------------------------------
 	if (UseInteriorDistanceShader())
 	{
-		const Eigen::MatrixXf& table = *_interiorDistance.distances;
+		const Eigen::MatrixXf& table = *_interiorDistance.detours;
 		const VkDeviceSize tableBytes = static_cast<VkDeviceSize>(table.size()) * sizeof(float);
 
 		auto tableStaging = _resourceManager->CreateBufferAndCopy(

@@ -169,6 +169,10 @@ struct ProjectModelData
 			{
 				_pmvcComputeType = PMVCComputeType::Ring;
 			}
+			// The single-hit atomic strategy (Ring) has no hit loop; only the depth
+			// peeling strategy (All) consumes the hit count, so multi-hit requests must
+			// be routed there or the configured hit count would silently be ignored.
+			_pmvcComputeType = _pmvcHitCount > 1 ? PMVCComputeType::All : PMVCComputeType::Ring;
 			_pmvcUseOffset = false;
 			_pmvcTargetCount = 64;
 			_pmvcOmitNegative = true;

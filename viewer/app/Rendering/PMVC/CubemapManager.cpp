@@ -6,6 +6,7 @@
 
 #include <Logging/Logging.h>
 
+#include <algorithm>
 #include <chrono>
 #include <Rendering/Commands/RenderCommandScheduler.h>
 #include <Rendering/Core/RenderProxyCollector.h>
@@ -466,23 +467,40 @@ void CubemapManager::EnsureInteriorDistanceTable()
 		hashCombine(hash, static_cast<std::size_t>(*(_cageMesh._faces.data() + i)));
 	}
 
-	if (hash == _interiorDistanceTableHash && _interiorDistances.size() > 0)
+	if (hash == _interiorDistanceTableHash && _interiorDetours.size() > 0)
 	{
-		LOG_DEBUG("Reusing cached interior distance table ({} cage x {} mesh vertices).",
-			_interiorDistances.rows(), _interiorDistances.cols());
+		LOG_DEBUG("Reusing cached interior detour table ({} cage x {} mesh vertices).",
+			_interiorDetours.rows(), _interiorDetours.cols());
 		return;
 	}
 
-	LOG_INFO("Computing heat-method interior distance table ({} cage x {} mesh vertices).",
+	LOG_INFO("Computing heat-method interior detour table ({} cage x {} mesh vertices).",
 		_cageMesh._vertices.rows(), _deformableMesh._vertices.rows());
 	const auto start = std::chrono::steady_clock::now();
 
 	InteriorDistanceParams params;
-	computeInteriorDistances(_cageMesh._vertices, _cageMesh._faces, _deformableMesh._vertices, params, _interiorDistances);
+	computeInteriorDistances(_cageMesh._vertices, _cageMesh._faces, _deformableMesh._vertices, params, _interiorDetours);
+
+	// Store detours (interior minus Euclidean distance) instead of absolute distances:
+	// the shader adds the interpolated detour on top of the per-pixel rasterized hit
+	// distance, so wherever the cage is convex from the mesh vertex the weights reduce
+	// exactly to the Euclidean variant. Interpolating absolute cage-vertex distances
+	// would overestimate the hit distance mid-triangle on coarse cages.
+	for (Eigen::Index mesh = 0; mesh < _interiorDetours.cols(); ++mesh)
+	{
+		const Eigen::Vector3d meshPosition = _deformableMesh._vertices.row(mesh).leftCols<3>();
+		for (Eigen::Index cage = 0; cage < _interiorDetours.rows(); ++cage)
+		{
+			const Eigen::Vector3d cagePosition = _cageMesh._vertices.row(cage).leftCols<3>();
+			const float euclidean = static_cast<float>((meshPosition - cagePosition).norm());
+			_interiorDetours(cage, mesh) = std::max(0.f, _interiorDetours(cage, mesh) - euclidean);
+		}
+	}
+
 	_interiorDistanceTableHash = hash;
 
 	const auto end = std::chrono::steady_clock::now();
-	LOG_INFO("Interior distance table computed in {} ms.",
+	LOG_INFO("Interior detour table computed in {} ms.",
 		std::chrono::duration<double, std::milli>(end - start).count());
 }
 
@@ -507,7 +525,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 
 	// The offset variant weights by solid angle only, there is no distance in its
 	// formula for the interior distance to replace.
-	const Eigen::MatrixXf* interiorDistances = nullptr;
+	const Eigen::MatrixXf* interiorDetours = nullptr;
 	if (useInteriorDistance && useOffset)
 	{
 		LOG_WARN("Interior distance PMVC is not available with the offset (PMVCO) variant, using the offset shader instead.");
@@ -515,11 +533,19 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	else if (useInteriorDistance)
 	{
 		EnsureInteriorDistanceTable();
-		if (_interiorDistances.size() > 0)
+		if (_interiorDetours.size() > 0)
 		{
-			interiorDistances = &_interiorDistances;
+			interiorDetours = &_interiorDetours;
 		}
 	}
+
+	static constexpr const char* kComputeTypeNames[] = { "Serial", "Ring", "All", "Cpu" };
+	LOG_INFO("PMVC compute: type={}, hitCount={}, omitNegative={}, offset={}, interiorDistance={}",
+		kComputeTypeNames[static_cast<uint8_t>(computeType)],
+		hitCount,
+		omitNegative,
+		useOffset,
+		interiorDetours != nullptr);
 
 	const auto instanceInitStart = std::chrono::steady_clock::now();
 	CubemapRenderInstance instance(
@@ -534,7 +560,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 		alpha,
 		beta,
 		theta,
-		interiorDistances,
+		interiorDetours,
 
 		_device,
 		_descriptorPool,

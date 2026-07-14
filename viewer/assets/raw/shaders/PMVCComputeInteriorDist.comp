@@ -1,12 +1,15 @@
 #version 450
 #extension GL_EXT_shader_atomic_float : require
 
-// PMVC weight accumulation using the precomputed heat-method interior distances instead
-// of the rasterized (Euclidean) depth. Identical to PMVCComputeAtmoicDepth.comp except
-// that the depth entering the weight is reconstructed from the barycentric interpolation
-// of the three cage vertex interior distances of the hit triangle. The depth texture is
-// still sampled for the no-hit test so the depth peeling passes of the multi-hit (ring)
-// variant keep working unchanged.
+// PMVC weight accumulation using precomputed heat-method interior distances. Identical
+// to PMVCComputeAtmoicDepth.comp except that the interior detour (interior distance
+// minus Euclidean distance, zero wherever the cage is convex from the mesh vertex) of
+// the hit triangle's cage vertices is barycentrically interpolated and added on top of
+// the eye-space depth reconstructed from the rasterized depth. Where the cage is locally
+// convex the detour vanishes and the weight reduces exactly to the Euclidean variant;
+// interpolating absolute distances instead would systematically overestimate the hit
+// distance mid-triangle on coarse cages. The depth peeling passes of the multi-hit
+// (ring) variant work unchanged: each pass rasterizes its own depth layer.
 
 // Rendered barycentric + triangle index image
 layout(binding = 0) uniform sampler2DArray uBaryTex;
@@ -29,12 +32,13 @@ layout(std430, binding = 3) buffer WSumOut {
 // Solid angle lookup (per face)
 layout(binding = 4) uniform sampler2DArray uSolidAngleTex;
 
-// Depth cubemap (only used for the no-hit / peel test)
+// Depth cubemap (no-hit / peel test and base distance of the current hit)
 layout(binding = 5) uniform sampler2DArray uDepthTex;
 
-// Interior distance table: interiorDist[meshVertexIdx * numCageVertices + cageVertexIdx]
-layout(std430, binding = 6) readonly buffer InteriorDistances {
-    float interiorDist[];
+// Interior detour table: interiorDetour[meshVertexIdx * numCageVertices + cageVertexIdx]
+// holds interiorDistance - euclideanDistance (>= 0) between the two vertices.
+layout(std430, binding = 6) readonly buffer InteriorDetours {
+    float interiorDetour[];
 };
 
 // Push constants
@@ -76,24 +80,29 @@ void main()
     uint i1 = vertexList[tri * 3 + 1];
     uint i2 = vertexList[tri * 3 + 2];
 
-    // Interior distance from this cubemap's mesh vertex to the hit point: the cubemap
-    // render encodes the barycentric coordinates of the hit in RGB, reuse them to
-    // interpolate the three per-cage-vertex interior distances of the hit triangle.
+    // Interior detour at the hit point: the cubemap render encodes the barycentric
+    // coordinates of the hit in RGB, reuse them to interpolate the per-cage-vertex
+    // detours of the hit triangle.
     uint tableBase = uint(params.uMeshVertexIdx) * uint(params.uNumCageVertices);
-    float interiorDistance =
-        tex.r * interiorDist[tableBase + i0] +
-        tex.g * interiorDist[tableBase + i1] +
-        tex.b * interiorDist[tableBase + i2];
+    float detour =
+        tex.r * interiorDetour[tableBase + i0] +
+        tex.g * interiorDetour[tableBase + i1] +
+        tex.b * interiorDetour[tableBase + i2];
 
-    // Re-encode the interior distance exactly like the rasterizer encoded the Euclidean
-    // distance: eye-space depth is distance * cos(theta) of the texel direction, mapped
-    // through the [0, 1] perspective depth of the cubemap projection.
+    // Reconstruct the eye-space depth of the rasterized hit from the [0, 1] perspective
+    // depth, lengthen the ray by the detour (eye-space depth grows by detour * cos(theta)
+    // of the texel direction) and re-encode with the same mapping.
+    float nearPlane = params.uNearPlane;
+    float farPlane = params.uFarPlane;
+    float zEye = (farPlane * nearPlane) / (farPlane - depth * (farPlane - nearPlane));
+
     float u = (2.0 * (float(x) + 0.5) / float(params.uFaceSize.x)) - 1.0;
     float v = (2.0 * (float(y) + 0.5) / float(params.uFaceSize.y)) - 1.0;
     float cosTheta = inversesqrt(1.0 + u * u + v * v);
-    float zEye = max(interiorDistance * cosTheta, 1e-6);
+    float zEyeInterior = zEye + max(detour, 0.0) * cosTheta;
+
     float interiorDepth = clamp(
-        (params.uFarPlane * (zEye - params.uNearPlane)) / (zEye * (params.uFarPlane - params.uNearPlane)),
+        (farPlane * (zEyeInterior - nearPlane)) / (zEyeInterior * (farPlane - nearPlane)),
         0.0, 1.0);
 
     float depthWeight = 1.0 - interiorDepth;

@@ -406,29 +406,33 @@ void CpuComputeStrategy::ComputeOnCpu(uint32_t deformableIndex, const SlotReadba
 
                     if (UseInteriorDistance())
                     {
-                        // Mirror of PMVCComputeInteriorDist.comp: swap the rasterized depth
-                        // for the barycentric interpolation of the precomputed interior
-                        // distances of the hit triangle's cage vertices, re-encoded through
-                        // the same [0, 1] perspective depth mapping.
+                        // Mirror of PMVCComputeInteriorDist.comp: reconstruct the eye-space
+                        // depth of the rasterized hit, lengthen the ray by the barycentric
+                        // interpolation of the cage-vertex interior detours and re-encode
+                        // through the same [0, 1] perspective depth mapping. Zero detour
+                        // (locally convex cage) reproduces the Euclidean weighting exactly.
                         const uint32_t v0 = _vertexList[tri * 3 + 0];
                         const uint32_t v1 = _vertexList[tri * 3 + 1];
                         const uint32_t v2 = _vertexList[tri * 3 + 2];
 
-                        const Eigen::MatrixXf& table = *_interiorDistance.distances;
-                        const float interiorDistance =
+                        const Eigen::MatrixXf& table = *_interiorDistance.detours;
+                        const float detour =
                             b0 * table(v0, deformableIndex) +
                             b1 * table(v1, deformableIndex) +
                             b2 * table(v2, deformableIndex);
+
+                        const float nearPlane = _interiorDistance.nearPlane;
+                        const float farPlane = _interiorDistance.farPlane;
+                        const float zEye = (farPlane * nearPlane) / (farPlane - depth * (farPlane - nearPlane));
 
                         const float size = static_cast<float>(_faceSize);
                         const float u = (2.0f * (static_cast<float>(x) + 0.5f) / size) - 1.0f;
                         const float v = (2.0f * (static_cast<float>(y) + 0.5f) / size) - 1.0f;
                         const float cosTheta = 1.0f / std::sqrt(1.0f + u * u + v * v);
-                        const float zEye = std::max(interiorDistance * cosTheta, 1e-6f);
-                        const float nearPlane = _interiorDistance.nearPlane;
-                        const float farPlane = _interiorDistance.farPlane;
+                        const float zEyeInterior = zEye + std::max(detour, 0.f) * cosTheta;
+
                         depth = std::clamp(
-                            (farPlane * (zEye - nearPlane)) / (zEye * (farPlane - nearPlane)),
+                            (farPlane * (zEyeInterior - nearPlane)) / (zEyeInterior * (farPlane - nearPlane)),
                             0.0f, 1.0f);
                     }
 

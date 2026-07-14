@@ -93,12 +93,14 @@ private:
 	EigenMesh _cageMesh;
 	EigenMesh _deformableMesh;
 
-	// Heat-method interior distance table (rows = cage vertices, cols = mesh vertices).
-	// Computed lazily when interior-distance PMVC is requested and memoized on the cage
-	// topology: cage vertex positions moving during deformation do not invalidate it,
-	// only topology changes (vertex/face count, face indices) trigger a recompute.
+	// Heat-method interior detour table (rows = cage vertices, cols = mesh vertices):
+	// each entry is interior distance minus Euclidean distance (>= 0), zero wherever the
+	// cage is convex from the mesh vertex. Computed lazily when interior-distance PMVC is
+	// requested and memoized on the cage topology: cage vertex positions moving during
+	// deformation do not invalidate it, only topology changes (vertex/face count, face
+	// indices) trigger a recompute.
 	void EnsureInteriorDistanceTable();
-	Eigen::MatrixXf _interiorDistances;
+	Eigen::MatrixXf _interiorDetours;
 	std::size_t _interiorDistanceTableHash = 0;
 
 	bool init = false;
