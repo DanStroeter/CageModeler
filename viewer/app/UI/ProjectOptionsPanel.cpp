@@ -180,51 +180,7 @@ void ProjectOptionsPanel::Layout()
 				ImGui::SameLine();
 			}
 
-			ImGui::BeginDisabled(_modifiedProjectModel._deformationType != DeformationType::PMVC && _modifiedProjectModel._deformationType != DeformationType::PMVCO);
-			{
-				ImGui::TableNextRow();
-				{
-					ImGui::TableSetColumnIndex(0);
-					ImGui::TextEx("Cubemap Size");
-					ImGui::SameLine();
-					UIHelpers::HelpMarker("Resolution for PMVC cubemap rendering.");
-
-					ImGui::TableSetColumnIndex(1);
-					UIHelpers::SetRightAligned(100.0f);
-					ImGui::InputScalar("##Project_CubemapSize", ImGuiDataType_U64, &_modifiedProjectModel._cubemapSize);
-				}
-
-				ImGui::TableNextRow();
-				{
-					ImGui::TableSetColumnIndex(0);
-					ImGui::TextEx("Hit Count");
-					ImGui::SameLine();
-					UIHelpers::HelpMarker("Number of hits sampled for PMVC.");
-
-					ImGui::TableSetColumnIndex(1);
-					UIHelpers::SetRightAligned(100.0f);
-
-					ImGui::BeginDisabled(_modifiedProjectModel._deformationType == DeformationType::PMVCO);
-					ImGui::InputScalar("##Project_PMVCHitCount", ImGuiDataType_U64, &_modifiedProjectModel._pmvcHitCount);
-					ImGui::EndDisabled();
-				}
-
-				ImGui::TableNextRow();
-				{
-					ImGui::TableSetColumnIndex(0);
-					ImGui::TextEx("Interior Distance");
-					ImGui::SameLine();
-					UIHelpers::HelpMarker("Weights PMVC with heat-method interior distances instead of Euclidean depth, so distances respect the cage interior. Not available for PMVCO.");
-
-					ImGui::TableSetColumnIndex(1);
-					UIHelpers::SetRightAligned(25.0f);
-
-					ImGui::BeginDisabled(_modifiedProjectModel._deformationType == DeformationType::PMVCO);
-					ImGui::Checkbox("##Project_PMVCInteriorDistance", &_modifiedProjectModel._pmvcUseInteriorDistance);
-					ImGui::EndDisabled();
-				}
-			}
-			ImGui::EndDisabled();
+			ProjecSettingsHelpers::PushPMVCSettingsUI(_modifiedProjectModel, "##Project");
 
 			ImGui::BeginDisabled(!_model._projectData->CanEditInfluenceMapSetting());
 			{

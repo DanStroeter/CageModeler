@@ -8,13 +8,15 @@
  * Phase 2 acceptance: on the convex cage the interior distance must match the Euclidean
  *   distance within voxel-resolution error; on the U-shaped cage the interior distance
  *   between the two arms must be clearly larger than the straight line through the wall.
- * Phase 5 validation: runs the existing Euclidean (depth-weighted) PMVC formula and the
- *   new interior-distance formula through a CPU mirror of the cubemap pipeline on the
+ * Phase 5 validation: runs the Euclidean (depth-weighted) PMVC formula and the
+ *   interior-distance formula through a CPU mirror of the cubemap pipeline on the
  *   same convex cage and reports the max/mean weight deviation. The per-texel math
- *   mirrors PMVCComputeAtmoicDepth.comp / PMVCComputeInteriorDist.comp one to one.
- * Phase 6 validation: the n-hit accumulation (depth peeling with alternating signs,
- *   optionally omitting negative passes) must reduce to the single-hit result for
- *   hitCount = 1 and produce finite, normalized weights on the U-shaped cage.
+ *   mirrors the unified PMVCCompute.comp of the Ring pipeline one to one.
+ * Phase 6 validation: the n-hit accumulation of the Ring pipeline. Every second hit
+ *   carries the negative contributions and is always omitted, except for a hit count of
+ *   three where the first, second and third hit are weighted by alpha, beta and theta.
+ *   The three-hit weights and the interior distances have to work on their own and
+ *   combined.
  */
 
 #include <cagedeformations/InteriorDistance.h>
@@ -215,7 +217,7 @@ bool intersectTriangle(const Eigen::Vector3d& origin, const Eigen::Vector3d& dir
 	return true;
 }
 
-/// Same texel footprint integral as SphereWeightCalculator / CpuComputeStrategy::ComputeSolidAngle.
+/// Same texel footprint integral as SphereWeightCalculator.
 double areaElement(double x, double y)
 {
 	return std::atan2(x * y, std::sqrt(x * x + y * y + 1.0));
@@ -246,7 +248,7 @@ double depthFromEyeZ(double zEye, double nearPlane, double farPlane)
 	return std::clamp(depth, 0.0, 1.0);
 }
 
-/// Inverse of depthFromEyeZ, matching the reconstruction in PMVCComputeInteriorDist.comp.
+/// Inverse of depthFromEyeZ, matching the reconstruction in PMVCCompute.comp.
 double eyeZFromDepth(double depth, double nearPlane, double farPlane)
 {
 	return (farPlane * nearPlane) / (farPlane - depth * (farPlane - nearPlane));
@@ -256,12 +258,38 @@ struct PMVCMirrorParams
 {
 	int faceSize = 32;
 	uint32_t hitCount = 1;
-	bool omitNegative = true;
-	/// nullptr = existing Euclidean variant (weight from rasterized depth); otherwise the
+	/// Weights of the three-hit variant, only used when hitCount == 3.
+	double alpha = 1.0;
+	double beta = -1.0;
+	double theta = 1.0;
+	/// Offset variant (PMVCO): weight by the solid angle alone, without a distance term.
+	bool solidAngleOnly = false;
+	/// nullptr = Euclidean variant (weight from rasterized depth); otherwise the
 	/// interior detour table (rows = cage vertices, cols = mesh vertices, entries are
 	/// interior minus Euclidean distance, >= 0).
 	const Eigen::MatrixXf* interiorDetours = nullptr;
 };
+
+/**
+ * Weight of a hit, mirroring CubemapRenderInstance::HitWeight: the three-hit variant
+ * weights the first, second and third hit by alpha, beta and theta, every other
+ * configuration keeps the positive hits and omits the negative (every second) ones. A
+ * weight of zero means the layer is only rendered so the next one can be peeled.
+ */
+double hitWeight(const PMVCMirrorParams& params, const uint32_t hitIndex)
+{
+	if (params.hitCount == 3)
+	{
+		switch (hitIndex)
+		{
+		case 0: return params.alpha;
+		case 1: return params.beta;
+		default: return params.theta;
+		}
+	}
+
+	return (hitIndex % 2u == 0u) ? 1.0 : 0.0;
+}
 
 /// Near/far plane heuristics copied from CubemapRenderInstance::UpdateProjectionPlanes.
 void computeProjectionPlanes(const TestMesh& cage, const Eigen::MatrixXd& meshVertices,
@@ -340,13 +368,14 @@ void computeProjectionPlanes(const TestMesh& cage, const Eigen::MatrixXd& meshVe
 /**
  * PMVC coordinates for every mesh vertex through the cubemap formulation. Each texel of a
  * 6 x faceSize^2 cubemap around the mesh vertex is ray cast against the cage; hit pass k
- * uses the k-th nearest intersection (the CPU equivalent of the depth peeling passes in
- * GpuMPComputeStrategy). Per texel and pass the weight is
- *     w = solidAngle * (1 - depth)
+ * uses the k-th nearest intersection (the CPU equivalent of the depth peeling passes of
+ * the Ring pipeline). Per texel and pass the weight is
+ *     w = solidAngle * (1 - depth) * hitWeight
  * where depth is the rasterized depth value for the Euclidean variant; the
  * interior-distance variant lengthens the rasterized hit distance by the barycentric
  * interpolation of the three cage vertex interior detours before re-encoding, so it
- * reduces exactly to the Euclidean variant wherever the detours vanish.
+ * reduces exactly to the Euclidean variant wherever the detours vanish. The offset
+ * variant drops the distance term and weights by the solid angle alone.
  */
 Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& meshVertices,
 	const PMVCMirrorParams& params)
@@ -402,9 +431,10 @@ Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& m
 
 					for (uint32_t pass = 0; pass < params.hitCount && pass < hits.size(); ++pass)
 					{
-						const bool isNegativePass = (pass % 2u) == 1u;
-						if (params.omitNegative && isNegativePass)
+						const double weightScale = hitWeight(params, pass);
+						if (weightScale == 0.0)
 						{
+							// Rendered only so the next layer can be peeled against it.
 							continue;
 						}
 
@@ -416,7 +446,7 @@ Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& m
 						}
 
 						double depth = rasterDepth;
-						if (params.interiorDetours != nullptr)
+						if (params.interiorDetours != nullptr && !params.solidAngleOnly)
 						{
 							const int i0 = cage.F(hit.triangle, 0);
 							const int i1 = cage.F(hit.triangle, 1);
@@ -429,17 +459,20 @@ Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& m
 							depth = depthFromEyeZ(zEye + std::max(detour, 0.0) * cosTheta, nearPlane, farPlane);
 						}
 
-						const double w = solidAngle * (1.0 - depth);
+						double w = params.solidAngleOnly ? solidAngle : solidAngle * (1.0 - depth);
 						if (w <= 0.0)
 						{
 							continue;
 						}
 
-						const double sign = isNegativePass ? -1.0 : 1.0;
-						lambda(meshIdx, cage.F(hit.triangle, 0)) += sign * hit.b0 * w;
-						lambda(meshIdx, cage.F(hit.triangle, 1)) += sign * hit.b1 * w;
-						lambda(meshIdx, cage.F(hit.triangle, 2)) += sign * hit.b2 * w;
-						wsum += sign * w;
+						// The hit weight is applied last so a negative beta flips the sign
+						// of the whole contribution instead of dropping it above.
+						w *= weightScale;
+
+						lambda(meshIdx, cage.F(hit.triangle, 0)) += hit.b0 * w;
+						lambda(meshIdx, cage.F(hit.triangle, 1)) += hit.b1 * w;
+						lambda(meshIdx, cage.F(hit.triangle, 2)) += hit.b2 * w;
+						wsum += w;
 					}
 				}
 			}
@@ -682,7 +715,7 @@ void testPhase5WeightParity()
 
 void testPhase6MultiHit()
 {
-	std::cout << "\n=== Phase 6: n-hit interior-distance PMVC ===" << std::endl;
+	std::cout << "\n=== Phase 6: n-hit PMVC through the Ring pipeline ===" << std::endl;
 
 	const TestMesh uCage = makeUCage(1.0);
 	Eigen::MatrixXd samples(3, 3);
@@ -695,45 +728,130 @@ void testPhase6MultiHit()
 	Eigen::MatrixXf table;
 	computeInteriorDistances(uCage.V, uCage.F, samples, distanceParams, table);
 	const Eigen::MatrixXf detours = (table - euclideanDistanceTable(uCage, samples)).cwiseMax(0.f);
+	const Eigen::MatrixXf zeroDetours = Eigen::MatrixXf::Zero(detours.rows(), detours.cols());
 
-	// hitCount = 1 must reduce exactly to the single-hit variant.
+	const auto isNormalized = [](const Eigen::MatrixXd& weights)
+	{
+		double rowSumError = 0.0;
+		for (Eigen::Index row = 0; row < weights.rows(); ++row)
+		{
+			rowSumError = std::max(rowSumError, std::abs(weights.row(row).sum() - 1.0));
+		}
+		return rowSumError < 1e-9;
+	};
+
 	PMVCMirrorParams singleHit;
 	singleHit.faceSize = 16;
 	singleHit.hitCount = 1;
-	singleHit.interiorDetours = &detours;
 	const Eigen::MatrixXd single = computePMVCMirror(uCage, samples, singleHit);
 
-	PMVCMirrorParams nHitAsSingle = singleHit;
-	nHitAsSingle.hitCount = 1;
-	nHitAsSingle.omitNegative = true;
-	const Eigen::MatrixXd nHitReduced = computePMVCMirror(uCage, samples, nHitAsSingle);
-	check((nHitReduced - single).cwiseAbs().maxCoeff() == 0.0, "n-hit with hitCount=1 reduces exactly to the single-hit result");
+	// The negative contributions of every second hit are always omitted outside the
+	// three-hit variant, so an even hit count must match the odd one below it.
+	PMVCMirrorParams twoHits = singleHit;
+	twoHits.hitCount = 2;
+	const Eigen::MatrixXd two = computePMVCMirror(uCage, samples, twoHits);
+	check((two - single).cwiseAbs().maxCoeff() == 0.0, "hitCount=2 omits the negative hit and equals hitCount=1");
 
-	// Three hit passes with omitted negative rings, as in the viewer's PMVC preset.
+	PMVCMirrorParams fourHits = singleHit;
+	fourHits.hitCount = 4;
+	const Eigen::MatrixXd four = computePMVCMirror(uCage, samples, fourHits);
+	check((four - single).cwiseAbs().maxCoeff() > 0.0, "hitCount=4 adds the third hit on the non-convex cage");
+
+	// A hit count of exactly three switches to the alpha / beta / theta weights. With
+	// beta = 0 that is the same set of hits an even hit count accumulates.
+	PMVCMirrorParams threeHitNoBeta = singleHit;
+	threeHitNoBeta.hitCount = 3;
+	threeHitNoBeta.alpha = 1.0;
+	threeHitNoBeta.beta = 0.0;
+	threeHitNoBeta.theta = 1.0;
+	const Eigen::MatrixXd threeNoBeta = computePMVCMirror(uCage, samples, threeHitNoBeta);
+	check((threeNoBeta - four).cwiseAbs().maxCoeff() == 0.0,
+		"three-hit weights with beta=0 accumulate the same hits as the omitted-negative variant");
+
+	// The default three-hit variant subtracts the second hit.
 	PMVCMirrorParams threeHit = singleHit;
 	threeHit.hitCount = 3;
-	threeHit.omitNegative = true;
 	const Eigen::MatrixXd three = computePMVCMirror(uCage, samples, threeHit);
-	check(three.allFinite(), "3-hit interior-distance weights are finite (no NaN)");
+	check(three.allFinite(), "3-hit weights are finite (no NaN)");
+	check(isNormalized(three), "3-hit weights are normalized");
+	check((three - threeNoBeta).cwiseAbs().maxCoeff() > 0.0, "the negative second hit changes the 3-hit weights");
 
-	double rowSumError = 0.0;
-	for (Eigen::Index row = 0; row < three.rows(); ++row)
-	{
-		rowSumError = std::max(rowSumError, std::abs(three.row(row).sum() - 1.0));
-	}
-	check(rowSumError < 1e-9, "3-hit interior-distance weights are normalized");
+	// Interior distances on their own.
+	PMVCMirrorParams interiorSingle = singleHit;
+	interiorSingle.interiorDetours = &detours;
+	const Eigen::MatrixXd interior = computePMVCMirror(uCage, samples, interiorSingle);
+	check(interior.allFinite(), "interior-distance weights are finite");
+	check(isNormalized(interior), "interior-distance weights are normalized");
+	check((interior - single).cwiseAbs().maxCoeff() > 0.0, "interior distances change the weights on the non-convex cage");
 
-	check((three.array() >= -1e-12).all(), "3-hit weights with omitNegative are non-negative");
+	// Interior distances combined with the three-hit weights: both features have to work
+	// together in the one pipeline.
+	PMVCMirrorParams interiorThreeHit = threeHit;
+	interiorThreeHit.interiorDetours = &detours;
+	const Eigen::MatrixXd interiorThree = computePMVCMirror(uCage, samples, interiorThreeHit);
+	check(interiorThree.allFinite(), "combined 3-hit + interior-distance weights are finite");
+	check(isNormalized(interiorThree), "combined 3-hit + interior-distance weights are normalized");
+	check((interiorThree - three).cwiseAbs().maxCoeff() > 0.0,
+		"interior distances still change the weights of the 3-hit variant");
+	check((interiorThree - interior).cwiseAbs().maxCoeff() > 0.0,
+		"the 3-hit weights still change the interior-distance variant");
+
+	// Zero detours must reduce the combined variant exactly to the Euclidean 3-hit one.
+	PMVCMirrorParams zeroDetourThreeHit = threeHit;
+	zeroDetourThreeHit.interiorDetours = &zeroDetours;
+	const Eigen::MatrixXd zeroDetourThree = computePMVCMirror(uCage, samples, zeroDetourThreeHit);
+	check((zeroDetourThree - three).cwiseAbs().maxCoeff() < 1e-12,
+		"zero detours reduce the combined variant exactly to the Euclidean 3-hit weights");
 
 	const double multiHitInfluence = (three - single).cwiseAbs().maxCoeff();
 	std::cout << "difference single-hit vs 3-hit on the U cage: " << multiHitInfluence << std::endl;
 	check(multiHitInfluence > 0.0, "later hit passes contribute on the non-convex cage");
+}
 
-	// Signed accumulation (negative rings enabled) must also stay finite and normalized.
-	PMVCMirrorParams signedHits = threeHit;
-	signedHits.omitNegative = false;
-	const Eigen::MatrixXd signedWeights = computePMVCMirror(uCage, samples, signedHits);
-	check(signedWeights.allFinite(), "3-hit weights with negative rings are finite");
+void testPhase7OffsetVariant()
+{
+	std::cout << "\n=== Phase 7: offset variant (PMVCO) ===" << std::endl;
+
+	const TestMesh uCage = makeUCage(1.0);
+	Eigen::MatrixXd samples(2, 3);
+	samples << 0.5, 2.0, 0.5,
+		1.5, 0.5, 0.5;
+
+	InteriorDistanceParams distanceParams;
+	distanceParams.resolution = 48;
+	Eigen::MatrixXf table;
+	computeInteriorDistances(uCage.V, uCage.F, samples, distanceParams, table);
+	const Eigen::MatrixXf detours = (table - euclideanDistanceTable(uCage, samples)).cwiseMax(0.f);
+
+	PMVCMirrorParams offset;
+	offset.faceSize = 16;
+	offset.hitCount = 1;
+	offset.solidAngleOnly = true;
+	const Eigen::MatrixXd offsetWeights = computePMVCMirror(uCage, samples, offset);
+
+	check(offsetWeights.allFinite(), "offset weights are finite");
+	check((offsetWeights.array() >= -1e-12).all(), "offset weights are non-negative");
+
+	double rowSumError = 0.0;
+	for (Eigen::Index row = 0; row < offsetWeights.rows(); ++row)
+	{
+		rowSumError = std::max(rowSumError, std::abs(offsetWeights.row(row).sum() - 1.0));
+	}
+	check(rowSumError < 1e-9, "offset weights are normalized");
+
+	// The offset variant has no distance term, so an interior detour table cannot change
+	// its result.
+	PMVCMirrorParams offsetWithDetours = offset;
+	offsetWithDetours.interiorDetours = &detours;
+	const Eigen::MatrixXd offsetInterior = computePMVCMirror(uCage, samples, offsetWithDetours);
+	check((offsetInterior - offsetWeights).cwiseAbs().maxCoeff() == 0.0,
+		"interior distances do not affect the offset variant");
+
+	PMVCMirrorParams euclidean = offset;
+	euclidean.solidAngleOnly = false;
+	const Eigen::MatrixXd euclideanWeights = computePMVCMirror(uCage, samples, euclidean);
+	check((offsetWeights - euclideanWeights).cwiseAbs().maxCoeff() > 0.0,
+		"the offset weighting differs from the distance-weighted variant");
 }
 
 } // namespace
@@ -746,6 +864,7 @@ int main(int argc, char** argv)
 	testPhase2InteriorDistance();
 	testPhase5WeightParity();
 	testPhase6MultiHit();
+	testPhase7OffsetVariant();
 
 	std::cout << "\n" << (failures == 0 ? "ALL CHECKS PASSED" : "CHECKS FAILED") << " (" << failures << " failures)" << std::endl;
 	return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

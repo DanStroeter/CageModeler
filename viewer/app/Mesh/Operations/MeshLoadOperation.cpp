@@ -321,7 +321,6 @@ MeshLoadOperation::ExecutionResult MeshLoadOperation::Execute()
 	const glm::vec3 centerOffset(-aabbCenter.x, -meshAABB._min.y, -aabbCenter.z);
 
 	return std::make_shared<ProjectData>(_params._deformationType,
-		_params._pmvcComputeType,
 		_params._LBCWeightingScheme,
 		std::move(mesh),
 		std::move(cage),

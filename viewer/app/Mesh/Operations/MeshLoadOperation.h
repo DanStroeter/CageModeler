@@ -9,7 +9,6 @@ struct MeshLoadOperationParams
 {
 	MeshLoadOperationParams() = default;
 	MeshLoadOperationParams(const DeformationType deformationType,
-		const PMVCComputeType pmvcComputeType,
 		const LBC::DataSetup::WeightingScheme LBCWeightingScheme,
 		std::filesystem::path meshFilepath,
 		std::filesystem::path cageFilepath,
@@ -28,7 +27,6 @@ struct MeshLoadOperationParams
 		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer
 		)
 		: _deformationType(deformationType)
-		, _pmvcComputeType(pmvcComputeType)
 		, _LBCWeightingScheme(LBCWeightingScheme)
 		, _meshFilepath(std::move(meshFilepath))
 		, _cageFilepath(std::move(cageFilepath))
@@ -67,7 +65,6 @@ struct MeshLoadOperationParams
 	}
 
 	DeformationType _deformationType = DeformationType::Green;
-	PMVCComputeType _pmvcComputeType = PMVCComputeType::All;
 	LBC::DataSetup::WeightingScheme _LBCWeightingScheme = LBC::DataSetup::WeightingScheme::SQUARE;
 
 	std::filesystem::path _meshFilepath { };

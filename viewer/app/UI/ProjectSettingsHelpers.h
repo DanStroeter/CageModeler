@@ -1,7 +1,11 @@
 #pragma once
 
+#include <UI/ProjectModel.h>
+
+#include <algorithm>
 #include <filesystem>
 #include <array>
+#include <string>
 
 struct ProjecSettingsHelpers
 {
@@ -34,6 +38,143 @@ struct ProjecSettingsHelpers
 	static constexpr std::array CageGenerationMethodNames = {
 		"CoarseBounding"
 	};
+
+	static constexpr std::array PMVCDistanceTypeNames {
+		"Euclidean",
+		"Interior"
+	};
+
+	/**
+	 * The PMVC settings of a project, shared by the new project, project settings and
+	 * project options panels.
+	 *
+	 * Everything runs through the Ring pipeline with a fixed cubemap size and ring size,
+	 * and the offset variant is selected through the PMVCO coordinate type, so the only
+	 * settings left are the distance type, the hit count and the weights of the three-hit
+	 * variant.
+	 *
+	 * @param model The project model to edit, expected to be up to date with
+	 *              ApplyPMVCPreset().
+	 * @param idSuffix Suffix that keeps the widget IDs of the panels apart.
+	 */
+	static void PushPMVCSettingsUI(ProjectModelData& model, const char* idSuffix)
+	{
+		const auto isPMVC = DeformationTypeHelpers::IsPMVC(model._deformationType);
+		const auto isOffsetVariant = (model._deformationType == DeformationType::PMVCO);
+
+		ImGui::BeginDisabled(!isPMVC);
+		{
+			ImGui::TableNextRow();
+			{
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextEx("Distance");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("Euclidean weights PMVC with the rasterized depth of the hit, Interior with the heat-method interior distance, which respects the interior of the cage. The offset variant (PMVCO) weights by solid angle alone and has no distance term.");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(125.0f);
+
+				ImGui::BeginDisabled(isOffsetVariant);
+				{
+					const auto distanceLabel = std::string("##PMVCDistance") + idSuffix;
+					const auto selectedDistance = (!isOffsetVariant && model._pmvcUseInteriorDistance) ? 1 : 0;
+
+					if (ImGui::BeginCombo(distanceLabel.c_str(), PMVCDistanceTypeNames[selectedDistance], ImGuiComboFlags_HeightRegular))
+					{
+						for (auto i = 0; i < PMVCDistanceTypeNames.size(); i++)
+						{
+							const auto isSelected = (selectedDistance == i);
+
+							if (ImGui::Selectable(PMVCDistanceTypeNames[i], isSelected))
+							{
+								model._pmvcUseInteriorDistance = (i == 1);
+							}
+
+							if (isSelected)
+							{
+								ImGui::SetItemDefaultFocus();
+							}
+						}
+
+						ImGui::EndCombo();
+					}
+				}
+				ImGui::EndDisabled();
+			}
+
+			ImGui::TableNextRow();
+			{
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextEx("Hit Count");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("Number of hits (depth peeling layers) sampled per mesh vertex. Every second hit carries the negative contributions and is always omitted, except for a hit count of three, where the first, second and third hit are weighted by alpha, beta and theta instead.");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(100.0f);
+
+				// The offset variant has no distance term to peel against and always runs
+				// with a single hit.
+				ImGui::BeginDisabled(isOffsetVariant);
+				{
+					const auto hitCountLabel = std::string("##PMVCHitCount") + idSuffix;
+
+					if (ImGui::InputScalar(hitCountLabel.c_str(), ImGuiDataType_U64, &model._pmvcHitCount))
+					{
+						model._pmvcHitCount = std::max<uint64_t>(1, model._pmvcHitCount);
+					}
+				}
+				ImGui::EndDisabled();
+			}
+
+			// The three-hit weights only exist for a hit count of exactly three.
+			ImGui::BeginDisabled(!model.UsesThreeHitWeights());
+			{
+				ImGui::TableNextRow();
+				{
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextEx("Alpha (hit 1)");
+					ImGui::SameLine();
+					UIHelpers::HelpMarker("Three-hit PMVC variant: weight of the first hit contributions.");
+
+					ImGui::TableSetColumnIndex(1);
+					UIHelpers::SetRightAligned(100.0f);
+
+					const auto alphaLabel = std::string("##PMVCAlpha") + idSuffix;
+					ImGui::InputFloat(alphaLabel.c_str(), &model._pmvcAlpha, 0.0f, 0.0f, "%.3f");
+				}
+
+				ImGui::TableNextRow();
+				{
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextEx("Beta (hit 2)");
+					ImGui::SameLine();
+					UIHelpers::HelpMarker("Three-hit PMVC variant: weight of the second hit contributions (subtracted by default).");
+
+					ImGui::TableSetColumnIndex(1);
+					UIHelpers::SetRightAligned(100.0f);
+
+					const auto betaLabel = std::string("##PMVCBeta") + idSuffix;
+					ImGui::InputFloat(betaLabel.c_str(), &model._pmvcBeta, 0.0f, 0.0f, "%.3f");
+				}
+
+				ImGui::TableNextRow();
+				{
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextEx("Theta (hit 3)");
+					ImGui::SameLine();
+					UIHelpers::HelpMarker("Three-hit PMVC variant: weight of the third hit contributions.");
+
+					ImGui::TableSetColumnIndex(1);
+					UIHelpers::SetRightAligned(100.0f);
+
+					const auto thetaLabel = std::string("##PMVCTheta") + idSuffix;
+					ImGui::InputFloat(thetaLabel.c_str(), &model._pmvcTheta, 0.0f, 0.0f, "%.3f");
+				}
+			}
+			ImGui::EndDisabled();
+		}
+		ImGui::EndDisabled();
+	}
 
 	[[nodiscard]] static std::filesystem::path SanitizeFilepath(const std::filesystem::path& filepath)
 	{
