@@ -24,6 +24,14 @@ struct CubemapRenderTarget
 	VkImageView    cubemapView = VK_NULL_HANDLE;
 	std::array<VkImageView, 6> faceViews{};
 
+	// Second color cubemap, only allocated for the three-hit variant so the first hit
+	// stays in memory while the second hit is rendered and both can be combined per
+	// texel by a single compute dispatch.
+	VkImage        cubemapImageSecond = VK_NULL_HANDLE;
+	VkDeviceMemory cubemapMemorySecond = VK_NULL_HANDLE;
+	VkImageView    cubemapViewSecond = VK_NULL_HANDLE;
+	std::array<VkImageView, 6> faceViewsSecond{};
+
 	// Two depth images ping-ponged by the depth peeling passes: hit N renders into
 	// depth image N % 2 while sampling depth image (N + 1) % 2, which holds the depth of
 	// hit N - 1, to discard everything in front of the previous layer.
@@ -39,7 +47,9 @@ struct CubemapRenderUnit
 {
 	std::vector<CubemapRenderTarget> targets;
 
-	std::vector<std::array<VkCommandBuffer, 6>> graphicsCmdPerTarget;
+	// One set of face command buffers per target and ping-pong slot: two hits of the same
+	// cubemap can be in flight at once, which the three-hit variant needs.
+	std::vector<std::array<std::array<VkCommandBuffer, 6>, 2>> graphicsCmdPerTarget;
 
 	MemoryMappedBuffer matricesUBO;
 	VkDescriptorSet    matricesDescriptorSet = VK_NULL_HANDLE;
@@ -61,7 +71,9 @@ struct CubemapMatricesUBO
  *  - the hit count controls how many depth peeling layers are rendered per vertex,
  *  - the negative (every second) hit contributions are always omitted, except for the
  *    three-hit variant where the first, second and third hit are weighted by alpha, beta
- *    and theta instead,
+ *    and theta instead. There the first two hits are rendered into their own color
+ *    images and combined by one dispatch, so the second hit is subtracted from the first
+ *    one per texel,
  *  - interior distances replace the Euclidean hit distance when a detour table is set,
  *  - the offset variant (PMVCO) weights by the solid angle alone.
  */
@@ -159,6 +171,9 @@ private:
 	float _alpha = 1.0f;
 	float _beta = -1.0f;
 	float _theta = 1.0f;
+
+	/// The three-hit variant, which combines its first two hits in a single dispatch.
+	bool _threeHitVariant = false;
 	VkFormat _format = VK_FORMAT_R32G32B32A32_SFLOAT;
 
 	std::optional<double> _renderMs;

@@ -158,10 +158,13 @@ void RingComputeStrategy::DispatchAfterRender(
 	VkSemaphore timeline,
 	const uint64_t waitValue,
 	const uint64_t signalValue,
-	VkImageView colorView,
-	VkImageView depthView,
-	const float hitWeight)
+	const RenderedHit& first,
+	const std::optional<RenderedHit>& second)
 {
+	// Without a second hit the shader only needs a valid binding for set B, so it is
+	// pointed at set A and disabled with a weight of zero.
+	RenderedHit secondHit = second.value_or(RenderedHit{ first.colorView, first.depthView, 0.0f });
+
 	// ------------------------------------------------------------
 	// 1) Reset & record command buffer
 	// ------------------------------------------------------------
@@ -174,7 +177,7 @@ void RingComputeStrategy::DispatchAfterRender(
 	VK_CHECK(vkBeginCommandBuffer(cmd, &begin));
 
 	// Descriptor update MUST happen before bind
-	UpdateComputeDescriptorSet(slot, colorView, depthView);
+	UpdateComputeDescriptorSet(slot, first, secondHit);
 
 	assert(slot < _computeDescriptorSets.size());
 
@@ -199,7 +202,8 @@ void RingComputeStrategy::DispatchAfterRender(
 	pc.uMeshVertexIdx = static_cast<int32_t>(deformableIndex);
 	pc.uNearPlane = _interiorDistance.nearPlane;
 	pc.uFarPlane = _interiorDistance.farPlane;
-	pc.uHitWeight = hitWeight;
+	pc.uHitWeightA = first.weight;
+	pc.uHitWeightB = secondHit.weight;
 	pc.uFlags = (_offset ? ComputePushConstants::SolidAngleOnly : 0) |
 		(UseInteriorDistance() ? ComputePushConstants::InteriorDistance : 0);
 
@@ -461,10 +465,14 @@ void RingComputeStrategy::CreatePipelineAndLayouts()
 		{ 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
 		// Solid angle lookup
 		{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
-		// Depth cubemap
+		// Depth cubemap of the first hit
 		{ 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
 		// Interior detour table
-		{ 6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
+		{ 6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		// Barycentric + triangle index image of the second hit
+		{ 7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
+		// Depth cubemap of the second hit
+		{ 8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
 	};
 
 	_computeLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
@@ -616,11 +624,11 @@ void RingComputeStrategy::AllocateResources()
 	vertexListStaging.ReleaseResource(_device);
 }
 
-void RingComputeStrategy::UpdateComputeDescriptorSet(const uint32_t slotIndex, VkImageView colorView, VkImageView depthView)
+void RingComputeStrategy::UpdateComputeDescriptorSet(const uint32_t slotIndex, const RenderedHit& first, const RenderedHit& second)
 {
 	VkDescriptorImageInfo imageInfo{};
 	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	imageInfo.imageView = colorView;
+	imageInfo.imageView = first.colorView;
 	imageInfo.sampler = _barySampler;
 
 	VkDescriptorBufferInfo vertexListInfo{
@@ -629,8 +637,18 @@ void RingComputeStrategy::UpdateComputeDescriptorSet(const uint32_t slotIndex, V
 
 	VkDescriptorImageInfo depthImageInfo{};
 	depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-	depthImageInfo.imageView = depthView;
+	depthImageInfo.imageView = first.depthView;
 	depthImageInfo.sampler = _depthSampler;
+
+	VkDescriptorImageInfo secondImageInfo{};
+	secondImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	secondImageInfo.imageView = second.colorView;
+	secondImageInfo.sampler = _barySampler;
+
+	VkDescriptorImageInfo secondDepthImageInfo{};
+	secondDepthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+	secondDepthImageInfo.imageView = second.depthView;
+	secondDepthImageInfo.sampler = _depthSampler;
 
 	VkDescriptorBufferInfo lambdaInfo{
 		_slots[slotIndex].lambda._deviceBuffer, 0, VK_WHOLE_SIZE
@@ -649,7 +667,7 @@ void RingComputeStrategy::UpdateComputeDescriptorSet(const uint32_t slotIndex, V
 		_interiorDistanceBuffer._deviceBuffer, 0, VK_WHOLE_SIZE
 	};
 
-	std::array<VkWriteDescriptorSet, 7> writes{};
+	std::array<VkWriteDescriptorSet, 9> writes{};
 
 	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 		_computeDescriptorSets[slotIndex], 0, 0, 1,
@@ -678,6 +696,14 @@ void RingComputeStrategy::UpdateComputeDescriptorSet(const uint32_t slotIndex, V
 	writes[6] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 		_computeDescriptorSets[slotIndex], 6, 0, 1,
 		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &interiorDistanceInfo };
+
+	writes[7] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_computeDescriptorSets[slotIndex], 7, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &secondImageInfo };
+
+	writes[8] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+		_computeDescriptorSets[slotIndex], 8, 0, 1,
+		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &secondDepthImageInfo };
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }

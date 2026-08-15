@@ -16,7 +16,10 @@
  *   carries the negative contributions and is always omitted, except for a hit count of
  *   three where the first, second and third hit are weighted by alpha, beta and theta.
  *   The three-hit weights and the interior distances have to work on their own and
- *   combined.
+ *   combined, and combining the first two hits per texel (what the viewer dispatches in
+ *   one go) has to agree with accumulating the hits one by one.
+ * Phase 7 validation: the offset variant (PMVCO) weights by the solid angle alone and
+ *   ignores the interior detours.
  */
 
 #include <cagedeformations/InteriorDistance.h>
@@ -264,6 +267,9 @@ struct PMVCMirrorParams
 	double theta = 1.0;
 	/// Offset variant (PMVCO): weight by the solid angle alone, without a distance term.
 	bool solidAngleOnly = false;
+	/// Restricts the accumulation to a single hit pass, -1 accumulates all of them. Used
+	/// to check that combining hits per texel agrees with accumulating them one by one.
+	int onlyHit = -1;
 	/// nullptr = Euclidean variant (weight from rasterized depth); otherwise the
 	/// interior detour table (rows = cage vertices, cols = mesh vertices, entries are
 	/// interior minus Euclidean distance, >= 0).
@@ -278,6 +284,11 @@ struct PMVCMirrorParams
  */
 double hitWeight(const PMVCMirrorParams& params, const uint32_t hitIndex)
 {
+	if (params.onlyHit >= 0 && static_cast<uint32_t>(params.onlyHit) != hitIndex)
+	{
+		return 0.0;
+	}
+
 	if (params.hitCount == 3)
 	{
 		switch (hitIndex)
@@ -377,7 +388,15 @@ void computeProjectionPlanes(const TestMesh& cage, const Eigen::MatrixXd& meshVe
  * reduces exactly to the Euclidean variant wherever the detours vanish. The offset
  * variant drops the distance term and weights by the solid angle alone.
  */
-Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& meshVertices,
+struct PMVCMirrorResult
+{
+	/// Accumulated, not yet normalized weights (rows = mesh vertices).
+	Eigen::MatrixXd lambda;
+	/// Accumulated weight sum per mesh vertex, the normalization denominator.
+	Eigen::VectorXd wsum;
+};
+
+PMVCMirrorResult computePMVCMirrorRaw(const TestMesh& cage, const Eigen::MatrixXd& meshVertices,
 	const PMVCMirrorParams& params)
 {
 	const int faceSize = params.faceSize;
@@ -395,8 +414,10 @@ Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& m
 		{ { 0, 0, -1 }, { -1, 0, 0 }, { 0, -1, 0 } }
 	};
 
-	Eigen::MatrixXd lambda(meshVertices.rows(), cage.V.rows());
-	lambda.setZero();
+	PMVCMirrorResult result;
+	result.lambda.setZero(meshVertices.rows(), cage.V.rows());
+	result.wsum.setZero(meshVertices.rows());
+	Eigen::MatrixXd& lambda = result.lambda;
 
 	for (Eigen::Index meshIdx = 0; meshIdx < meshVertices.rows(); ++meshIdx)
 	{
@@ -478,6 +499,19 @@ Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& m
 			}
 		}
 
+		result.wsum(meshIdx) = wsum;
+	}
+
+	return result;
+}
+
+/// Normalized weights of the mirror, the form the viewer's Readback() returns.
+Eigen::MatrixXd normalizeMirrorResult(const PMVCMirrorResult& result)
+{
+	Eigen::MatrixXd lambda = result.lambda;
+	for (Eigen::Index meshIdx = 0; meshIdx < lambda.rows(); ++meshIdx)
+	{
+		const double wsum = result.wsum(meshIdx);
 		if (std::abs(wsum) > std::numeric_limits<double>::epsilon())
 		{
 			lambda.row(meshIdx) /= wsum;
@@ -485,6 +519,12 @@ Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& m
 	}
 
 	return lambda;
+}
+
+Eigen::MatrixXd computePMVCMirror(const TestMesh& cage, const Eigen::MatrixXd& meshVertices,
+	const PMVCMirrorParams& params)
+{
+	return normalizeMirrorResult(computePMVCMirrorRaw(cage, meshVertices, params));
 }
 
 Eigen::MatrixXf euclideanDistanceTable(const TestMesh& cage, const Eigen::MatrixXd& meshVertices)
@@ -775,6 +815,25 @@ void testPhase6MultiHit()
 	check(three.allFinite(), "3-hit weights are finite (no NaN)");
 	check(isNormalized(three), "3-hit weights are normalized");
 	check((three - threeNoBeta).cwiseAbs().maxCoeff() > 0.0, "the negative second hit changes the 3-hit weights");
+
+	// The viewer renders the first two hits into their own color images and combines them
+	// in one dispatch, so the beta-weighted second hit meets the first one per texel. The
+	// per-texel guards are the only thing that could make that differ from accumulating
+	// the hits one after the other, so both have to agree.
+	PMVCMirrorResult perHitSum;
+	perHitSum.lambda.setZero(samples.rows(), uCage.V.rows());
+	perHitSum.wsum.setZero(samples.rows());
+	for (int hit = 0; hit < 3; ++hit)
+	{
+		PMVCMirrorParams singlePass = threeHit;
+		singlePass.onlyHit = hit;
+		const PMVCMirrorResult pass = computePMVCMirrorRaw(uCage, samples, singlePass);
+		perHitSum.lambda += pass.lambda;
+		perHitSum.wsum += pass.wsum;
+	}
+	const Eigen::MatrixXd perHitWeights = normalizeMirrorResult(perHitSum);
+	check((perHitWeights - three).cwiseAbs().maxCoeff() < 1e-12,
+		"combining the first two hits per texel matches accumulating the hits one by one");
 
 	// Interior distances on their own.
 	PMVCMirrorParams interiorSingle = singleHit;

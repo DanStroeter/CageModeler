@@ -17,6 +17,7 @@
 #include <cassert>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <vulkan/vulkan.h>
 #include <glm/ext/vector_int2.hpp>
@@ -42,8 +43,26 @@ struct ComputePushConstants
 	int32_t uMeshVertexIdx = 0;
 	float uNearPlane = 1e-4f;
 	float uFarPlane = 1.0f;
-	float uHitWeight = 1.0f;
+	float uHitWeightA = 1.0f;
+	float uHitWeightB = 0.0f;
 	int32_t uFlags = 0;
+};
+
+/**
+ * One rendered hit handed to the compute dispatch. Two of them are combined per texel by
+ * the three-hit variant, where the second one is weighted by a negative beta and is
+ * therefore subtracted from the first one on the ray it belongs to.
+ */
+struct RenderedHit
+{
+	/// Barycentric coordinates + triangle index of the hit.
+	VkImageView colorView = VK_NULL_HANDLE;
+
+	/// Depth layer the hit was rendered into.
+	VkImageView depthView = VK_NULL_HANDLE;
+
+	/// Scales the contribution of the hit (alpha / beta / theta, or 1). May be negative.
+	float weight = 1.0f;
 };
 
 /**
@@ -74,8 +93,9 @@ struct InteriorDistanceSettings
  * buffer that is copied back and added to the result row of the mesh vertex.
  *
  * A mesh vertex may be rendered several times (depth peeling), each of those hits is
- * dispatched separately with its own weight, so multi-hit PMVC, the three-hit variant and
- * the interior distance variant all share this single pipeline.
+ * dispatched with its own weight, and two hits that have to meet per texel (the first and
+ * second hit of the three-hit variant) are dispatched together, so multi-hit PMVC, the
+ * three-hit variant and the interior distance variant all share this single pipeline.
  */
 class RingComputeStrategy final
 {
@@ -125,12 +145,12 @@ public:
 	void BeginVertex(uint32_t deformableIndex);
 
 	/**
-	 * Records and submits the compute dispatch consuming a single rendered hit.
+	 * Records and submits the compute dispatch consuming one or two rendered hits.
 	 *
-	 * @param colorView The barycentric + triangle index cubemap of the hit.
-	 * @param depthView The depth cubemap layer the hit was rendered into.
-	 * @param hitWeight Scales the contribution of the hit (alpha / beta / theta for the
-	 *                  three-hit variant, 1 otherwise). May be negative.
+	 * @param first The hit to accumulate.
+	 * @param second An optional second hit of the same cubemap, accumulated in the same
+	 *               invocation so its (negative) contribution meets the first one per
+	 *               texel. Both hits have to still be resident when this is called.
 	 */
 	void DispatchAfterRender(
 		uint32_t deformableIndex,
@@ -138,9 +158,8 @@ public:
 		VkSemaphore timeline,
 		uint64_t waitValue,
 		uint64_t signalValue,
-		VkImageView colorView,
-		VkImageView depthView,
-		float hitWeight);
+		const RenderedHit& first,
+		const std::optional<RenderedHit>& second = std::nullopt);
 
 	void SubmitReadbackCopy(
 		uint32_t slot,
@@ -161,7 +180,7 @@ public:
 private:
 	void CreatePipelineAndLayouts();
 	void AllocateResources();
-	void UpdateComputeDescriptorSet(uint32_t slotIndex, VkImageView colorView, VkImageView depthView);
+	void UpdateComputeDescriptorSet(uint32_t slotIndex, const RenderedHit& first, const RenderedHit& second);
 	void CreateSampler();
 	void CreateDepthSampler();
 	void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
