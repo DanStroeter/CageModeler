@@ -298,7 +298,36 @@ void ProjectSettingsPanel::Layout()
 				ImGui::SameLine();
 			}
 
-			ProjecSettingsHelpers::PushPMVCSettingsUI(_modifiedProjectModel, "##Settings");
+			ImGui::BeginDisabled(_modifiedProjectModel._deformationType != DeformationType::PMVC && _modifiedProjectModel._deformationType != DeformationType::PMVCO);
+			{
+				ImGui::TableNextRow();
+				{
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextEx("Cubemap Size");
+					ImGui::SameLine();
+					UIHelpers::HelpMarker("Resolution for PMVC cubemap rendering.");
+
+					ImGui::TableSetColumnIndex(1);
+					UIHelpers::SetRightAligned(100.0f);
+					ImGui::InputScalar("##CubemapSize", ImGuiDataType_U64, &_modifiedProjectModel._cubemapSize);
+				}
+
+				ImGui::TableNextRow();
+				{
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextEx("Hit Count");
+					ImGui::SameLine();
+					UIHelpers::HelpMarker("Number of hits sampled for PMVC.");
+
+					ImGui::TableSetColumnIndex(1);
+					UIHelpers::SetRightAligned(100.0f);
+
+					ImGui::BeginDisabled(_modifiedProjectModel._deformationType == DeformationType::PMVCO);
+					ImGui::InputScalar("##PMVCHitCount", ImGuiDataType_U64, &_modifiedProjectModel._pmvcHitCount);
+					ImGui::EndDisabled();
+				}
+			}
+			ImGui::EndDisabled();
 
 			ImGui::BeginDisabled(_modifiedProjectModel._deformationType != DeformationType::BBW && _modifiedProjectModel._deformationType != DeformationType::LBC);
 			{

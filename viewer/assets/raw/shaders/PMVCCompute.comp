@@ -1,191 +1,93 @@
 #version 450
-#extension GL_EXT_shader_atomic_float : require
 
-// Unified PMVC weight accumulation for the Ring pipeline.
-//
-// One dispatch consumes one or two rendered hits (depth peeling layers) of one cubemap
-// and accumulates their contribution into the lambda / wsum buffers of the slot. Every
-// PMVC variant goes through this shader, the differences are driven by push constants
-// only:
-//
-//   * Set A (uBaryTexA / uDepthTexA) is the hit weighted by uHitWeightA, set B
-//     (uBaryTexB / uDepthTexB) the one weighted by uHitWeightB. The three-hit variant
-//     renders the first two hits into their own color images and combines them here per
-//     texel, with beta negative so the second hit is subtracted from the first one on
-//     the ray it belongs to. Every other configuration passes uHitWeightB = 0, which
-//     skips set B entirely (its bindings then point at set A).
-//   * kFlagSolidAngleOnly selects the offset (PMVCO) weighting, which is driven by the
-//     solid angle of the texel alone and has no distance term.
-//   * kFlagInteriorDistance lengthens the rasterized (Euclidean) hit distance by the
-//     barycentrically interpolated heat-method interior detour of the hit triangle
-//     (interior distance minus Euclidean distance, zero wherever the cage is convex
-//     from the mesh vertex). Where the cage is locally convex the detour vanishes and
-//     the weights reduce exactly to the Euclidean variant; interpolating absolute
-//     distances instead would systematically overestimate the hit distance
-//     mid-triangle on coarse cages.
-//
-// The flags apply to both hits, so interior distances and the three-hit weights can be
-// combined freely.
+// barycentric + tri-index texture
+layout(binding = 0) uniform sampler2DArray uBaryTex;
 
-// Rendered barycentric + triangle index image of the first hit.
-layout(binding = 0) uniform sampler2DArray uBaryTexA;
-
-// Triangle vertex index list (3 indices per triangle).
-layout(std430, binding = 1) readonly buffer VertexList {
+// Triangle vertex index list
+layout(std430, binding = 1) buffer VertexList {
     uint vertexList[];
 };
 
-// Output λ values (one buffer per slot).
+// Output λ values
 layout(std430, binding = 2) buffer LambdaOut {
     float lambda[];
 };
 
-// Output wsum (single float per slot).
+// Output wsum per cubemap
 layout(std430, binding = 3) buffer WSumOut {
     float wsum[];
 };
 
-// Solid angle lookup (per face, independent of which hit is sampled).
 layout(binding = 4) uniform sampler2DArray uSolidAngleTex;
 
-// Depth cubemap of the first hit (no-hit test and base distance).
-layout(binding = 5) uniform sampler2DArray uDepthTexA;
-
-// Interior detour table: interiorDetour[meshVertexIdx * numCageVertices + cageVertexIdx]
-// holds interiorDistance - euclideanDistance (>= 0) between the two vertices. Bound to
-// a dummy buffer when kFlagInteriorDistance is not set.
-layout(std430, binding = 6) readonly buffer InteriorDetours {
-    float interiorDetour[];
-};
-
-// Second hit of the three-hit variant, bound to the first hit when unused.
-layout(binding = 7) uniform sampler2DArray uBaryTexB;
-layout(binding = 8) uniform sampler2DArray uDepthTexB;
-
+// Push constants for parameters
 layout(push_constant) uniform Params {
-    ivec2 uFaceSize;        // cubemap face resolution
-    int   uNumTriangles;    // number of triangles in the cage mesh
-    int   uNumCageVertices; // number of cage vertices (detour table row stride)
-    int   uMeshVertexIdx;   // deformable vertex this cubemap belongs to
-    float uNearPlane;       // near plane of the cubemap projection
-    float uFarPlane;        // far plane of the cubemap projection
-    float uHitWeightA;      // weight of the first hit (1, or alpha / theta)
-    float uHitWeightB;      // weight of the second hit (beta), 0 disables set B
-    int   uFlags;           // see the flag constants below
+    int   uNumCubemaps;
+    int   uNumCageVertices;
+    ivec2 uFaceSize;
+    int   uFacesPerCubemap;
+    int   uNumTriangles; 
 } params;
 
-const int kFlagInteriorDistance = 1;
-const int kFlagSolidAngleOnly = 2;
-
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-
-/**
- * Accumulates the contribution of one hit of one texel. weightScale can be negative
- * (beta), which subtracts the hit from whatever the other hit of the same texel adds.
- */
-void accumulateHit(vec4 tex, float depth, float solidAngle, uvec2 texel, float weightScale)
-{
-    uint tri = uint(tex.a * float(params.uNumTriangles) + 0.5);
-    if (tri >= uint(params.uNumTriangles))
-        return;
-
-    // 1.0 means no geometry hit (clear value), which also covers the texels the depth
-    // peeling pass discarded.
-    if (depth >= 0.999999)
-        return;
-
-    uint i0 = vertexList[tri * 3 + 0];
-    uint i1 = vertexList[tri * 3 + 1];
-    uint i2 = vertexList[tri * 3 + 2];
-
-    float w = solidAngle;
-
-    if ((params.uFlags & kFlagSolidAngleOnly) == 0)
-    {
-        float hitDepth = depth;
-
-        if ((params.uFlags & kFlagInteriorDistance) != 0)
-        {
-            // Interior detour at the hit point: the cubemap render encodes the
-            // barycentric coordinates of the hit in RGB, reuse them to interpolate the
-            // per-cage-vertex detours of the hit triangle.
-            uint tableBase = uint(params.uMeshVertexIdx) * uint(params.uNumCageVertices);
-            float detour =
-                tex.r * interiorDetour[tableBase + i0] +
-                tex.g * interiorDetour[tableBase + i1] +
-                tex.b * interiorDetour[tableBase + i2];
-
-            // Reconstruct the eye-space depth of the rasterized hit from the [0, 1]
-            // perspective depth, lengthen the ray by the detour (eye-space depth grows
-            // by detour * cos(theta) of the texel direction) and re-encode with the
-            // same mapping.
-            float nearPlane = params.uNearPlane;
-            float farPlane = params.uFarPlane;
-            float zEye = (farPlane * nearPlane) / (farPlane - depth * (farPlane - nearPlane));
-
-            float u = (2.0 * (float(texel.x) + 0.5) / float(params.uFaceSize.x)) - 1.0;
-            float v = (2.0 * (float(texel.y) + 0.5) / float(params.uFaceSize.y)) - 1.0;
-            float cosTheta = inversesqrt(1.0 + u * u + v * v);
-            float zEyeInterior = zEye + max(detour, 0.0) * cosTheta;
-
-            hitDepth = clamp(
-                (farPlane * (zEyeInterior - nearPlane)) / (zEyeInterior * (farPlane - nearPlane)),
-                0.0, 1.0);
-        }
-
-        w = solidAngle * (1.0 - hitDepth);
-    }
-
-    if (w <= 0.0)
-        return;
-
-    // Apply the weight of the hit last so a negative weight (beta) flips the sign of the
-    // whole contribution instead of dropping it above.
-    w *= weightScale;
-    if (w == 0.0)
-        return;
-
-    atomicAdd(lambda[i0], tex.r * w);
-    atomicAdd(lambda[i1], tex.g * w);
-    atomicAdd(lambda[i2], tex.b * w);
-    atomicAdd(wsum[0], w);
-}
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 void main()
 {
-    uint x    = gl_GlobalInvocationID.x;
-    uint y    = gl_GlobalInvocationID.y;
-    uint face = gl_GlobalInvocationID.z;
+    uint cubemapIdx = gl_GlobalInvocationID.x;
+	    
+if (cubemapIdx >= uint(params.uNumCubemaps)) return;
 
-    if (x >= uint(params.uFaceSize.x) ||
-        y >= uint(params.uFaceSize.y) ||
-        face >= 6u)
-    {
-        return;
+    uint base = cubemapIdx * uint(params.uNumCageVertices);
+
+    // Clear output range
+    for (int i = 0; i < params.uNumCageVertices; ++i)
+        lambda[base + uint(i)] = 0.0;
+
+    float wsum_local = 0.0;
+
+    int width  = params.uFaceSize.x;
+    int height = params.uFaceSize.y;
+
+    for (int face = 0; face < params.uFacesPerCubemap; ++face) {
+        int layer = int(cubemapIdx) * params.uFacesPerCubemap + face;
+
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+
+                vec4 tex = texelFetch(uBaryTex, ivec3(x, y, layer), 0);
+                float b0 = tex.r;
+                float b1 = tex.g;
+                float b2 = tex.b;
+
+		uint tri = uint(tex.a * float(params.uNumTriangles) + 0.5);
+                if (tri >= uint(params.uNumTriangles))
+                  continue;
+
+                uint i0 = vertexList[tri * 3u + 0u];
+                uint i1 = vertexList[tri * 3u + 1u];
+                uint i2 = vertexList[tri * 3u + 2u];
+
+                //float w = 1.0;
+		float w = texelFetch(
+    		uSolidAngleTex,
+    		ivec3(x, y, face),
+    		0
+		).r;
+
+                lambda[base + i0] += b0 * w;
+                lambda[base + i1] += b1 * w;
+                lambda[base + i2] += b2 * w;
+
+                wsum_local += w;
+            }
+        }
     }
-
-    ivec3 coord = ivec3(x, y, face);
-    uvec2 texel = uvec2(x, y);
-    float solidAngle = texelFetch(uSolidAngleTex, coord, 0).r;
-
-    // First hit (set A), weighted by alpha (or theta for the third hit, or 1 outside the
-    // three-hit variant).
-    accumulateHit(
-        texelFetch(uBaryTexA, coord, 0),
-        texelFetch(uDepthTexA, coord, 0).r,
-        solidAngle,
-        texel,
-        params.uHitWeightA);
-
-    // Second hit (set B) of the same ray, weighted by beta. Both hits of the texel are
-    // resident here, so the second one is subtracted per pixel from the first.
-    if (params.uHitWeightB != 0.0)
-    {
-        accumulateHit(
-            texelFetch(uBaryTexB, coord, 0),
-            texelFetch(uDepthTexB, coord, 0).r,
-            solidAngle,
-            texel,
-            params.uHitWeightB);
+	
+    //wsum[cubemapIdx] = wsum_local;
+    if (wsum_local > 0.0) {
+    float invW = 1.0 / wsum_local;
+    for (int i = 0; i < params.uNumCageVertices; ++i) {
+        lambda[base + uint(i)] *= invW;
     }
+}
 }

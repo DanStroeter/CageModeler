@@ -24,21 +24,12 @@ enum class DeformationType : uint8_t
 	PMVCO
 };
 
-/**
- * Fixed settings of the PMVC Ring pipeline. They used to be configurable per project, but
- * every variant now runs through the same pipeline with the same cubemap resolution and
- * ring size, so they are constants instead of project settings.
- */
-struct PMVCSettings
+enum class PMVCComputeType : uint8_t
 {
-	/// Resolution of a single cubemap face.
-	static constexpr uint32_t kCubemapSize = 32;
-
-	/// Number of render targets in the ring.
-	static constexpr uint32_t kRingTargetCount = 64;
-
-	/// The hit count that enables the three-hit variant and its alpha/beta/theta weights.
-	static constexpr uint64_t kThreeHitCount = 3;
+	Serial,
+	Ring,
+	All,
+	Cpu
 };
 
 struct DeformationTypeHelpers
@@ -193,6 +184,7 @@ struct MeshCageGenerationResult
 struct ProjectData
 {
 	ProjectData(const DeformationType deformationType,
+		const PMVCComputeType pmvcComputeType,
 		const LBC::DataSetup::WeightingScheme LBCWeightingScheme,
 		EigenMesh mesh,
 		EigenMesh cage,
@@ -216,6 +208,7 @@ struct ProjectData
 		const bool noOffset,
 		const bool pmvcUseOffset)
 		: _deformationType(deformationType)
+		, _pmvcComputeType(pmvcComputeType)
 		, _LBCWeightingScheme(LBCWeightingScheme)
 		, _mesh(std::move(mesh))
 		, _cage(std::move(cage))
@@ -269,6 +262,7 @@ struct ProjectData
 	}
 
 	DeformationType _deformationType = DeformationType::Green;
+	PMVCComputeType _pmvcComputeType = PMVCComputeType::All;
 	LBC::DataSetup::WeightingScheme _LBCWeightingScheme = LBC::DataSetup::WeightingScheme::SQUARE;
 
 	EigenMesh _mesh;

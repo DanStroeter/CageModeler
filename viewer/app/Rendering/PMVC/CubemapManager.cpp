@@ -2,14 +2,7 @@
 
 #include <Rendering/PMVC/CubemapRenderInstance.h>
 
-#include <cagedeformations/InteriorDistance.h>
-
-#include <Logging/Logging.h>
-
-#include <algorithm>
-#include <cassert>
 #include <chrono>
-#include <cstddef>
 #include <Rendering/Commands/RenderCommandScheduler.h>
 #include <Rendering/Core/RenderProxyCollector.h>
 #include <Rendering/Core/RenderResourceManager.h>
@@ -17,20 +10,12 @@
 #include <Mesh/PolygonMesh.h>
 #include <Mesh/ScreenPass.h>
 #include <Editor/Light.h>
+#include <cstddef>
 
 
 CubemapManager::CubemapManager(const std::shared_ptr<RenderPipelineManager>& renderPipelineManager,
-	const std::shared_ptr<RenderResourceManager>& resourceManager,
-	const RenderResourceRef<Device> device,
-	const RenderResourceRef<Instance> instance,
-	const uint32_t cubemapSize,
-	const VkFormat format)
-	: _device(device)
-	, _instance(instance)
-	, _renderPipelineManager(renderPipelineManager)
-	, _resourceManager(resourceManager)
-	, _cubemapSize(cubemapSize)
-	, _format(format)
+	const std::shared_ptr<RenderResourceManager>& resourceManager, const RenderResourceRef<Device> device, const RenderResourceRef<Instance> instance, uint32_t cubemapSize, VkFormat format) : _renderPipelineManager(renderPipelineManager),
+	_resourceManager(resourceManager), _device(device), _instance(instance), _cubemapSize(cubemapSize), _format(format)
 { }
 
 CubemapManager::~CubemapManager()
@@ -38,8 +23,7 @@ CubemapManager::~CubemapManager()
 	Cleanup();
 }
 
-void CubemapManager::Cleanup()
-{
+void CubemapManager::Cleanup() {
 	if (!_device) return;
 	vkDeviceWaitIdle(_device);
 	if (_indexBuffer._deviceBuffer != VK_NULL_HANDLE) {
@@ -54,37 +38,44 @@ void CubemapManager::Cleanup()
 		vkDestroyRenderPass(_device, _renderPass, nullptr);
 		_renderPass = VK_NULL_HANDLE;
 	}
+	if (_renderPassCpu != VK_NULL_HANDLE) {
+		vkDestroyRenderPass(_device, _renderPassCpu, nullptr);
+		_renderPassCpu = VK_NULL_HANDLE;
+	}
 	if (_graphicCommandPool != VK_NULL_HANDLE) {
 		vkDestroyCommandPool(_device, _graphicCommandPool, nullptr);
 		_graphicCommandPool = VK_NULL_HANDLE;
 	}
 }
 
-void CubemapManager::Initialize(const uint32_t cubemapSize)
+void CubemapManager::Initialize(uint32_t cubemapSize)
 {
 	if (!init) {
-		_cubemapSize = cubemapSize;
 		_descriptorPool = CreateRenderResource<DescriptorPool>(_device);
 		CreateCommandPool(_device->GetQueueFamilies()._graphics.value());
-		_renderPass = CreateRenderPass(_format);
+		_renderPass = CreateRenderPass(_format, false);
+		_renderPassCpu = CreateRenderPass(_format, true);
 		CreateDescriptorSetLayouts();
-		_cubemapPipelineHandle = CreateCubemapRenderPipeline();
-		_cubemapPipelineHitHandle = CreateCubemapRenderPipeline(true);
+		_cubemapPipelineHandle = CreateCubemapRenderPipeline(false);
+		_cubemapPipelineHandleCpu = CreateCubemapRenderPipeline(true);
+		_cubemapPipelineHitHandle = CreateCubemapRenderPipeline(false, true);
+		//SphereWeightInitialization(512);
 		init = true;
 	}
-	else if (cubemapSize != _cubemapSize) {
+	if(cubemapSize != _cubemapSize) {
 		_cubemapSize = cubemapSize;
 		_renderPipelineManager->ReleasePipeline(_cubemapPipelineHandle);
+		_renderPipelineManager->ReleasePipeline(_cubemapPipelineHandleCpu);
 		_renderPipelineManager->ReleasePipeline(_cubemapPipelineHitHandle);
-		_cubemapPipelineHandle = CreateCubemapRenderPipeline();
-		_cubemapPipelineHitHandle = CreateCubemapRenderPipeline(true);
+		_cubemapPipelineHandle = CreateCubemapRenderPipeline(false);
+		_cubemapPipelineHandleCpu = CreateCubemapRenderPipeline(true);
+		_cubemapPipelineHitHandle = CreateCubemapRenderPipeline(false, true);
 	}
 }
 
-VkRenderPass CubemapManager::CreateRenderPass(const VkFormat format)
-{
+VkRenderPass CubemapManager::CreateRenderPass(VkFormat format, bool cpuTransfer) {
 	VkRenderPass renderPass;
-
+	
 	VkAttachmentDescription colorAttachment{};
 	colorAttachment.format = format;
 	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -93,7 +84,10 @@ VkRenderPass CubemapManager::CreateRenderPass(const VkFormat format)
 	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	if(!cpuTransfer)
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	else
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
 	VkAttachmentDescription depthAttachment{};
 	depthAttachment.format = _device->FindDepthFormat();
@@ -103,7 +97,10 @@ VkRenderPass CubemapManager::CreateRenderPass(const VkFormat format)
 	depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+	if (!cpuTransfer)
+		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+	else
+		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 
 	VkAttachmentReference colorAttachmentRef{};
 	colorAttachmentRef.attachment = 0;
@@ -119,15 +116,14 @@ VkRenderPass CubemapManager::CreateRenderPass(const VkFormat format)
 	subpass.pColorAttachments = &colorAttachmentRef;
 	subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
-	// The depth peeling pass samples the depth the previous hit wrote, so the shader
-	// read has to be part of the dependency as well.
 	VkSubpassDependency dependency{};
 	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
 	dependency.dstSubpass = 0;
 	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
 	dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
 
 	std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
 	VkRenderPassCreateInfo renderPassInfo{};
@@ -145,8 +141,7 @@ VkRenderPass CubemapManager::CreateRenderPass(const VkFormat format)
 	return renderPass;
 }
 
-void CubemapManager::CreateDescriptorSetLayouts()
-{
+void CubemapManager::CreateDescriptorSetLayouts() {
 	VkDescriptorSetLayoutBinding layoutBinding{ };
 	layoutBinding.binding = 0;
 	layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -167,7 +162,7 @@ void CubemapManager::CreateDescriptorSetLayouts()
 	_depthHistoryLayout = _descriptorPool->CreateDescriptorSetLayout(depthHistoryBindings);
 }
 
-PipelineHandle CubemapManager::CreateCubemapRenderPipeline(const bool depthPeelPass)
+PipelineHandle CubemapManager::CreateCubemapRenderPipeline(bool cpuTransfer, bool depthPeelPass)
 {
 	VkVertexInputBindingDescription bindingDesc{};
 	bindingDesc.binding = 0;
@@ -214,7 +209,7 @@ PipelineHandle CubemapManager::CreateCubemapRenderPipeline(const bool depthPeelP
 	depthStencil.depthBoundsTestEnable = VK_FALSE;
 	depthStencil.stencilTestEnable = VK_FALSE;
 
-	// Multisample state
+	// Multisample state 
 	VkPipelineMultisampleStateCreateInfo msaa{};
 	msaa.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	msaa.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
@@ -241,9 +236,15 @@ PipelineHandle CubemapManager::CreateCubemapRenderPipeline(const bool depthPeelP
 	pushConstantRange.offset = 0;
 	pushConstantRange.size = sizeof(CubemapPushConstants);
 
+	VkRenderPass renderPass;
+	if(!cpuTransfer)
+		renderPass = _renderPass;
+	else
+		renderPass = _renderPassCpu;
+
 	// Build the pipeline
 	return _renderPipelineManager->BeginPipeline()
-		.SetRenderPass(_renderPass)
+		.SetRenderPass(renderPass)
 		.SetColorBlendAttachments(std::span(&colorBlendAttachment, 1))
 		.SetDepthStencilState(depthStencil)
 		.SetDescriptorSetLayouts(depthPeelPass ? std::span(descriptorSetLayouts) : std::span(descriptorSetLayouts.data(), size_t(1)))
@@ -320,8 +321,118 @@ void CubemapManager::CreateIndexBufferFromMesh()
 		indices.size() * sizeof(uint32_t));
 }
 
-void CubemapManager::CreateCommandPool(const uint32_t queueFamilyIndex)
+float CubemapManager::ComputeNearPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices)
 {
+	float minDist = std::numeric_limits<float>::max();
+	for (const auto& v : vertices) {
+		float dist = glm::length(v - camPos);
+		if (dist < minDist) minDist = dist;
+	}
+	return minDist * 0.95f;
+}
+
+float CubemapManager::ComputeFarPlane(const glm::vec3& camPos, const std::vector<glm::vec3>& vertices)
+{
+	float maxDist = 0.0f;
+	for (const auto& v : vertices) {
+		float dist = glm::length(v - camPos);
+		if (dist > maxDist) maxDist = dist;
+	}
+	return maxDist * 1.05f;
+}
+
+std::vector<CubemapVertex> CubemapManager::CreateCubemapVertexBuffer(const PolygonMesh& mesh)
+{
+	const auto& geom = mesh.GetGeometry();
+	const auto& positions = geom._positions;
+	const auto& indices = geom._indices;
+
+	std::vector<CubemapVertex> vertexBuffer;
+	vertexBuffer.reserve(indices.size());
+
+	for (size_t tri = 0; tri < indices.size() / 3; ++tri)
+	{
+		uint32_t i0 = indices[tri * 3 + 0];
+		uint32_t i1 = indices[tri * 3 + 1];
+		uint32_t i2 = indices[tri * 3 + 2];
+
+		vertexBuffer.push_back({ positions[i0], static_cast<uint32_t>(tri), 0 });
+		vertexBuffer.push_back({ positions[i1], static_cast<uint32_t>(tri), 1 });
+		vertexBuffer.push_back({ positions[i2], static_cast<uint32_t>(tri), 2 });
+	}
+
+	return vertexBuffer;
+}
+
+/*VkCommandBuffer CubemapManager::BeginOneTimeCommands() {
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool = _graphicCommandPool;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer cmd;
+	vkAllocateCommandBuffers(_device, &allocInfo, &cmd);
+
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	vkBeginCommandBuffer(cmd, &beginInfo);
+	return cmd;
+}
+
+void CubemapManager::EndOneTimeCommands(VkCommandBuffer cmd) {
+	vkEndCommandBuffer(cmd);
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &cmd;
+
+	VkQueue graphicsQueue;
+	vkGetDeviceQueue(_device, _device->GetQueueFamilies()._graphics.value(), 0, &graphicsQueue);
+	vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(graphicsQueue);
+	vkFreeCommandBuffers(_device, _graphicCommandPool, 1, &cmd);
+}
+*/
+
+/*void CubemapManager::DebugRenderCubemaps()
+{
+	// 1. Create render instance in DEBUG mode
+	CubemapRenderInstance instance(
+		_cubemapSize,
+		_format,
+		ComputeType::DEBUGCUBEMAPS
+	);F
+
+	// 3. Build work range
+	CubemapWorkRange range{};
+	range.first = 0;
+	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
+
+	// 4. Execute
+	//instance.DebugCubemaps(range);
+}
+
+void CubemapManager::DebugComputeCoordinates()
+{
+	// 1. Create render instance in DEBUG mode
+	CubemapRenderInstance instance(
+		_cubemapSize,
+		_format,
+		ComputeType::GPUSERIAL
+	);
+
+	// 3. Build work range
+	CubemapWorkRange range{};
+	range.first = 0;
+	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
+
+	// 4. Execute
+	//instance.DebugPMVC(range);
+}*/
+
+void CubemapManager::CreateCommandPool(uint32_t queueFamilyIndex) {
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolInfo.queueFamilyIndex = queueFamilyIndex;
@@ -332,70 +443,12 @@ void CubemapManager::CreateCommandPool(const uint32_t queueFamilyIndex)
 	}
 }
 
-void CubemapManager::EnsureInteriorDistanceTable()
-{
-	// The memo hash covers only vertex counts and face topology on purpose: cage vertex
-	// positions moving during deformation must not trigger a recompute, only topology
-	// changes (adding/removing cage vertices or faces) invalidate the table.
-	auto hashCombine = [](std::size_t& seed, std::size_t value)
-	{
-		seed ^= value + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-	};
-
-	std::size_t hash = 0;
-	hashCombine(hash, static_cast<std::size_t>(_cageMesh._vertices.rows()));
-	hashCombine(hash, static_cast<std::size_t>(_deformableMesh._vertices.rows()));
-	hashCombine(hash, static_cast<std::size_t>(_cageMesh._faces.rows()));
-	for (Eigen::Index i = 0; i < _cageMesh._faces.size(); ++i)
-	{
-		hashCombine(hash, static_cast<std::size_t>(*(_cageMesh._faces.data() + i)));
-	}
-
-	if (hash == _interiorDistanceTableHash && _interiorDetours.size() > 0)
-	{
-		LOG_DEBUG("Reusing cached interior detour table ({} cage x {} mesh vertices).",
-			_interiorDetours.rows(), _interiorDetours.cols());
-		return;
-	}
-
-	LOG_INFO("Computing heat-method interior detour table ({} cage x {} mesh vertices).",
-		_cageMesh._vertices.rows(), _deformableMesh._vertices.rows());
-	const auto start = std::chrono::steady_clock::now();
-
-	InteriorDistanceParams params;
-	computeInteriorDistances(_cageMesh._vertices, _cageMesh._faces, _deformableMesh._vertices, params, _interiorDetours);
-
-	// Store detours (interior minus Euclidean distance) instead of absolute distances:
-	// the shader adds the interpolated detour on top of the per-pixel rasterized hit
-	// distance, so wherever the cage is convex from the mesh vertex the weights reduce
-	// exactly to the Euclidean variant. Interpolating absolute cage-vertex distances
-	// would overestimate the hit distance mid-triangle on coarse cages.
-	for (Eigen::Index mesh = 0; mesh < _interiorDetours.cols(); ++mesh)
-	{
-		const Eigen::Vector3d meshPosition = _deformableMesh._vertices.row(mesh).leftCols<3>();
-		for (Eigen::Index cage = 0; cage < _interiorDetours.rows(); ++cage)
-		{
-			const Eigen::Vector3d cagePosition = _cageMesh._vertices.row(cage).leftCols<3>();
-			const float euclidean = static_cast<float>((meshPosition - cagePosition).norm());
-			_interiorDetours(cage, mesh) = std::max(0.f, _interiorDetours(cage, mesh) - euclidean);
-		}
-	}
-
-	_interiorDistanceTableHash = hash;
-
-	const auto end = std::chrono::steady_clock::now();
-	LOG_INFO("Interior detour table computed in {} ms.",
-		std::chrono::duration<double, std::milli>(end - start).count());
-}
-
 MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCoordinates(
+	PMVCComputeType computeType,
 	const bool useOffset,
+	const uint32_t targetCount,
 	const uint32_t hitCount,
-	const float alpha,
-	const float beta,
-	const float theta,
-	const bool useInteriorDistance)
-{
+	const bool omitNegative) {
 	assert(_device && "Device is null");
 	assert(_descriptorPool && "DescriptorPool is null");
 	assert(_resourceManager && "ResourceManager is null");
@@ -405,45 +458,19 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	CreateVertexBufferFromMesh();
 	CreateIndexBufferFromMesh();
 
-	// The offset variant weights by solid angle only, there is no distance in its
-	// formula for the interior distance to replace.
-	const Eigen::MatrixXf* interiorDetours = nullptr;
-	if (useInteriorDistance && useOffset)
-	{
-		LOG_WARN("Interior distance PMVC is not available with the offset (PMVCO) variant, using the offset weighting instead.");
-	}
-	else if (useInteriorDistance)
-	{
-		EnsureInteriorDistanceTable();
-		if (_interiorDetours.size() > 0)
-		{
-			interiorDetours = &_interiorDetours;
-		}
-	}
 
-	// The offset variant has no distance term to peel against, so it always runs with a
-	// single hit.
-	const uint32_t effectiveHitCount = useOffset ? 1u : std::max(1u, hitCount);
 
-	LOG_INFO("PMVC compute (Ring): hitCount={}, offset={}, interiorDistance={}, alpha={}, beta={}, theta={}",
-		effectiveHitCount,
-		useOffset,
-		interiorDetours != nullptr,
-		alpha,
-		beta,
-		theta);
 
 	const auto instanceInitStart = std::chrono::steady_clock::now();
 	CubemapRenderInstance instance(
+		*this,
 		_cubemapSize,
 		_format,
+		computeType,
 		useOffset,
-		PMVCSettings::kRingTargetCount,
-		effectiveHitCount,
-		alpha,
-		beta,
-		theta,
-		interiorDetours,
+		targetCount,
+		hitCount,
+		omitNegative,
 
 		_device,
 		_descriptorPool,
@@ -453,8 +480,11 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 		_cageMesh,
 		_deformableMesh,
 
+		_graphicCommandPool,
 		_renderPass,
+		_renderPassCpu,
 		_cubemapPipelineHandle,
+		_cubemapPipelineHandleCpu,
 		_cubemapPipelineHitHandle,
 
 		_matricesLayout,
@@ -465,20 +495,16 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	);
 	const auto instanceInitEnd = std::chrono::steady_clock::now();
 	const auto instanceInitMs = std::chrono::duration<double, std::milli>(instanceInitEnd - instanceInitStart).count();
-
 	CubemapWorkRange range{};
 	range.first = 0;
 	range.count = static_cast<uint32_t>(_deformableMesh._vertices.rows());
-
 	Eigen::MatrixXd weights;
 	instance.ComputeCoordinates(range, weights);
-
 	Eigen::MatrixXd M = weights;
 	Eigen::MatrixXd interpolatedWeights;
 	Eigen::MatrixXd psi;
 	std::vector<double> psiTri{ };
 	std::vector<Eigen::Vector4d> psiQuad{ };
-
 	return MeshComputeWeightsOperationResult{ std::move(M),
 		std::move(weights),
 		std::move(interpolatedWeights),

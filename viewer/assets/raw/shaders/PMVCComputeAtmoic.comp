@@ -1,0 +1,60 @@
+#version 450
+#extension GL_EXT_shader_atomic_float : require
+
+// Rendered barycentric + triangle index image
+layout(binding = 0) uniform sampler2DArray uBaryTex;
+
+// Triangle vertex index list (3 indices per triangle)
+layout(std430, binding = 1) readonly buffer VertexList {
+    uint vertexList[];
+};
+
+// Output λ values (one buffer per dispatch / cubemap)
+layout(std430, binding = 2) buffer LambdaOut {
+    float lambda[];
+};
+
+// Output wsum (single float per dispatch / cubemap)
+layout(std430, binding = 3) buffer WSumOut {
+    float wsum[];
+};
+
+// Solid angle lookup (per face)
+layout(binding = 4) uniform sampler2DArray uSolidAngleTex;
+
+// Depth cubemap (NEW)
+layout(binding = 5) uniform sampler2DArray uDepthTex;
+
+// Push constants
+layout(push_constant) uniform Params {
+    ivec2 uFaceSize;       // cubemap face resolution
+    int   uNumTriangles;
+} params;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+void main()
+{
+    uint x    = gl_GlobalInvocationID.x;
+    uint y    = gl_GlobalInvocationID.y;
+    uint face = gl_GlobalInvocationID.z; // 0..5
+
+    vec4 tex = texelFetch(uBaryTex, ivec3(x, y, face), 0);
+
+    uint tri = uint(tex.a * float(params.uNumTriangles) + 0.5);
+
+    float w = texelFetch(uSolidAngleTex, ivec3(x, y, face), 0).r;
+
+    // Triangle vertex indices
+    uint i0 = vertexList[tri * 3 + 0];
+    uint i1 = vertexList[tri * 3 + 1];
+    uint i2 = vertexList[tri * 3 + 2];
+
+    // Accumulate cage weights
+    atomicAdd(lambda[i0], tex.r * w);
+    atomicAdd(lambda[i1], tex.g * w);
+    atomicAdd(lambda[i2], tex.b * w);
+
+    // Accumulate normalization weight
+    atomicAdd(wsum[0], w);
+}

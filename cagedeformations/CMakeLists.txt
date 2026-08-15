@@ -21,7 +21,6 @@ set(${LIBRARY_NAME}_HEADERSdisc
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/LoadMesh.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/LoadFBX.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/InfluenceMap.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/InteriorDistance.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/Parametrization.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/WeightInterpolation.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/${LIBRARY_NAME}/somig.h
@@ -36,7 +35,6 @@ set(${LIBRARY_NAME}_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LoadMesh.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/LoadFBX.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/InfluenceMap.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/InteriorDistance.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Parametrization.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/WeightInterpolation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/somig.cpp)
@@ -103,19 +101,6 @@ if (APPLE)
         PRIVATE
         omp
     )
-endif()
-
-# Standalone validation harness for the heat-method interior distances; only needs Eigen,
-# so it stays buildable without the full dependency set of the library.
-option(CAGEDEFORMATIONS_BUILD_TESTS "Build the cagedeformations test executables" OFF)
-if (CAGEDEFORMATIONS_BUILD_TESTS)
-    add_executable(interiorDistanceTest
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/InteriorDistanceTest.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/InteriorDistance.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/globals.cpp)
-    target_include_directories(interiorDistanceTest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    target_compile_features(interiorDistanceTest PRIVATE cxx_std_17)
-    target_link_libraries(interiorDistanceTest PRIVATE Eigen3::Eigen)
 endif()
 
 # Required for CMAKE_INSTALL_* variables.

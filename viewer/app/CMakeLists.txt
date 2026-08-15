@@ -74,10 +74,12 @@ add_executable(${PROJECT_NAME}
     main.cpp
     Rendering/PMVC/CubemapRenderInstance.cpp
     Rendering/PMVC/CubemapManager.cpp
-    Rendering/PMVC/RingComputeStrategy.cpp
+    Rendering/PMVC/CpuComputeStrategy.cpp
+    Rendering/PMVC/GpuSerialComputeStrategy.h
+    Rendering/PMVC/GpuAtomicComputeStrategy.cpp
     Rendering/PMVC/SphereWeightCalculator.h
     Rendering/PMVC/ScopedCmdBuffer.cpp
-    ${IMGUI_BINDINGS})
+    ${IMGUI_BINDINGS} "Rendering/PMVC/DebugCubemapComputeStrategy.h" "Rendering/PMVC/DebugCubemapComputeStrategy.cpp" "Rendering/PMVC/GpuSerialComputeStrategy.cpp" "Rendering/PMVC/GpuMassivelyParallelComputeStrategy.h" "Rendering/PMVC/GpuMassivelyParallelComputeStrategy.cpp" "Rendering/PMVC/SphereWeightCalculator.h")
 
 
 target_compile_definitions(
