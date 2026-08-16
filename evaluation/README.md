@@ -86,9 +86,3 @@ fills during the run; they are never recomputed by the export. A coordinate setu
 not PMVC with `use_interior_distance=True` therefore has nothing to read. The generator
 still emits the pair, but writes `interiorDistanceMap: false` and records the reason in
 the manifest, so no config silently exports nothing.
-
-## `evaluation.py`
-
-`evaluation.py` is the older, unrelated evaluation path. It drives the `cageDeformation3D`
-command line binary, which has no PMVC or PMVCO options, and it does not currently parse
-(`IndentationError` at line 55). It is untouched by this generator.
