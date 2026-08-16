@@ -1,4 +1,5 @@
 #include <Editor/Editor.h>
+#include <Editor/EvaluationOptions.h>
 #include <Editor/Scene.h>
 #include <Input/InputSubsystem.h>
 #include <Mesh/Operations/MeshOperationSystem.h>
@@ -137,20 +138,81 @@ namespace
 		std::optional<float> _pmvcBeta;
 		std::optional<float> _pmvcTheta;
 		std::optional<bool> _pmvcUseInteriorDistance;
-		std::optional<std::vector<int32_t>> _vertices;
 
-		/// Also export the distance field color map ("distanceField") of the vertices the
-		/// influence map is exported for. "distanceFieldEuclidean" switches the export from
-		/// the interior distances to the Euclidean ones, "distanceFieldInterval" is the
-		/// isoline spacing in world units (unset spaces them automatically, zero draws
-		/// none), "distanceFieldEmphasis" emphasizes every n-th isoline and
-		/// "distanceFieldMax" fixes the normalization maximum so that the colors of
-		/// separate exports stay comparable.
-		std::optional<bool> _exportDistanceField;
-		std::optional<bool> _distanceFieldEuclidean;
+		/// The three color map exports are independent of each other and carry their own
+		/// vertex selection, so a single project can export all of them at once.
+		///
+		/// The influence map ("influenceMap") is exported for any number of marked cage
+		/// vertices ("influenceVertices"), while both distance maps are measured from
+		/// exactly one cage vertex each ("euclideanDistanceVertex" /
+		/// "interiorDistanceVertex").
+		///
+		/// The interior distances are read back from the table the interior distance PMVC
+		/// variant fills, so "interiorDistanceMap" only produces an export for a project
+		/// that runs with "useInteriorDistance".
+		std::optional<bool> _influenceMap;
+		std::optional<std::vector<int32_t>> _influenceVertices;
+		std::optional<bool> _euclideanDistanceMap;
+		std::optional<int32_t> _euclideanDistanceVertex;
+		std::optional<bool> _interiorDistanceMap;
+		std::optional<int32_t> _interiorDistanceVertex;
+
+		/// "distanceFieldInterval" is the isoline spacing in world units (unset spaces them
+		/// automatically, zero draws none), "distanceFieldEmphasis" emphasizes every n-th
+		/// isoline and "distanceFieldMax" fixes the normalization maximum so that the
+		/// colors of separate exports stay comparable. They apply to both distance maps.
 		std::optional<float> _distanceFieldInterval;
 		std::optional<int32_t> _distanceFieldEmphasis;
 		std::optional<float> _distanceFieldMax;
+
+		/// Superseded keys, kept so that hand written configs predating the three
+		/// independent toggles keep working: a shared "vertices" selection driving the
+		/// influence map, plus a "distanceField" toggle whose "distanceFieldEuclidean"
+		/// switch picked one of the two distance maps.
+		std::optional<std::vector<int32_t>> _vertices;
+		std::optional<bool> _exportDistanceField;
+		std::optional<bool> _distanceFieldEuclidean;
+
+		/// @return The cage vertices the influence map is exported for, if it is enabled.
+		[[nodiscard]] std::optional<std::vector<int32_t>> GetInfluenceVertices() const
+		{
+			const auto& vertices = _influenceVertices.has_value() ? _influenceVertices : _vertices;
+
+			// Without an explicit toggle the influence map follows the legacy behavior and
+			// is exported whenever a selection was given at all.
+			if (!_influenceMap.value_or(vertices.has_value()))
+			{
+				return std::nullopt;
+			}
+
+			return vertices;
+		}
+
+		/**
+		 * @return The single cage vertex a distance map is measured from, if it is enabled.
+		 * @param useEuclideanDistance Resolve the Euclidean map instead of the interior one.
+		 */
+		[[nodiscard]] std::optional<std::vector<int32_t>> GetDistanceFieldVertices(const bool useEuclideanDistance) const
+		{
+			const auto& toggle = useEuclideanDistance ? _euclideanDistanceMap : _interiorDistanceMap;
+			const auto& vertex = useEuclideanDistance ? _euclideanDistanceVertex : _interiorDistanceVertex;
+
+			if (toggle.value_or(false))
+			{
+				return vertex.has_value()
+					? std::optional<std::vector<int32_t>>(std::vector<int32_t> { vertex.value() })
+					: _vertices;
+			}
+
+			// The superseded keys select exactly one of the two maps rather than toggling
+			// them independently, so they only apply when the new toggle is absent.
+			if (toggle.has_value() || !_exportDistanceField.value_or(false))
+			{
+				return std::nullopt;
+			}
+
+			return (_distanceFieldEuclidean.value_or(false) == useEuclideanDistance) ? _vertices : std::nullopt;
+		}
 	};
 
 	struct EvaluationConfig
@@ -350,6 +412,16 @@ namespace
 			project._pmvcBeta = ExtractJsonFloatValue(objectText, "beta");
 			project._pmvcTheta = ExtractJsonFloatValue(objectText, "theta");
 			project._pmvcUseInteriorDistance = ExtractJsonBoolValue(objectText, "useInteriorDistance");
+
+			project._influenceMap = ExtractJsonBoolValue(objectText, "influenceMap");
+			project._influenceVertices = ExtractJsonIntArrayValue(objectText, "influenceVertices");
+			project._euclideanDistanceMap = ExtractJsonBoolValue(objectText, "euclideanDistanceMap");
+			project._euclideanDistanceVertex = ExtractJsonIntValue(objectText, "euclideanDistanceVertex");
+			project._interiorDistanceMap = ExtractJsonBoolValue(objectText, "interiorDistanceMap");
+			project._interiorDistanceVertex = ExtractJsonIntValue(objectText, "interiorDistanceVertex");
+
+			// The shared selection of the superseded schema, which the three maps fall back
+			// to when they carry no selection of their own.
 			project._vertices = ExtractJsonIntArrayValue(objectText, "vertices");
 			if (!project._vertices.has_value())
 			{
@@ -357,7 +429,7 @@ namespace
 			}
 			if (!project._vertices.has_value())
 			{
-				project._vertices = ExtractJsonIntArrayValue(objectText, "influenceVertices");
+				project._vertices = project._influenceVertices;
 			}
 			project._exportDistanceField = ExtractJsonBoolValue(objectText, "distanceField");
 			project._distanceFieldEuclidean = ExtractJsonBoolValue(objectText, "distanceFieldEuclidean");
@@ -387,6 +459,35 @@ namespace
 		{
 			LOG_WARN("Skipping project {} due to invalid hitCount {} (must be > 0).", projectIndex, project._pmvcHitCount.value());
 			return false;
+		}
+
+		if (project._influenceMap.value_or(false) && !project.GetInfluenceVertices().has_value())
+		{
+			LOG_WARN("Skipping project {} because 'influenceMap' is enabled but no 'influenceVertices' were given.", projectIndex);
+			return false;
+		}
+
+		// Both distance maps are measured from exactly one cage vertex, so an enabled map
+		// without a vertex of its own (and without a selection to fall back to) cannot be
+		// exported at all.
+		if (project._euclideanDistanceMap.value_or(false) && !project.GetDistanceFieldVertices(true).has_value())
+		{
+			LOG_WARN("Skipping project {} because 'euclideanDistanceMap' is enabled but no 'euclideanDistanceVertex' was given.", projectIndex);
+			return false;
+		}
+
+		if (project._interiorDistanceMap.value_or(false) && !project.GetDistanceFieldVertices(false).has_value())
+		{
+			LOG_WARN("Skipping project {} because 'interiorDistanceMap' is enabled but no 'interiorDistanceVertex' was given.", projectIndex);
+			return false;
+		}
+
+		// The interior distances are read back from the table the interior distance PMVC
+		// variant fills, so this combination would export nothing at all.
+		if (project._interiorDistanceMap.value_or(false) && !project._pmvcUseInteriorDistance.value_or(false))
+		{
+			LOG_WARN("Project {} enables 'interiorDistanceMap' but does not run with 'useInteriorDistance'. "
+				"No interior distances will have been computed, so the export will be skipped.", projectIndex);
 		}
 
 		return true;
@@ -500,7 +601,17 @@ void Editor::StartEvaluation()
 	constexpr auto kEvaluationConfig = "projects.json";
 
 	const auto evaluationRoot = std::filesystem::absolute(kEvaluationRoot);
-	const auto configPath = evaluationRoot / kEvaluationConfig;
+
+	// A generated config is run without copying it over the default one, either with
+	// "--eval-config <path>" or with the CAGEMODELER_EVAL_CONFIG environment variable, so
+	// that a batch run can iterate over the generated manifest. Paths inside the config
+	// stay relative to the evaluation directory regardless of where the config itself is.
+	auto configPath = evaluationRoot / kEvaluationConfig;
+	if (const auto configOverride = EvaluationOptions::GetEvaluationConfigPath(); !configOverride.empty())
+	{
+		configPath = std::filesystem::absolute(configOverride);
+	}
+
 	if (!std::filesystem::exists(configPath))
 	{
 		LOG_WARN("Evaluation config '{}' does not exist. Skipping evaluation run.", configPath.string());
@@ -523,6 +634,13 @@ void Editor::StartEvaluation()
 	}
 
 	const auto timingOutputPath = evaluationRoot / parsedConfig->_timingsFile;
+
+	// A generated config points its timings at a per-config file inside a results
+	// directory, which only exists once something has created it.
+	if (timingOutputPath.has_parent_path())
+	{
+		std::filesystem::create_directories(timingOutputPath.parent_path());
+	}
 
 #ifdef NDEBUG
 	constexpr auto buildType = "Release";
@@ -557,14 +675,10 @@ void Editor::StartEvaluation()
 	for (std::size_t i = 0; i < parsedConfig->_projects.size(); ++i)
 	{
 		const auto& project = parsedConfig->_projects[i];
+		// A single invalid project skips that project, it does not abandon the rest of the
+		// batch. ValidateEvaluationProjectConfig has already logged why.
 		if (!ValidateEvaluationProjectConfig(project, i))
 		{
-			//LOG_ERROR("Failed to parse evaluation config '{}'.", configPath.string());
-			return;
-		}
-		if (project._mesh.empty() || project._cage.empty() || project._deformedCage.empty())
-		{
-			LOG_WARN("Skipping project {} due to missing required file keys (mesh/cage/deformedCage).", i);
 			continue;
 		}
 
@@ -583,6 +697,24 @@ void Editor::StartEvaluation()
 		_projectModel->_meshFilepath = evaluationRoot / project._mesh;
 		_projectModel->_cageFilepath = evaluationRoot / project._cage;
 		_projectModel->_deformedCageFilepath = evaluationRoot / project._deformedCage;
+
+		// Reset rather than inherit: leaving the embedding of the previous project (or of
+		// the startup project) in place would silently evaluate the wrong one.
+		_projectModel->_embeddingFilepath = project._embedding.has_value()
+			? std::optional<std::filesystem::path>(evaluationRoot / project._embedding.value())
+			: std::nullopt;
+		if (DeformationTypeHelpers::RequiresEmbedding(*deformationType) && !_projectModel->_embeddingFilepath.has_value())
+		{
+			LOG_WARN("Project '{}' uses coordinateType '{}', which requires an embedding, but the config has no 'embedding' key.",
+				projectName,
+				project._coordinateType);
+		}
+
+		if (project._samples.has_value())
+		{
+			_projectModel->_numSamples = project._samples.value();
+		}
+
 		_projectModel->_pmvcHitCount = project._pmvcHitCount.value_or(1);
 		_projectModel->_pmvcAlpha = project._pmvcAlpha.value_or(1.0f);
 		_projectModel->_pmvcBeta = project._pmvcBeta.value_or(-1.0f);
@@ -661,42 +793,47 @@ void Editor::StartEvaluation()
 		ExportWeights(projectOutputDir / "weights.dmat");
 		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
 		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
-		if (project._vertices.has_value())
+		if (const auto influenceVertices = project.GetInfluenceVertices(); influenceVertices.has_value())
 		{
-			LOG_DEBUG("Exporting influence map for project '{}' with {} vertices.", projectName, project._vertices->size());
-			ExportInfluenceColorMap(projectOutputDir / "influence_map.obj", project._vertices);
-			WriteSelectedVerticesFile(projectOutputDir / "influence_map_vertices.txt", project._vertices.value());
+			LOG_DEBUG("Exporting influence map for project '{}' with {} vertices.", projectName, influenceVertices->size());
+			ExportInfluenceColorMap(projectOutputDir / "influence_map.obj", influenceVertices);
+			WriteSelectedVerticesFile(projectOutputDir / "influence_map_vertices.txt", influenceVertices.value());
+		}
 
-			// The distance field color map follows the influence map: same format, same
-			// selection, only the visualized quantity differs.
-			if (project._exportDistanceField.value_or(false))
+		// The two distance maps follow the influence map (same vertex colored format) but
+		// are toggled independently of it and of each other, each measured from its own
+		// single cage vertex, so one project can export both.
+		for (const auto useEuclideanDistance : { true, false })
+		{
+			const auto distanceVertices = project.GetDistanceFieldVertices(useEuclideanDistance);
+			if (!distanceVertices.has_value())
 			{
-				const auto useEuclideanDistance = project._distanceFieldEuclidean.value_or(false);
-
-				// Keeps the defaults of the color map (automatic isoline spacing, normalized
-				// against the maximum of the data set) for every key the project omits.
-				DistanceColorMapParams colorMapParams;
-				if (project._distanceFieldInterval.has_value())
-				{
-					colorMapParams.contourInterval = project._distanceFieldInterval.value();
-				}
-				if (project._distanceFieldEmphasis.has_value())
-				{
-					colorMapParams.contourEmphasisEvery = project._distanceFieldEmphasis.value();
-				}
-				if (project._distanceFieldMax.has_value())
-				{
-					colorMapParams.maxDistance = project._distanceFieldMax.value();
-				}
-
-				const std::string fileStem = useEuclideanDistance ? "euclidean_distance_map" : "interior_distance_map";
-				LOG_DEBUG("Exporting the {} distance field for project '{}'.", useEuclideanDistance ? "euclidean" : "interior", projectName);
-				ExportDistanceFieldColorMap(projectOutputDir / (fileStem + ".obj"),
-					useEuclideanDistance,
-					project._vertices,
-					std::move(colorMapParams));
-				WriteSelectedVerticesFile(projectOutputDir / (fileStem + "_vertices.txt"), project._vertices.value());
+				continue;
 			}
+
+			// Keeps the defaults of the color map (automatic isoline spacing, normalized
+			// against the maximum of the data set) for every key the project omits.
+			DistanceColorMapParams colorMapParams;
+			if (project._distanceFieldInterval.has_value())
+			{
+				colorMapParams.contourInterval = project._distanceFieldInterval.value();
+			}
+			if (project._distanceFieldEmphasis.has_value())
+			{
+				colorMapParams.contourEmphasisEvery = project._distanceFieldEmphasis.value();
+			}
+			if (project._distanceFieldMax.has_value())
+			{
+				colorMapParams.maxDistance = project._distanceFieldMax.value();
+			}
+
+			const std::string fileStem = useEuclideanDistance ? "euclidean_distance_map" : "interior_distance_map";
+			LOG_DEBUG("Exporting the {} distance field for project '{}'.", useEuclideanDistance ? "euclidean" : "interior", projectName);
+			ExportDistanceFieldColorMap(projectOutputDir / (fileStem + ".obj"),
+				useEuclideanDistance,
+				distanceVertices,
+				std::move(colorMapParams));
+			WriteSelectedVerticesFile(projectOutputDir / (fileStem + "_vertices.txt"), distanceVertices.value());
 		}
 		const auto meshVertexCount = _projectData
 			? std::optional<int32_t>(static_cast<int32_t>(_projectData->_mesh._vertices.rows()))

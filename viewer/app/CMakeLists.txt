@@ -27,6 +27,7 @@ add_executable(${PROJECT_NAME}
     Core/Subsystem.cpp
     Logging/LoggingSubsystem.cpp
     Editor/Editor.cpp
+    Editor/EvaluationOptions.cpp
     Editor/Scene.cpp
     Editor/Gizmo.cpp
     UI/WindowSubsystem.cpp

@@ -37,3 +37,10 @@ build/
 # IDE specific
 .idea/
 .vscode/
+# Generated evaluation configs and their results
+evaluation/generated/
+evaluation/results/
+
+# Python
+__pycache__/
+*.pyc
