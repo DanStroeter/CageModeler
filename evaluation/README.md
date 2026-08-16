@@ -20,14 +20,29 @@ build of the viewer.
 3. Run one config, or loop over the manifest:
 
    ```sh
-   cageDeformationViewer --eval-config evaluation/generated/<name>.json
+   ./CageModeler --eval-config evaluation/generated/<name>.json
    # or
-   CAGEMODELER_EVAL_CONFIG=evaluation/generated/<name>.json cageDeformationViewer
+   CAGEMODELER_EVAL_CONFIG=evaluation/generated/<name>.json ./CageModeler
    ```
 
    Without an override the viewer falls back to `evaluation/projects.json`.
 
 Use `--dry-run` to validate the configuration without writing anything.
+
+### Working directory
+
+The viewer resolves `evaluation` relative to its working directory, and the mesh paths
+inside a config are relative to that `evaluation` directory in turn. It therefore has to
+run from the directory holding both `assets/` and `evaluation/`, which is where CMake puts
+the executable and the packaged meshes:
+
+```sh
+cd build/<preset>/bin/viewer/app
+ln -s ../../../../../evaluation evaluation      # once, the build does not copy it
+```
+
+The evaluation runs during startup, so launching the viewer with a config in place starts
+it immediately. A missing config is logged and skipped rather than being an error.
 
 ## Configuration
 
@@ -86,3 +101,21 @@ fills during the run; they are never recomputed by the export. A coordinate setu
 not PMVC with `use_interior_distance=True` therefore has nothing to read. The generator
 still emits the pair, but writes `interiorDistanceMap: false` and records the reason in
 the manifest, so no config silently exports nothing.
+
+## Output
+
+Per config, below the `evaluation` directory:
+
+```
+results/timings_<stem>.json                     one row per project: status, stage timings, vertex counts
+results/<stem>/weights.dmat                     the computed weights
+results/<stem>/deformed_cage.obj
+results/<stem>/deformed_mesh.obj
+results/<stem>/influence_map.obj                vertex coloured, if influenceMap is on
+results/<stem>/influence_map_vertices.txt       the selection it was exported for
+results/<stem>/euclidean_distance_map.obj       if euclideanDistanceMap is on
+results/<stem>/interior_distance_map.obj        if interiorDistanceMap is on
+```
+
+Each color map is written next to a `_vertices.txt` listing the cage vertices it was
+exported for, so an export can be traced back to its selection.
