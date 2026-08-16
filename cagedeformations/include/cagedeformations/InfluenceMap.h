@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <string>
 #include <vector>
 #include <Eigen/Geometry>
@@ -21,18 +20,21 @@ Eigen::Vector3d viridisToRGB(double t);
  * Settings of the distance field color map. The isolines are drawn on the unnormalized
  * distances, so they keep counting in world units when the colors saturate against a
  * fixed normalization maximum.
+ *
+ * Both thresholds are plain doubles instead of optionals because this header is also
+ * compiled as C++14 by the library and the command line tool.
  */
 struct DistanceColorMapParams
 {
-	/// Normalization maximum of the color gradient. Unset normalizes against the largest
-	/// distance of the exported field, which makes the colors of a single export easy to
-	/// read but not comparable across exports. Set it to keep separate exports comparable.
-	std::optional<double> maxDistance;
+	/// Normalization maximum of the color gradient. Zero (or less) normalizes against the
+	/// largest distance of the exported field, which makes the colors of a single export
+	/// easy to read but not comparable across exports. A positive value keeps separate
+	/// exports comparable.
+	double maxDistance = 0.;
 
-	/// Isoline spacing in world units (the units of the exported vertices). Unset spaces
-	/// the isolines so that about kAutoContourCount of them cover the normalization range,
-	/// zero draws no isolines at all.
-	std::optional<double> contourInterval;
+	/// Isoline spacing in world units (the units of the exported vertices). A negative
+	/// value spaces about 20 isolines over the normalization range, zero draws none.
+	double contourInterval = -1.;
 
 	/// Every n-th isoline is emphasized (drawn twice as thick and in a deeper stroke) so
 	/// the bands in between stay countable. Values below two emphasize no isoline.
@@ -40,9 +42,6 @@ struct DistanceColorMapParams
 
 	/// Written into the OBJ header comment to identify the exported field.
 	std::string label;
-
-	/// Number of isolines the automatic spacing aims for over the normalization range.
-	static constexpr int kAutoContourCount = 20;
 };
 
 /**
@@ -61,10 +60,10 @@ void write_influence_color_map_OBJ(const std::string& file_name, const Eigen::Ma
  * overlaid with isolines every DistanceColorMapParams::contourInterval world units.
  *
  * The isolines are baked into the vertex colors, so their width follows the local mesh
- * resolution: a vertex is part of an isoline when its distance is within half a vertex
- * spacing (a full spacing for the emphasized ones) of a multiple of the interval, which
- * keeps the lines closed on coarse meshes without flooding fine ones. Distance fields
- * have a unit gradient, so that band is about one vertex wide either way.
+ * resolution: a vertex is part of an isoline when its distance is within three quarters of
+ * a vertex spacing (one and a half for the emphasized ones) of a multiple of the interval,
+ * which keeps the lines closed on coarse meshes without flooding fine ones. Distance
+ * fields have a unit gradient, so that band stays about one vertex wide either way.
  *
  * @param distances One distance per vertex of V, in the units of V.
  */

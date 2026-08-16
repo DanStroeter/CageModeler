@@ -673,6 +673,8 @@ void Editor::StartEvaluation()
 			{
 				const auto useEuclideanDistance = project._distanceFieldEuclidean.value_or(false);
 
+				// Keeps the defaults of the color map (automatic isoline spacing, normalized
+				// against the maximum of the data set) for every key the project omits.
 				DistanceColorMapParams colorMapParams;
 				if (project._distanceFieldInterval.has_value())
 				{

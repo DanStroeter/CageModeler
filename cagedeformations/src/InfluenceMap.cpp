@@ -129,6 +129,9 @@ namespace
 	constexpr double kMaxContourHalfWidthInIntervals = 0.2;
 	constexpr double kMaxEmphasizedContourHalfWidthInIntervals = 0.35;
 
+	/// Number of isolines the automatic spacing aims for over the normalization range.
+	constexpr int kAutoContourCount = 20;
+
 	/// Local vertex spacing (relative to the interval) up to which the mesh can still
 	/// resolve the isolines. Below that resolution the vertices alias against the isolines
 	/// instead of sampling them, so no line is drawn at all rather than a smeared one.
@@ -209,9 +212,12 @@ void write_distance_color_map_OBJ(const std::string& file_name, const Eigen::Mat
 
 	// Normalizing against the maximum of the data set makes a single export easy to read,
 	// a fixed maximum keeps separate exports comparable.
-	const double normalizationMax = params.maxDistance.value_or(dataMax);
+	const bool hasFixedMax = (params.maxDistance > 0.);
+	const double normalizationMax = hasFixedMax ? params.maxDistance : dataMax;
 	const double safeNormalizationMax = (normalizationMax > 0.) ? normalizationMax : 1.;
-	const double interval = params.contourInterval.value_or(safeNormalizationMax / DistanceColorMapParams::kAutoContourCount);
+	const double interval = (params.contourInterval < 0.)
+		? (safeNormalizationMax / kAutoContourCount)
+		: params.contourInterval;
 	const int emphasisEvery = params.contourEmphasisEvery;
 
 	Eigen::MatrixXd V_colors(V.rows(), 3);
@@ -250,7 +256,7 @@ void write_distance_color_map_OBJ(const std::string& file_name, const Eigen::Mat
 	std::vector<std::string> headerComments;
 	headerComments.push_back("Distance field color map" + (params.label.empty() ? std::string() : ": " + params.label));
 	headerComments.push_back("Gradient: viridis over [0, " + formatValue(safeNormalizationMax) + "] ("
-		+ (params.maxDistance.has_value() ? "fixed maximum" : "maximum of the data set") + ")");
+		+ (hasFixedMax ? "fixed maximum" : "maximum of the data set") + ")");
 	headerComments.push_back("Largest distance in the data set: " + formatValue(dataMax));
 	headerComments.push_back(interval > 0.
 		? "Isolines: every " + formatValue(interval) + " world units"
