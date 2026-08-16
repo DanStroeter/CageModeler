@@ -4,6 +4,7 @@
 #include <Mesh/Operations/MeshOperationSystem.h>
 #include <Mesh/Operations/MeshComputeDeformationOperation.h>
 #include <Mesh/Operations/MeshExportInfluenceMapOperation.h>
+#include <Mesh/Operations/MeshExportDistanceFieldOperation.h>
 #include <Mesh/Operations/MeshComputeInfluenceMapOperation.h>
 #include <Mesh/Operations/MeshExportWeightsOperation.h>
 #include <Mesh/Operations/MeshComputeWeightsOperation.h>
@@ -137,6 +138,19 @@ namespace
 		std::optional<float> _pmvcTheta;
 		std::optional<bool> _pmvcUseInteriorDistance;
 		std::optional<std::vector<int32_t>> _vertices;
+
+		/// Also export the distance field color map ("distanceField") of the vertices the
+		/// influence map is exported for. "distanceFieldEuclidean" switches the export from
+		/// the interior distances to the Euclidean ones, "distanceFieldInterval" is the
+		/// isoline spacing in world units (unset spaces them automatically, zero draws
+		/// none), "distanceFieldEmphasis" emphasizes every n-th isoline and
+		/// "distanceFieldMax" fixes the normalization maximum so that the colors of
+		/// separate exports stay comparable.
+		std::optional<bool> _exportDistanceField;
+		std::optional<bool> _distanceFieldEuclidean;
+		std::optional<float> _distanceFieldInterval;
+		std::optional<int32_t> _distanceFieldEmphasis;
+		std::optional<float> _distanceFieldMax;
 	};
 
 	struct EvaluationConfig
@@ -209,6 +223,24 @@ namespace
 		}
 
 		return values;
+	}
+
+	/// Writes the vertex indices a color map was exported for next to the export itself, so
+	/// it can be traced back to its selection.
+	void WriteSelectedVerticesFile(const std::filesystem::path& filepath, const std::vector<int32_t>& selectedVertices)
+	{
+		std::ofstream verticesOutput(filepath, std::ios::out | std::ios::trunc);
+		if (!verticesOutput.is_open())
+		{
+			LOG_WARN("Unable to write the selected vertices file '{}'.", filepath.string());
+
+			return;
+		}
+
+		for (const auto vertexIdx : selectedVertices)
+		{
+			verticesOutput << vertexIdx << "\n";
+		}
 	}
 
 	[[nodiscard]] std::vector<std::string> ExtractTopLevelObjects(const std::string& arrayText)
@@ -327,6 +359,11 @@ namespace
 			{
 				project._vertices = ExtractJsonIntArrayValue(objectText, "influenceVertices");
 			}
+			project._exportDistanceField = ExtractJsonBoolValue(objectText, "distanceField");
+			project._distanceFieldEuclidean = ExtractJsonBoolValue(objectText, "distanceFieldEuclidean");
+			project._distanceFieldInterval = ExtractJsonFloatValue(objectText, "distanceFieldInterval");
+			project._distanceFieldEmphasis = ExtractJsonIntValue(objectText, "distanceFieldEmphasis");
+			project._distanceFieldMax = ExtractJsonFloatValue(objectText, "distanceFieldMax");
 			config._projects.push_back(std::move(project));
 		}
 		return config;
@@ -628,18 +665,35 @@ void Editor::StartEvaluation()
 		{
 			LOG_DEBUG("Exporting influence map for project '{}' with {} vertices.", projectName, project._vertices->size());
 			ExportInfluenceColorMap(projectOutputDir / "influence_map.obj", project._vertices);
+			WriteSelectedVerticesFile(projectOutputDir / "influence_map_vertices.txt", project._vertices.value());
 
-			std::ofstream selectedVerticesOutput(projectOutputDir / "influence_map_vertices.txt", std::ios::out | std::ios::trunc);
-			if (!selectedVerticesOutput.is_open())
+			// The distance field color map follows the influence map: same format, same
+			// selection, only the visualized quantity differs.
+			if (project._exportDistanceField.value_or(false))
 			{
-				LOG_WARN("Unable to write influence map vertices file for project '{}'.", projectName);
-			}
-			else
-			{
-				for (const auto vertexIdx : project._vertices.value())
+				const auto useEuclideanDistance = project._distanceFieldEuclidean.value_or(false);
+
+				DistanceColorMapParams colorMapParams;
+				if (project._distanceFieldInterval.has_value())
 				{
-					selectedVerticesOutput << vertexIdx << "\n";
+					colorMapParams.contourInterval = project._distanceFieldInterval.value();
 				}
+				if (project._distanceFieldEmphasis.has_value())
+				{
+					colorMapParams.contourEmphasisEvery = project._distanceFieldEmphasis.value();
+				}
+				if (project._distanceFieldMax.has_value())
+				{
+					colorMapParams.maxDistance = project._distanceFieldMax.value();
+				}
+
+				const std::string fileStem = useEuclideanDistance ? "euclidean_distance_map" : "interior_distance_map";
+				LOG_DEBUG("Exporting the {} distance field for project '{}'.", useEuclideanDistance ? "euclidean" : "interior", projectName);
+				ExportDistanceFieldColorMap(projectOutputDir / (fileStem + ".obj"),
+					useEuclideanDistance,
+					project._vertices,
+					std::move(colorMapParams));
+				WriteSelectedVerticesFile(projectOutputDir / (fileStem + "_vertices.txt"), project._vertices.value());
 			}
 		}
 		const auto meshVertexCount = _projectData
@@ -810,6 +864,26 @@ void Editor::RecordUI()
 						if (filepath.has_value())
 						{
 							ExportInfluenceColorMap(filepath.value());
+						}
+					}
+
+					if (ImGui::MenuItem("Interior Distance Color Map...", nullptr))
+					{
+						const auto filepath = UIHelpers::PresentExportFilePopup({ { "Mesh (.obj)", "obj" } }, "interior_distance_map.obj");
+
+						if (filepath.has_value())
+						{
+							ExportDistanceFieldColorMap(filepath.value(), false);
+						}
+					}
+
+					if (ImGui::MenuItem("Euclidean Distance Color Map...", nullptr))
+					{
+						const auto filepath = UIHelpers::PresentExportFilePopup({ { "Mesh (.obj)", "obj" } }, "euclidean_distance_map.obj");
+
+						if (filepath.has_value())
+						{
+							ExportDistanceFieldColorMap(filepath.value(), true);
 						}
 					}
 
@@ -2085,6 +2159,49 @@ void Editor::ExportInfluenceColorMap(std::filesystem::path filepath,
 		std::move(weights),
 		_projectData->_modelVerticesOffset,
 		_projectData->CanInterpolateWeights());
+}
+
+void Editor::ExportDistanceFieldColorMap(std::filesystem::path filepath,
+	const bool useEuclideanDistance,
+	std::optional<std::vector<int32_t>> selectedVertices,
+	DistanceColorMapParams colorMapParams) const
+{
+	CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
+	if (!selectedVertices.has_value() && !_projectData->_parametrization.has_value())
+	{
+		LOG_WARN("Skipping distance field export because parametrization data is missing and no selected vertices were provided.");
+
+		return;
+	}
+
+	// Only the interior distances have to be read from somewhere, the Euclidean ones follow
+	// from the vertex positions alone.
+	const Eigen::MatrixXf* interiorDetours = nullptr;
+	if (!useEuclideanDistance)
+	{
+		// The interior distances are read back from the table the interior distance PMVC
+		// variant filled, an empty table means the field does not exist yet.
+		interiorDetours = (_cubemapRenderer != nullptr) ? &_cubemapRenderer->GetInteriorDetours() : nullptr;
+
+		if (interiorDetours == nullptr || interiorDetours->size() == 0)
+		{
+			LOG_WARN("Skipping interior distance field export because no interior distances have been computed for this project. "
+				"Run the project with the interior distance PMVC variant first, or export the euclidean distance field instead.");
+
+			return;
+		}
+	}
+
+	auto parametrization = _projectData->_parametrization.value_or(Parametrization { });
+
+	_meshOperationSystem->ExecuteOperation<MeshExportDistanceFieldOperation>(
+		_projectData->_mesh,
+		_projectData->_cage,
+		std::move(parametrization),
+		std::move(selectedVertices),
+		std::move(filepath),
+		interiorDetours,
+		std::move(colorMapParams));
 }
 
 void Editor::OnComputeInfluenceColorMap(const bool shouldRenderInfluenceMap) const

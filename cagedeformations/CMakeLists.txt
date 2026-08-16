@@ -116,6 +116,14 @@ if (CAGEDEFORMATIONS_BUILD_TESTS)
     target_include_directories(interiorDistanceTest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     target_compile_features(interiorDistanceTest PRIVATE cxx_std_17)
     target_link_libraries(interiorDistanceTest PRIVATE Eigen3::Eigen)
+
+    # Validation harness for the distance field color map, Eigen only as well.
+    add_executable(distanceColorMapTest
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/DistanceColorMapTest.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/InfluenceMap.cpp)
+    target_include_directories(distanceColorMapTest PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_features(distanceColorMapTest PRIVATE cxx_std_17)
+    target_link_libraries(distanceColorMapTest PRIVATE Eigen3::Eigen)
 endif()
 
 # Required for CMAKE_INSTALL_* variables.

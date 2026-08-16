@@ -80,6 +80,14 @@ public:
 	void SetCage(const EigenMesh& mesh) { _cageMesh = mesh; }
 	void SetMesh(const EigenMesh& mesh) { _deformableMesh = mesh; }
 
+	/**
+	 * Read-only access to the memoized interior detour table (rows = cage vertices, cols =
+	 * mesh vertices, each entry the interior distance minus the Euclidean distance). It is
+	 * empty until an interior-distance PMVC computation has filled it, so a reader can tell
+	 * whether the field exists without triggering a computation of its own.
+	 */
+	[[nodiscard]] const Eigen::MatrixXf& GetInteriorDetours() const { return _interiorDetours; }
+
 private:
 	//init functions:
 	VkRenderPass CreateRenderPass(VkFormat format);

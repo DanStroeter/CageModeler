@@ -11,6 +11,8 @@
 #include <Tools/Tool.h>
 #include <Rendering//PMVC/CubemapRenderInstance.h>
 
+#include <cagedeformations/InfluenceMap.h>
+
 #include <future>
 #include <optional>
 #include <vector>
@@ -124,6 +126,25 @@ private:
 	 */
 	void ExportInfluenceColorMap(std::filesystem::path filepath,
 		std::optional<std::vector<int32_t>> selectedVertices = std::nullopt) const;
+
+	/**
+	 * Exports the distance field from the selected cage vertex to every mesh vertex as an
+	 * .OBJ file, following the influence color map: same vertex colored format, same way of
+	 * selecting the point the field is measured from.
+	 *
+	 * The interior distances are read back from the table the interior-distance PMVC
+	 * variant has already computed, they are never recomputed here. The Euclidean variant
+	 * is the debugging counterpart and runs on any project.
+	 *
+	 * @param filepath A filepath for the output .OBJ file.
+	 * @param useEuclideanDistance Export the Euclidean distance field instead of the interior one.
+	 * @param selectedVertices The cage vertex to measure from, defaults to the parametrization.
+	 * @param colorMapParams Normalization and isoline settings of the color map.
+	 */
+	void ExportDistanceFieldColorMap(std::filesystem::path filepath,
+		const bool useEuclideanDistance,
+		std::optional<std::vector<int32_t>> selectedVertices = std::nullopt,
+		DistanceColorMapParams colorMapParams = { }) const;
 
 	/**
 	 * Exports the weights as a .DMAT file.

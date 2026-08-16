@@ -4,23 +4,7 @@
 
 void MeshExportInfluenceMapOperation::Execute()
 {
-	std::vector<int> controlVerticesIdx;
-	if (_params._selectedVertices.has_value())
-	{
-		controlVerticesIdx.reserve(_params._selectedVertices->size());
-		for (const auto vertexIdx : _params._selectedVertices.value())
-		{
-			controlVerticesIdx.push_back(vertexIdx);
-		}
-	}
-	else
-	{
-		controlVerticesIdx.reserve(_params._parametrization.translations_per_vertex.size());
-		for (const auto& it : _params._parametrization.translations_per_vertex)
-		{
-			controlVerticesIdx.push_back(it.first);
-		}
-	}
+	const auto controlVerticesIdx = ResolveControlVertexIndices(_params._selectedVertices, _params._parametrization);
 
 	bool usesSomigliana = usesSomigliana = (_params._deformationType == DeformationType::Somigliana);
 

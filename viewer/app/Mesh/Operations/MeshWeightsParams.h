@@ -8,6 +8,9 @@
 #include <Eigen/Core>
 #include <LBC/DataSetup.h>
 
+#include <optional>
+#include <vector>
+
 enum class DeformationType : uint8_t
 {
 	MVC,
@@ -110,6 +113,36 @@ struct DeformationTypeHelpers
 		return deformationType == DeformationType::LBC || deformationType == DeformationType::Harmonic || deformationType == DeformationType::BBW;
 	}
 };
+
+/**
+ * Resolves the cage vertices an export is centered on: the explicit selection when one was
+ * made, otherwise every vertex the parametrization translates. Shared by the influence
+ * color map and the distance field color map so both are driven by the same selection.
+ */
+[[nodiscard]] inline std::vector<int> ResolveControlVertexIndices(const std::optional<std::vector<int32_t>>& selectedVertices,
+	const Parametrization& parametrization)
+{
+	std::vector<int> controlVerticesIdx;
+
+	if (selectedVertices.has_value())
+	{
+		controlVerticesIdx.reserve(selectedVertices->size());
+		for (const auto vertexIdx : selectedVertices.value())
+		{
+			controlVerticesIdx.push_back(vertexIdx);
+		}
+	}
+	else
+	{
+		controlVerticesIdx.reserve(parametrization.translations_per_vertex.size());
+		for (const auto& it : parametrization.translations_per_vertex)
+		{
+			controlVerticesIdx.push_back(it.first);
+		}
+	}
+
+	return controlVerticesIdx;
+}
 
 template <typename Scalar, int Rows, int Cols>
 struct std::hash<Eigen::Matrix<Scalar, Rows, Cols>>
