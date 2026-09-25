@@ -920,6 +920,67 @@ void testPhase6MultiHit()
 		"zero detours reduce the interior variant exactly to the Euclidean multi-hit weights");
 }
 
+/**
+ * The invariants must not depend on the peeling depth. Every ray is normalized over the
+ * hits it actually has, so truncating a ray that crosses the cage more often than the
+ * rendered layers allow changes which weights it gets but not that they sum to one.
+ */
+void testPhase8HitCountSweep()
+{
+	std::cout << "\n=== Phase 8: invariants across the peeling depth ===" << std::endl;
+
+	const TestMesh uCage = makeUCage(1.0);
+	Eigen::MatrixXd samples(3, 3);
+	samples << 0.5, 2.0, 0.5,   // left arm, rays towards +x cross into the right arm
+		1.5, 0.5, 0.5,          // base
+		2.5, 2.0, 0.5;          // right arm
+
+	InteriorDistanceParams distanceParams;
+	distanceParams.resolution = 48;
+	Eigen::MatrixXf table;
+	computeInteriorDistances(uCage.V, uCage.F, samples, distanceParams, table);
+	const Eigen::MatrixXf detours = (table - euclideanDistanceTable(uCage, samples)).cwiseMax(0.f);
+
+	bool allExact = true;
+	bool allPositive = true;
+	bool allNormalized = true;
+
+	for (uint32_t hitCount = 1; hitCount <= 8; ++hitCount)
+	{
+		for (int variant = 0; variant < 3; ++variant)
+		{
+			PMVCMirrorParams params;
+			params.faceSize = 16;
+			params.hitCount = hitCount;
+			params.skipEvenHits = (variant == 1);
+			params.interiorDetours = (variant == 2) ? &detours : nullptr;
+
+			const Eigen::MatrixXd weights = computePMVCMirror(uCage, samples, params);
+			const double residual = linearReproductionResidual(weights, uCage, samples);
+
+			double rowSumError = 0.0;
+			for (Eigen::Index row = 0; row < weights.rows(); ++row)
+			{
+				rowSumError = std::max(rowSumError, std::abs(weights.row(row).sum() - 1.0));
+			}
+
+			allExact = allExact && residual < 1e-12;
+			allPositive = allPositive && (weights.array() >= 0.0).all() && weights.allFinite();
+			allNormalized = allNormalized && rowSumError < 1e-9;
+
+			if (variant == 0)
+			{
+				std::cout << "  hitCount=" << hitCount << " residual=" << residual
+					<< " minWeight=" << weights.minCoeff() << std::endl;
+			}
+		}
+	}
+
+	check(allExact, "linear reproduction is exact for every peeling depth and variant");
+	check(allPositive, "weights stay finite and non-negative for every peeling depth and variant");
+	check(allNormalized, "weights stay normalized for every peeling depth and variant");
+}
+
 void testPhase7OffsetVariant()
 {
 	std::cout << "\n=== Phase 7: offset variant (PMVCO) ===" << std::endl;
@@ -977,6 +1038,7 @@ int main(int argc, char** argv)
 	testPhase5WeightParity();
 	testPhase6MultiHit();
 	testPhase7OffsetVariant();
+	testPhase8HitCountSweep();
 
 	std::cout << "\n" << (failures == 0 ? "ALL CHECKS PASSED" : "CHECKS FAILED") << " (" << failures << " failures)" << std::endl;
 	return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
