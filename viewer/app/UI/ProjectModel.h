@@ -32,9 +32,7 @@ struct ProjectModelData
 		_pmvcUseOffset = other._pmvcUseOffset;
 		_renderInfluenceMap = other._renderInfluenceMap;
 		_pmvcHitCount = other._pmvcHitCount;
-		_pmvcAlpha = other._pmvcAlpha;
-		_pmvcBeta = other._pmvcBeta;
-		_pmvcTheta = other._pmvcTheta;
+		_pmvcSkipEvenHits = other._pmvcSkipEvenHits;
 		_pmvcUseInteriorDistance = other._pmvcUseInteriorDistance;
 	}
 
@@ -82,9 +80,7 @@ struct ProjectModelData
 		swap(lhs._pmvcUseOffset, rhs._pmvcUseOffset);
 		swap(lhs._renderInfluenceMap, rhs._renderInfluenceMap);
 		swap(lhs._pmvcHitCount, rhs._pmvcHitCount);
-		swap(lhs._pmvcAlpha, rhs._pmvcAlpha);
-		swap(lhs._pmvcBeta, rhs._pmvcBeta);
-		swap(lhs._pmvcTheta, rhs._pmvcTheta);
+		swap(lhs._pmvcSkipEvenHits, rhs._pmvcSkipEvenHits);
 		swap(lhs._pmvcUseInteriorDistance, rhs._pmvcUseInteriorDistance);
 	}
 
@@ -128,9 +124,7 @@ struct ProjectModelData
 			lhs._noOffset == rhs._noOffset &&
 			lhs._pmvcUseOffset == rhs._pmvcUseOffset &&
 			lhs._pmvcHitCount == rhs._pmvcHitCount &&
-			lhs._pmvcAlpha == rhs._pmvcAlpha &&
-			lhs._pmvcBeta == rhs._pmvcBeta &&
-			lhs._pmvcTheta == rhs._pmvcTheta &&
+			lhs._pmvcSkipEvenHits == rhs._pmvcSkipEvenHits &&
 			lhs._pmvcUseInteriorDistance == rhs._pmvcUseInteriorDistance;
 	}
 
@@ -165,14 +159,9 @@ struct ProjectModelData
 		{
 			_pmvcUseOffset = true;
 			_pmvcHitCount = 1;
+			_pmvcSkipEvenHits = false;
 			_pmvcUseInteriorDistance = false;
 		}
-	}
-
-	/// The alpha / beta / theta weights only apply to the three-hit variant.
-	[[nodiscard]] bool UsesThreeHitWeights() const
-	{
-		return _deformationType == DeformationType::PMVC && _pmvcHitCount == PMVCSettings::kThreeHitCount;
 	}
 
 	/**
@@ -204,20 +193,17 @@ struct ProjectModelData
 	std::optional<std::filesystem::path> _deformedCageFilepath;
 	std::optional<std::filesystem::path> _parametersFilepath;
 
-	/// Number of depth peeling layers rendered per mesh vertex. The negative (every
-	/// second) hit contributions are always omitted, except for a hit count of three
-	/// where the alpha / beta / theta weights are applied instead.
+	/// Number of depth peeling layers rendered per mesh vertex. All of them are weighted
+	/// against each other along their ray and normalized, so every ray contributes the
+	/// same leverage regardless of how often it crosses the cage.
 	uint64_t _pmvcHitCount = 1;
 
-	/// Weight PMVC with heat-method interior distances instead of the rasterized
-	/// (Euclidean) depth. Ignored by the offset (PMVCO) variant.
-	bool _pmvcUseInteriorDistance = false;
+	/// Drop the entry (every second) hits from the per-ray weight split.
+	bool _pmvcSkipEvenHits = false;
 
-	/// Three-hit PMVC variant weights. The first hit is weighted by alpha, the
-	/// second hit by beta (subtracted by default) and the third hit by theta.
-	float _pmvcAlpha = 1.0f;
-	float _pmvcBeta = -1.0f;
-	float _pmvcTheta = 1.0f;
+	/// Bias the per-ray weight split towards hits that are reachable without a detour
+	/// through the cage interior. Ignored by the offset (PMVCO) variant.
+	bool _pmvcUseInteriorDistance = false;
 
 	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
 

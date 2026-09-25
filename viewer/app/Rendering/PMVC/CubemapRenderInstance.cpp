@@ -17,6 +17,8 @@
 #include <limits>
 #include <mutex>
 #include <numeric>
+#include <stdexcept>
+#include <string>
 #include <thread>
 
 namespace
@@ -95,9 +97,7 @@ CubemapRenderInstance::CubemapRenderInstance(
 	const bool useOffset,
 	const uint32_t targetCount,
 	const uint32_t hitCount,
-	const float alpha,
-	const float beta,
-	const float theta,
+	const bool skipEvenHits,
 	const Eigen::MatrixXf* interiorDetours,
 
 	RenderResourceRef<Device> device,
@@ -122,10 +122,7 @@ CubemapRenderInstance::CubemapRenderInstance(
 , _cubemapSize(cubemapSize)
 , _targetCount(targetCount == 0 ? 1u : targetCount)
 , _hitCount(hitCount == 0 ? 1u : hitCount)
-, _alpha(alpha)
-, _beta(beta)
-, _theta(theta)
-, _threeHitVariant(hitCount == PMVCSettings::kThreeHitCount && !useOffset)
+, _skipEvenHits(skipEvenHits)
 , _format(format)
 , _device(std::move(device))
 , _descriptorPool(std::move(descriptorPool))
@@ -192,15 +189,13 @@ void CubemapRenderInstance::Cleanup()
 					vkDestroyFramebuffer(_device, framebuffer, nullptr);
 			}
 		}
-		for (auto view : target.faceViews)
+		for (const auto& faceViewSet : target.faceViews)
 		{
-			if (view != VK_NULL_HANDLE)
-				vkDestroyImageView(_device, view, nullptr);
-		}
-		for (auto view : target.faceViewsSecond)
-		{
-			if (view != VK_NULL_HANDLE)
-				vkDestroyImageView(_device, view, nullptr);
+			for (auto view : faceViewSet)
+			{
+				if (view != VK_NULL_HANDLE)
+					vkDestroyImageView(_device, view, nullptr);
+			}
 		}
 		for (const auto& depthViewSet : target.depthViews)
 		{
@@ -210,39 +205,27 @@ void CubemapRenderInstance::Cleanup()
 					vkDestroyImageView(_device, view, nullptr);
 			}
 		}
+		for (auto view : target.depthHitViews)
+		{
+			if (view != VK_NULL_HANDLE)
+				vkDestroyImageView(_device, view, nullptr);
+		}
 
 		if (target.cubemapView != VK_NULL_HANDLE)
 			vkDestroyImageView(_device, target.cubemapView, nullptr);
 
-		if (target.cubemapViewSecond != VK_NULL_HANDLE)
-			vkDestroyImageView(_device, target.cubemapViewSecond, nullptr);
-
-		for (auto depthViewArray : target.depthViewsArray)
-		{
-			if (depthViewArray != VK_NULL_HANDLE)
-				vkDestroyImageView(_device, depthViewArray, nullptr);
-		}
+		if (target.depthView != VK_NULL_HANDLE)
+			vkDestroyImageView(_device, target.depthView, nullptr);
 
 		if (target.cubemapImage != VK_NULL_HANDLE)
 			vkDestroyImage(_device, target.cubemapImage, nullptr);
 		if (target.cubemapMemory != VK_NULL_HANDLE)
 			vkFreeMemory(_device, target.cubemapMemory, nullptr);
 
-		if (target.cubemapImageSecond != VK_NULL_HANDLE)
-			vkDestroyImage(_device, target.cubemapImageSecond, nullptr);
-		if (target.cubemapMemorySecond != VK_NULL_HANDLE)
-			vkFreeMemory(_device, target.cubemapMemorySecond, nullptr);
-
-		for (auto depthImage : target.depthImages)
-		{
-			if (depthImage != VK_NULL_HANDLE)
-				vkDestroyImage(_device, depthImage, nullptr);
-		}
-		for (auto depthMemory : target.depthMemories)
-		{
-			if (depthMemory != VK_NULL_HANDLE)
-				vkFreeMemory(_device, depthMemory, nullptr);
-		}
+		if (target.depthImage != VK_NULL_HANDLE)
+			vkDestroyImage(_device, target.depthImage, nullptr);
+		if (target.depthMemory != VK_NULL_HANDLE)
+			vkFreeMemory(_device, target.depthMemory, nullptr);
 	}
 
 	if (_depthHistorySampler != VK_NULL_HANDLE)
@@ -273,6 +256,8 @@ void CubemapRenderInstance::Initialize()
 		_cageMesh,
 		_deformableMesh,
 		_pmvcUseOffset,
+		_skipEvenHits,
+		_hitCount,
 		_targetCount,
 		interiorSettings
 	);
@@ -291,6 +276,15 @@ void CubemapRenderInstance::Initialize()
 	depthSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 	depthSamplerInfo.maxAnisotropy = 1.0f;
 	VK_CHECK(vkCreateSampler(_device, &depthSamplerInfo, nullptr, &_depthHistorySampler));
+
+	// Every hit of every slot stays resident, so the footprint grows linearly with both the
+	// hit count and the ring size.
+	const uint64_t layerTexels = static_cast<uint64_t>(6u * _hitCount) * _cubemapSize * _cubemapSize;
+	const uint64_t bytesPerTarget = layerTexels * (16ull + 4ull);
+	LOG_INFO("PMVC render targets: {} slots x {} hits, ~{} MiB of cubemap storage.",
+		targetCount,
+		_hitCount,
+		(bytesPerTarget * targetCount) / (1024ull * 1024ull));
 
 	_cubemapRenderUnit.targets.reserve(targetCount);
 	for (uint32_t i = 0; i < targetCount; ++i)
@@ -370,40 +364,40 @@ void CubemapRenderInstance::UpdateProjectionPlanes()
 	}
 }
 
-float CubemapRenderInstance::HitWeight(const uint32_t hitIndex) const
-{
-	// The three-hit variant is the only configuration that keeps the negative (second)
-	// hit, weighted by beta, and adds a third hit weighted by theta.
-	if (_hitCount == PMVCSettings::kThreeHitCount)
-	{
-		switch (hitIndex)
-		{
-		case 0: return _alpha;
-		case 1: return _beta;
-		default: return _theta;
-		}
-	}
-
-	// Every second hit carries the negative contributions, which are always omitted
-	// outside the three-hit variant. Those layers are still rendered because the next
-	// layer is peeled against their depth, they simply do not contribute any weight.
-	return (hitIndex % 2u == 0u) ? 1.0f : 0.0f;
-}
-
 CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 {
 	CubemapRenderTarget target{};
 
+	// Hit k occupies the array layers [6k, 6k + 6) of both images, so every peeled layer
+	// survives until the compute dispatch has seen all of them.
+	const uint32_t layerCount = 6u * _hitCount;
+
+	VkPhysicalDeviceProperties deviceProperties{};
+	vkGetPhysicalDeviceProperties(_device->GetPhysicalDeviceHandle(), &deviceProperties);
+
+	if (layerCount > deviceProperties.limits.maxImageArrayLayers)
+	{
+		throw std::runtime_error(
+			"PMVC hit count " + std::to_string(_hitCount) + " needs " + std::to_string(layerCount) +
+			" cubemap array layers, but the device supports only " +
+			std::to_string(deviceProperties.limits.maxImageArrayLayers) + ".");
+	}
+
+	target.faceViews.resize(_hitCount);
+	target.depthViews.resize(_hitCount);
+	target.depthHitViews.resize(_hitCount);
+	target.framebuffers.resize(_hitCount);
+	target.depthHistoryDescriptorSets.resize(_hitCount);
+
 	// ---------------------------------------------------------------------
-	// Create cubemap color image
+	// Create the color image holding every hit
 	// ---------------------------------------------------------------------
 	VkImageCreateInfo imageInfo{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
-	imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 	imageInfo.imageType = VK_IMAGE_TYPE_2D;
 	imageInfo.format = _format;
 	imageInfo.extent = { _cubemapSize, _cubemapSize, 1 };
 	imageInfo.mipLevels = 1;
-	imageInfo.arrayLayers = 6;
+	imageInfo.arrayLayers = layerCount;
 	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	imageInfo.usage =
@@ -426,20 +420,23 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	VK_CHECK(vkBindImageMemory(_device, target.cubemapImage, target.cubemapMemory, 0));
 
 	// ---------------------------------------------------------------------
-	// Create per-face color views
+	// Create the color attachment view of every hit and face
 	// ---------------------------------------------------------------------
-	for (uint32_t face = 0; face < 6; ++face)
+	for (uint32_t hit = 0; hit < _hitCount; ++hit)
 	{
-		VkImageViewCreateInfo viewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-		viewInfo.image = target.cubemapImage;
-		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		viewInfo.format = _format;
-		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		viewInfo.subresourceRange.levelCount = 1;
-		viewInfo.subresourceRange.baseArrayLayer = face;
-		viewInfo.subresourceRange.layerCount = 1;
+		for (uint32_t face = 0; face < 6; ++face)
+		{
+			VkImageViewCreateInfo viewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+			viewInfo.image = target.cubemapImage;
+			viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			viewInfo.format = _format;
+			viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			viewInfo.subresourceRange.levelCount = 1;
+			viewInfo.subresourceRange.baseArrayLayer = hit * 6u + face;
+			viewInfo.subresourceRange.layerCount = 1;
 
-		VK_CHECK(vkCreateImageView(_device, &viewInfo, nullptr, &target.faceViews[face]));
+			VK_CHECK(vkCreateImageView(_device, &viewInfo, nullptr, &target.faceViews[hit][face]));
+		}
 	}
 
 	// ---------------------------------------------------------------------
@@ -453,50 +450,12 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	cubeViewInfo.subresourceRange.baseMipLevel = 0;
 	cubeViewInfo.subresourceRange.levelCount = 1;
 	cubeViewInfo.subresourceRange.baseArrayLayer = 0;
-	cubeViewInfo.subresourceRange.layerCount = 6;
+	cubeViewInfo.subresourceRange.layerCount = layerCount;
 
 	VK_CHECK(vkCreateImageView(_device, &cubeViewInfo, nullptr, &target.cubemapView));
 
 	// ---------------------------------------------------------------------
-	// Create the second color cubemap (three-hit variant only).
-	// The first hit has to survive while the second hit is rendered, so the two are
-	// rendered into two distinct color images and combined per texel by the compute
-	// dispatch afterwards.
-	// ---------------------------------------------------------------------
-	if (_threeHitVariant)
-	{
-		VK_CHECK(vkCreateImage(_device, &imageInfo, nullptr, &target.cubemapImageSecond));
-
-		VkMemoryRequirements memReqSecond{};
-		vkGetImageMemoryRequirements(_device, target.cubemapImageSecond, &memReqSecond);
-
-		VkMemoryAllocateInfo allocInfoSecond{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
-		allocInfoSecond.allocationSize = memReqSecond.size;
-		allocInfoSecond.memoryTypeIndex = FindMemoryType(memReqSecond.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-		VK_CHECK(vkAllocateMemory(_device, &allocInfoSecond, nullptr, &target.cubemapMemorySecond));
-		VK_CHECK(vkBindImageMemory(_device, target.cubemapImageSecond, target.cubemapMemorySecond, 0));
-
-		for (uint32_t face = 0; face < 6; ++face)
-		{
-			VkImageViewCreateInfo viewInfoSecond{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-			viewInfoSecond.image = target.cubemapImageSecond;
-			viewInfoSecond.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			viewInfoSecond.format = _format;
-			viewInfoSecond.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			viewInfoSecond.subresourceRange.levelCount = 1;
-			viewInfoSecond.subresourceRange.baseArrayLayer = face;
-			viewInfoSecond.subresourceRange.layerCount = 1;
-			VK_CHECK(vkCreateImageView(_device, &viewInfoSecond, nullptr, &target.faceViewsSecond[face]));
-		}
-
-		VkImageViewCreateInfo cubeViewInfoSecond = cubeViewInfo;
-		cubeViewInfoSecond.image = target.cubemapImageSecond;
-		VK_CHECK(vkCreateImageView(_device, &cubeViewInfoSecond, nullptr, &target.cubemapViewSecond));
-	}
-
-	// ---------------------------------------------------------------------
-	// Create depth images (ping-pong)
+	// Create the depth image holding every hit
 	// ---------------------------------------------------------------------
 	const VkFormat depthFormat = _device->FindDepthFormat();
 
@@ -505,7 +464,7 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 	depthInfo.format = depthFormat;
 	depthInfo.extent = { _cubemapSize, _cubemapSize, 1 };
 	depthInfo.mipLevels = 1;
-	depthInfo.arrayLayers = 6;
+	depthInfo.arrayLayers = layerCount;
 	depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 	depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 	depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
@@ -513,84 +472,89 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 		VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 	depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-	for (uint32_t pingPong = 0; pingPong < 2; ++pingPong)
+	VK_CHECK(vkCreateImage(_device, &depthInfo, nullptr, &target.depthImage));
+
+	vkGetImageMemoryRequirements(_device, target.depthImage, &memReq);
+	allocInfo.allocationSize = memReq.size;
+	allocInfo.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	VK_CHECK(vkAllocateMemory(_device, &allocInfo, nullptr, &target.depthMemory));
+	VK_CHECK(vkBindImageMemory(_device, target.depthImage, target.depthMemory, 0));
+
+	for (uint32_t hit = 0; hit < _hitCount; ++hit)
 	{
-		VK_CHECK(vkCreateImage(_device, &depthInfo, nullptr, &target.depthImages[pingPong]));
-
-		vkGetImageMemoryRequirements(_device, target.depthImages[pingPong], &memReq);
-		allocInfo.allocationSize = memReq.size;
-		allocInfo.memoryTypeIndex = FindMemoryType(memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK(vkAllocateMemory(_device, &allocInfo, nullptr, &target.depthMemories[pingPong]));
-		VK_CHECK(vkBindImageMemory(_device, target.depthImages[pingPong], target.depthMemories[pingPong], 0));
-
 		for (uint32_t face = 0; face < 6; ++face)
 		{
 			VkImageViewCreateInfo viewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-			viewInfo.image = target.depthImages[pingPong];
+			viewInfo.image = target.depthImage;
 			viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			viewInfo.format = depthFormat;
 			viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 			viewInfo.subresourceRange.levelCount = 1;
-			viewInfo.subresourceRange.baseArrayLayer = face;
+			viewInfo.subresourceRange.baseArrayLayer = hit * 6u + face;
 			viewInfo.subresourceRange.layerCount = 1;
-			VK_CHECK(vkCreateImageView(_device, &viewInfo, nullptr, &target.depthViews[pingPong][face]));
+			VK_CHECK(vkCreateImageView(_device, &viewInfo, nullptr, &target.depthViews[hit][face]));
 		}
 
-		VkImageViewCreateInfo depthViewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-		depthViewInfo.image = target.depthImages[pingPong];
-		depthViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-		depthViewInfo.format = depthFormat;
-		depthViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-		depthViewInfo.subresourceRange.baseMipLevel = 0;
-		depthViewInfo.subresourceRange.levelCount = 1;
-		depthViewInfo.subresourceRange.baseArrayLayer = 0;
-		depthViewInfo.subresourceRange.layerCount = 6;
-		VK_CHECK(vkCreateImageView(_device, &depthViewInfo, nullptr, &target.depthViewsArray[pingPong]));
+		// The six layers of one hit, which the next hit samples to peel against.
+		VkImageViewCreateInfo hitViewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+		hitViewInfo.image = target.depthImage;
+		hitViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+		hitViewInfo.format = depthFormat;
+		hitViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		hitViewInfo.subresourceRange.baseMipLevel = 0;
+		hitViewInfo.subresourceRange.levelCount = 1;
+		hitViewInfo.subresourceRange.baseArrayLayer = hit * 6u;
+		hitViewInfo.subresourceRange.layerCount = 6;
+		VK_CHECK(vkCreateImageView(_device, &hitViewInfo, nullptr, &target.depthHitViews[hit]));
 	}
 
-	std::array<VkDescriptorSetLayout, 2> depthLayouts{
-		_depthHistoryLayout->GetReference(),
-		_depthHistoryLayout->GetReference()
-	};
+	VkImageViewCreateInfo depthViewInfo{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+	depthViewInfo.image = target.depthImage;
+	depthViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+	depthViewInfo.format = depthFormat;
+	depthViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	depthViewInfo.subresourceRange.baseMipLevel = 0;
+	depthViewInfo.subresourceRange.levelCount = 1;
+	depthViewInfo.subresourceRange.baseArrayLayer = 0;
+	depthViewInfo.subresourceRange.layerCount = layerCount;
+	VK_CHECK(vkCreateImageView(_device, &depthViewInfo, nullptr, &target.depthView));
+
+	// ---------------------------------------------------------------------
+	// Depth history: the set of hit k samples the depth hit k - 1 wrote
+	// ---------------------------------------------------------------------
+	const std::vector<VkDescriptorSetLayout> depthLayouts(_hitCount, _depthHistoryLayout->GetReference());
+
 	VkDescriptorSetAllocateInfo depthAllocInfo{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
 	depthAllocInfo.descriptorPool = _descriptorPool;
 	depthAllocInfo.descriptorSetCount = static_cast<uint32_t>(depthLayouts.size());
 	depthAllocInfo.pSetLayouts = depthLayouts.data();
 	VK_CHECK(vkAllocateDescriptorSets(_device, &depthAllocInfo, target.depthHistoryDescriptorSets.data()));
 
-	for (uint32_t pingPong = 0; pingPong < 2; ++pingPong)
+	for (uint32_t hit = 0; hit < _hitCount; ++hit)
 	{
-		// The hit rendering into slot N samples the depth written by the previous hit,
-		// which lives in the other ping-pong slot.
-		const uint32_t historyIndex = 1u - pingPong;
-		VkDescriptorImageInfo imageInfo{};
-		imageInfo.sampler = _depthHistorySampler;
-		imageInfo.imageView = target.depthViewsArray[historyIndex];
-		imageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		// The first hit does not peel and never binds its set, so it can point anywhere.
+		VkDescriptorImageInfo historyInfo{};
+		historyInfo.sampler = _depthHistorySampler;
+		historyInfo.imageView = target.depthHitViews[hit > 0 ? hit - 1 : 0];
+		historyInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
 		VkWriteDescriptorSet write{};
 		write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		write.dstSet = target.depthHistoryDescriptorSets[pingPong];
+		write.dstSet = target.depthHistoryDescriptorSets[hit];
 		write.dstBinding = 0;
 		write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		write.descriptorCount = 1;
-		write.pImageInfo = &imageInfo;
+		write.pImageInfo = &historyInfo;
 		vkUpdateDescriptorSets(_device, 1, &write, 0, nullptr);
 	}
 
-	for (uint32_t pingPong = 0; pingPong < 2; ++pingPong)
+	for (uint32_t hit = 0; hit < _hitCount; ++hit)
 	{
 		for (uint32_t face = 0; face < 6; ++face)
 		{
-			// The three-hit variant renders its second hit into the dedicated second
-			// color image so the first hit is not overwritten before both are combined.
-			VkImageView colorAttachment = (_threeHitVariant && pingPong == 1)
-				? target.faceViewsSecond[face]
-				: target.faceViews[face];
-
 			VkImageView attachments[2] = {
-				colorAttachment,
-				target.depthViews[pingPong][face]
+				target.faceViews[hit][face],
+				target.depthViews[hit][face]
 			};
 
 			VkFramebufferCreateInfo fbInfo{ VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
@@ -601,7 +565,7 @@ CubemapRenderTarget CubemapRenderInstance::CreateCubemapRenderTarget() const
 			fbInfo.height = _cubemapSize;
 			fbInfo.layers = 1;
 
-			VK_CHECK(vkCreateFramebuffer(_device, &fbInfo, nullptr, &target.framebuffers[pingPong][face]));
+			VK_CHECK(vkCreateFramebuffer(_device, &fbInfo, nullptr, &target.framebuffers[hit][face]));
 		}
 	}
 
@@ -649,12 +613,16 @@ CubemapRenderUnit CubemapRenderInstance::CreateCubemapRenderUnit() const
 	// ------------------------------------------------------------
 	// Allocate command buffers (one per face and target)
 	// ------------------------------------------------------------
+	// One set per hit rather than a ping-pong pair: the hits of a vertex are now submitted
+	// back to back without a CPU wait between them, so a command buffer must not be reset
+	// for a later hit while an earlier one may still be executing. Batches are separated by
+	// a full timeline wait, so a set is safe to reuse for the next vertex of the slot.
 	const auto targetCount = static_cast<uint32_t>(unit.targets.size());
 	unit.graphicsCmdPerTarget.resize(targetCount);
 
 	if (targetCount > 0)
 	{
-		std::vector<VkCommandBuffer> flatBuffers(static_cast<size_t>(targetCount) * 2 * 6);
+		std::vector<VkCommandBuffer> flatBuffers(static_cast<size_t>(targetCount) * _hitCount * 6);
 
 		VkCommandBufferAllocateInfo alloc{
 			.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -669,12 +637,14 @@ CubemapRenderUnit CubemapRenderInstance::CreateCubemapRenderUnit() const
 
 		for (uint32_t target = 0; target < targetCount; ++target)
 		{
-			for (uint32_t pingPong = 0; pingPong < 2; ++pingPong)
+			unit.graphicsCmdPerTarget[target].resize(_hitCount);
+
+			for (uint32_t hit = 0; hit < _hitCount; ++hit)
 			{
 				for (uint32_t face = 0; face < 6; ++face)
 				{
-					unit.graphicsCmdPerTarget[target][pingPong][face] =
-						flatBuffers[(target * 2 + pingPong) * 6 + face];
+					unit.graphicsCmdPerTarget[target][hit][face] =
+						flatBuffers[(target * _hitCount + hit) * 6 + face];
 				}
 			}
 		}
@@ -757,9 +727,7 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 	// =====================================================================
 	// GRAPHICS CMDS — one per face
 	// =====================================================================
-	// Consecutive hits alternate between the two command buffer sets of the slot, so the
-	// previous hit may still be executing while this one is recorded.
-	const auto& faceCommandBuffers = _cubemapRenderUnit.graphicsCmdPerTarget[targetIndex][hitIndex % 2];
+	const auto& faceCommandBuffers = _cubemapRenderUnit.graphicsCmdPerTarget[targetIndex][hitIndex];
 
 	for (uint32_t face = 0; face < 6; ++face)
 	{
@@ -784,7 +752,7 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 		VkRenderPassBeginInfo rpInfo{
 			.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 			.renderPass = _renderPass,
-			.framebuffer = target.framebuffers[hitIndex % 2][face],
+			.framebuffer = target.framebuffers[hitIndex][face],
 			.renderArea = {{0, 0}, {_cubemapSize, _cubemapSize}},
 			.clearValueCount = 2,
 			.pClearValues = clearValues
@@ -817,7 +785,7 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 				VK_PIPELINE_BIND_POINT_GRAPHICS,
 				pipelineObj._pipelineLayout,
 				1, 1,
-				&target.depthHistoryDescriptorSets[hitIndex % 2],
+				&target.depthHistoryDescriptorSets[hitIndex],
 				0, nullptr);
 		}
 
@@ -845,8 +813,7 @@ void CubemapRenderInstance::RecordAndSubmitCubemapRender(
 	}
 
 	// Waiting on the previous stage of the slot keeps the hits of a vertex ordered: the
-	// color image is shared by all hits and the peeling pass samples the depth the
-	// previous hit wrote.
+	// peeling pass samples the depth layers the previous hit wrote.
 	VkSemaphoreSubmitInfo waitInfo{
 		.sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
 		.semaphore = timeline,
@@ -1049,141 +1016,69 @@ void CubemapRenderInstance::ComputeCoordinates(
 
 						_computeStage->BeginVertex(cubemapIdx);
 
-						uint32_t hit = 0;
+						// Every peeling layer is rendered into its own block of array
+						// layers before anything is consumed: the weights of the hits
+						// along one ray are normalized against each other, so a single
+						// dispatch has to see all of them at once.
+						const auto renderStart = std::chrono::steady_clock::now();
 
-						// The three-hit variant combines its first two hits per texel, so
-						// both are rendered (into their own color images) before either is
-						// consumed and they are handed to a single dispatch. That is what
-						// makes the beta-weighted second hit subtract from the first one
-						// on the ray it belongs to instead of only in the accumulated sum.
-						if (_threeHitVariant)
+						uint64_t renderDone = timelineValue;
+						for (uint32_t hit = 0; hit < _hitCount; ++hit)
 						{
-							const auto renderStart = std::chrono::steady_clock::now();
+							const uint64_t previousDone = renderDone;
+							renderDone = ++timelineValue;
 
-							uint64_t renderDone = timelineValue;
-							for (uint32_t combinedHit = 0; combinedHit < 2; ++combinedHit)
-							{
-								const uint64_t previousDone = renderDone;
-								renderDone = ++timelineValue;
-
-								std::lock_guard lock(submitMutex);
-								RecordAndSubmitCubemapRender(
-									slot,
-									vertices[cubemapIdx],
-									target,
-									timeline,
-									previousDone,
-									renderDone,
-									combinedHit);
-							}
-
-							const auto renderEnd = std::chrono::steady_clock::now();
-							renderMsPerWorker[workerId] +=
-								std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
-
-							const auto computeStart = std::chrono::steady_clock::now();
-
-							const uint64_t computeDone = ++timelineValue;
-							{
-								std::lock_guard lock(submitMutex);
-								_computeStage->DispatchAfterRender(
-									cubemapIdx,
-									slot,
-									timeline,
-									renderDone,
-									computeDone,
-									RenderedHit{ target.cubemapView, target.depthViewsArray[0], _alpha },
-									RenderedHit{ target.cubemapViewSecond, target.depthViewsArray[1], _beta }
-								);
-							}
-
-							const uint64_t copyDone = ++timelineValue;
-							{
-								std::lock_guard lock(submitMutex);
-								_computeStage->SubmitReadbackCopy(slot, timeline, computeDone, copyDone);
-							}
-
-							_computeStage->AccumulateSlot(cubemapIdx, slot, timeline, copyDone);
-
-							const auto computeEnd = std::chrono::steady_clock::now();
-							computeMsPerWorker[workerId] +=
-								std::chrono::duration<double, std::milli>(computeEnd - computeStart).count();
-
-							hit = 2;
+							std::lock_guard lock(submitMutex);
+							RecordAndSubmitCubemapRender(
+								slot,
+								vertices[cubemapIdx],
+								target,
+								timeline,
+								previousDone,
+								renderDone,
+								hit);
 						}
 
-						// Every remaining hit is a depth peeling layer of the same cubemap:
-						// it is rendered on top of the depth of the previous hit and
-						// consumed by its own dispatch, weighted by HitWeight().
-						for (; hit < _hitCount; ++hit)
+						const auto renderEnd = std::chrono::steady_clock::now();
+						renderMsPerWorker[workerId] +=
+							std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
+
+						const auto computeStart = std::chrono::steady_clock::now();
+
+						const uint64_t computeDone = ++timelineValue;
 						{
-							const auto renderStart = std::chrono::steady_clock::now();
-
-							const uint64_t previousDone = timelineValue;
-							const uint64_t renderDone = ++timelineValue;
-							{
-								std::lock_guard lock(submitMutex);
-								RecordAndSubmitCubemapRender(
-									slot,
-									vertices[cubemapIdx],
-									target,
-									timeline,
-									previousDone,
-									renderDone,
-									hit);
-							}
-
-							const auto renderEnd = std::chrono::steady_clock::now();
-							renderMsPerWorker[workerId] +=
-								std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
-
-							const float hitWeight = HitWeight(hit);
-							if (hitWeight == 0.0f)
-							{
-								// The layer is only rendered so the next hit can be peeled
-								// against its depth. Nothing is dispatched for it, and the
-								// hit after it renders into the other command buffer set of
-								// the slot, so nothing has to be waited for here.
-								continue;
-							}
-
-							const auto computeStart = std::chrono::steady_clock::now();
-
-							const uint64_t computeDone = ++timelineValue;
-							{
-								std::lock_guard lock(submitMutex);
-								_computeStage->DispatchAfterRender(
-									cubemapIdx,
-									slot,
-									timeline,
-									renderDone,
-									computeDone,
-									RenderedHit{ target.cubemapView, target.depthViewsArray[hit % 2], hitWeight }
-								);
-							}
-
-							const uint64_t copyDone = ++timelineValue;
-							{
-								std::lock_guard lock(submitMutex);
-								_computeStage->SubmitReadbackCopy(
-									slot,
-									timeline,
-									computeDone,
-									copyDone
-								);
-							}
-
-							_computeStage->AccumulateSlot(
+							std::lock_guard lock(submitMutex);
+							_computeStage->DispatchAfterRender(
 								cubemapIdx,
 								slot,
 								timeline,
+								renderDone,
+								computeDone,
+								RenderedHit{ target.cubemapView, target.depthView }
+							);
+						}
+
+						const uint64_t copyDone = ++timelineValue;
+						{
+							std::lock_guard lock(submitMutex);
+							_computeStage->SubmitReadbackCopy(
+								slot,
+								timeline,
+								computeDone,
 								copyDone
 							);
-
-							const auto computeEnd = std::chrono::steady_clock::now();
-							computeMsPerWorker[workerId] +=
-								std::chrono::duration<double, std::milli>(computeEnd - computeStart).count();
 						}
+
+						_computeStage->AccumulateSlot(
+							cubemapIdx,
+							slot,
+							timeline,
+							copyDone
+						);
+
+						const auto computeEnd = std::chrono::steady_clock::now();
+						computeMsPerWorker[workerId] +=
+							std::chrono::duration<double, std::milli>(computeEnd - computeStart).count();
 					}
 				}
 

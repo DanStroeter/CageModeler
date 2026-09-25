@@ -39,9 +39,6 @@ struct PMVCSettings
 
 	/// Number of render targets in the ring.
 	static constexpr uint32_t kRingTargetCount = 64;
-
-	/// The hit count that enables the three-hit variant and its alpha/beta/theta weights.
-	static constexpr uint64_t kThreeHitCount = 3;
 };
 
 struct DeformationTypeHelpers

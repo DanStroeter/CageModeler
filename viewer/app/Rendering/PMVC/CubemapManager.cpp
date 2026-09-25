@@ -391,9 +391,7 @@ void CubemapManager::EnsureInteriorDistanceTable()
 MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCoordinates(
 	const bool useOffset,
 	const uint32_t hitCount,
-	const float alpha,
-	const float beta,
-	const float theta,
+	const bool skipEvenHits,
 	const bool useInteriorDistance)
 {
 	assert(_device && "Device is null");
@@ -405,8 +403,8 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	CreateVertexBufferFromMesh();
 	CreateIndexBufferFromMesh();
 
-	// The offset variant weights by solid angle only, there is no distance in its
-	// formula for the interior distance to replace.
+	// The offset variant weights by solid angle only, so there is no split along the ray
+	// for the interior distance to bias.
 	const Eigen::MatrixXf* interiorDetours = nullptr;
 	if (useInteriorDistance && useOffset)
 	{
@@ -425,13 +423,11 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 	// single hit.
 	const uint32_t effectiveHitCount = useOffset ? 1u : std::max(1u, hitCount);
 
-	LOG_INFO("PMVC compute (Ring): hitCount={}, offset={}, interiorDistance={}, alpha={}, beta={}, theta={}",
+	LOG_INFO("PMVC compute (Ring): hitCount={}, offset={}, skipEvenHits={}, interiorDistance={}",
 		effectiveHitCount,
 		useOffset,
-		interiorDetours != nullptr,
-		alpha,
-		beta,
-		theta);
+		skipEvenHits,
+		interiorDetours != nullptr);
 
 	const auto instanceInitStart = std::chrono::steady_clock::now();
 	CubemapRenderInstance instance(
@@ -440,9 +436,7 @@ MeshOperationResult<MeshComputeWeightsOperationResult> CubemapManager::ComputeCo
 		useOffset,
 		PMVCSettings::kRingTargetCount,
 		effectiveHitCount,
-		alpha,
-		beta,
-		theta,
+		skipEvenHits,
 		interiorDetours,
 
 		_device,

@@ -17,39 +17,48 @@
 class CubemapManager;
 struct CubemapWorkRange;
 
+/**
+ * Colour and depth of every peeled hit of one cubemap.
+ *
+ * Both are single images with 6 * hitCount array layers, where hit k occupies the layers
+ * [6k, 6k + 6). Every layer stays resident until the vertex is done because the compute
+ * pass normalizes the hits of a texel against each other and therefore needs all of them
+ * at once. Rendering a layer leaves it in a shader-read layout, which is what both the
+ * peeling pass of the next hit and the final compute dispatch sample.
+ */
 struct CubemapRenderTarget
 {
 	VkImage        cubemapImage = VK_NULL_HANDLE;
 	VkDeviceMemory cubemapMemory = VK_NULL_HANDLE;
+	/// Array view over every colour layer, sampled by the compute shader.
 	VkImageView    cubemapView = VK_NULL_HANDLE;
-	std::array<VkImageView, 6> faceViews{};
+	/// Colour attachment view per hit and face, indexed [hit][face].
+	std::vector<std::array<VkImageView, 6>> faceViews;
 
-	// Second color cubemap, only allocated for the three-hit variant so the first hit
-	// stays in memory while the second hit is rendered and both can be combined per
-	// texel by a single compute dispatch.
-	VkImage        cubemapImageSecond = VK_NULL_HANDLE;
-	VkDeviceMemory cubemapMemorySecond = VK_NULL_HANDLE;
-	VkImageView    cubemapViewSecond = VK_NULL_HANDLE;
-	std::array<VkImageView, 6> faceViewsSecond{};
+	VkImage        depthImage = VK_NULL_HANDLE;
+	VkDeviceMemory depthMemory = VK_NULL_HANDLE;
+	/// Array view over every depth layer, sampled by the compute shader.
+	VkImageView    depthView = VK_NULL_HANDLE;
+	/// Depth attachment view per hit and face, indexed [hit][face].
+	std::vector<std::array<VkImageView, 6>> depthViews;
+	/// Array view over the six depth layers of one hit, sampled by the next hit to peel.
+	std::vector<VkImageView> depthHitViews;
 
-	// Two depth images ping-ponged by the depth peeling passes: hit N renders into
-	// depth image N % 2 while sampling depth image (N + 1) % 2, which holds the depth of
-	// hit N - 1, to discard everything in front of the previous layer.
-	std::array<VkImage, 2> depthImages{};
-	std::array<VkDeviceMemory, 2> depthMemories{};
-	std::array<VkImageView, 2> depthViewsArray{};
-	std::array<std::array<VkImageView, 6>, 2> depthViews{};
-	std::array<std::array<VkFramebuffer, 6>, 2> framebuffers{};
-	std::array<VkDescriptorSet, 2> depthHistoryDescriptorSets{};
+	std::vector<std::array<VkFramebuffer, 6>> framebuffers;
+
+	/// One per hit; the set of hit k binds the depth of hit k - 1. The first hit does not
+	/// peel, so its set is allocated but never bound.
+	std::vector<VkDescriptorSet> depthHistoryDescriptorSets;
 };
 
 struct CubemapRenderUnit
 {
 	std::vector<CubemapRenderTarget> targets;
 
-	// One set of face command buffers per target and ping-pong slot: two hits of the same
-	// cubemap can be in flight at once, which the three-hit variant needs.
-	std::vector<std::array<std::array<VkCommandBuffer, 6>, 2>> graphicsCmdPerTarget;
+	// One set of face command buffers per target and hit, indexed [target][hit][face]. The
+	// hits of a vertex are submitted without a CPU wait between them, so each needs its own
+	// buffers; batches are separated by a timeline wait that makes them reusable.
+	std::vector<std::vector<std::array<VkCommandBuffer, 6>>> graphicsCmdPerTarget;
 
 	MemoryMappedBuffer matricesUBO;
 	VkDescriptorSet    matricesDescriptorSet = VK_NULL_HANDLE;
@@ -68,13 +77,12 @@ struct CubemapMatricesUBO
  * a pool of worker threads.
  *
  * Every PMVC variant runs through this single pipeline:
- *  - the hit count controls how many depth peeling layers are rendered per vertex,
- *  - the negative (every second) hit contributions are always omitted, except for the
- *    three-hit variant where the first, second and third hit are weighted by alpha, beta
- *    and theta instead. There the first two hits are rendered into their own color
- *    images and combined by one dispatch, so the second hit is subtracted from the first
- *    one per texel,
- *  - interior distances replace the Euclidean hit distance when a detour table is set,
+ *  - the hit count controls how many depth peeling layers are rendered per vertex; all of
+ *    them are rendered before a single dispatch consumes them together, because the
+ *    weights of the hits along one ray are normalized against each other,
+ *  - skipping every second hit drops the entry hits from that normalization,
+ *  - interior distances bias the split between the hits of a ray when a detour table is
+ *    set,
  *  - the offset variant (PMVCO) weights by the solid angle alone.
  */
 class CubemapRenderInstance
@@ -86,9 +94,7 @@ public:
 		bool useOffset,
 		uint32_t targetCount,
 		uint32_t hitCount,
-		float alpha,
-		float beta,
-		float theta,
+		bool skipEvenHits,
 		const Eigen::MatrixXf* interiorDetours,
 
 		RenderResourceRef<Device> device,
@@ -134,12 +140,6 @@ private:
 	void CreateSyncObjects();
 	void UpdateProjectionPlanes();
 
-	/**
-	 * @return The weight of the hit, 0 for the hits that are rendered only so the next
-	 * layer can be peeled and do not contribute to the weights.
-	 */
-	[[nodiscard]] float HitWeight(uint32_t hitIndex) const;
-
 	void RecordAndSubmitCubemapRender(uint32_t targetIndex,
 		const glm::vec3& camPos,
 		const CubemapRenderTarget& target,
@@ -168,12 +168,9 @@ private:
 	uint32_t _cubemapSize = PMVCSettings::kCubemapSize;
 	uint32_t _targetCount = PMVCSettings::kRingTargetCount;
 	uint32_t _hitCount = 1;
-	float _alpha = 1.0f;
-	float _beta = -1.0f;
-	float _theta = 1.0f;
 
-	/// The three-hit variant, which combines its first two hits in a single dispatch.
-	bool _threeHitVariant = false;
+	/// Drops the entry (every second) hits from the per-ray weight split.
+	bool _skipEvenHits = false;
 	VkFormat _format = VK_FORMAT_R32G32B32A32_SFLOAT;
 
 	std::optional<double> _renderMs;

@@ -107,7 +107,7 @@ struct ProjecSettingsHelpers
 				ImGui::TableSetColumnIndex(0);
 				ImGui::TextEx("Hit Count");
 				ImGui::SameLine();
-				UIHelpers::HelpMarker("Number of hits (depth peeling layers) sampled per mesh vertex. Every second hit carries the negative contributions and is always omitted, except for a hit count of three, where the first, second and third hit are weighted by alpha, beta and theta instead.");
+				UIHelpers::HelpMarker("Number of hits (depth peeling layers) sampled per mesh vertex. The hits along a ray are weighted against each other and normalized, so every ray contributes the same amount however often it crosses the cage. Raise this until the log stops reporting truncated rays.");
 
 				ImGui::TableSetColumnIndex(1);
 				UIHelpers::SetRightAligned(100.0f);
@@ -126,52 +126,24 @@ struct ProjecSettingsHelpers
 				ImGui::EndDisabled();
 			}
 
-			// The three-hit weights only exist for a hit count of exactly three.
-			ImGui::BeginDisabled(!model.UsesThreeHitWeights());
+			ImGui::TableNextRow();
 			{
-				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextEx("Skip Even Hits");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("Drop the entry (every second) hits from the per-ray weight split. Their distance still shapes the weights of the hits around them, they simply receive none themselves.");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(100.0f);
+
+				// The offset variant has no per-ray split to drop anything from.
+				ImGui::BeginDisabled(isOffsetVariant);
 				{
-					ImGui::TableSetColumnIndex(0);
-					ImGui::TextEx("Alpha (hit 1)");
-					ImGui::SameLine();
-					UIHelpers::HelpMarker("Three-hit PMVC variant: weight of the first hit contributions.");
-
-					ImGui::TableSetColumnIndex(1);
-					UIHelpers::SetRightAligned(100.0f);
-
-					const auto alphaLabel = std::string("##PMVCAlpha") + idSuffix;
-					ImGui::InputFloat(alphaLabel.c_str(), &model._pmvcAlpha, 0.0f, 0.0f, "%.3f");
+					const auto skipEvenLabel = std::string("##PMVCSkipEvenHits") + idSuffix;
+					ImGui::Checkbox(skipEvenLabel.c_str(), &model._pmvcSkipEvenHits);
 				}
-
-				ImGui::TableNextRow();
-				{
-					ImGui::TableSetColumnIndex(0);
-					ImGui::TextEx("Beta (hit 2)");
-					ImGui::SameLine();
-					UIHelpers::HelpMarker("Three-hit PMVC variant: weight of the second hit contributions (subtracted by default).");
-
-					ImGui::TableSetColumnIndex(1);
-					UIHelpers::SetRightAligned(100.0f);
-
-					const auto betaLabel = std::string("##PMVCBeta") + idSuffix;
-					ImGui::InputFloat(betaLabel.c_str(), &model._pmvcBeta, 0.0f, 0.0f, "%.3f");
-				}
-
-				ImGui::TableNextRow();
-				{
-					ImGui::TableSetColumnIndex(0);
-					ImGui::TextEx("Theta (hit 3)");
-					ImGui::SameLine();
-					UIHelpers::HelpMarker("Three-hit PMVC variant: weight of the third hit contributions.");
-
-					ImGui::TableSetColumnIndex(1);
-					UIHelpers::SetRightAligned(100.0f);
-
-					const auto thetaLabel = std::string("##PMVCTheta") + idSuffix;
-					ImGui::InputFloat(thetaLabel.c_str(), &model._pmvcTheta, 0.0f, 0.0f, "%.3f");
-				}
+				ImGui::EndDisabled();
 			}
-			ImGui::EndDisabled();
 		}
 		ImGui::EndDisabled();
 	}

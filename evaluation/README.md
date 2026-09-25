@@ -61,9 +61,16 @@ Indices are 0-based into the undeformed cage: index *n* is the (*n*+1)-th `v` li
 cage OBJ, because the cage loader keeps the file order.
 
 **Coordinate setups** are a separate list of variants and their parameters
-(`coordinate_type`, `hit_count`, `alpha` / `beta` / `theta`, `use_interior_distance`,
-`samples`, and the distance map isoline settings). The generator emits the full cartesian
-product of model entries and coordinate setups.
+(`coordinate_type`, `hit_count`, `skip_even_hits`, `use_interior_distance`, `samples`, and
+the distance map isoline settings). The generator emits the full cartesian product of model
+entries and coordinate setups.
+
+`hit_count` is the number of depth peeling layers per mesh vertex. The hits along a ray are
+weighted against each other and normalized, so every ray contributes the same leverage no
+matter how often it crosses the cage. Raise it until the viewer stops reporting truncated
+rays; a truncated ray had no room to leave the cage, which distorts the weight of its last
+hit. `skip_even_hits` drops the entry hits from that split, and `use_interior_distance`
+biases it towards the hits reachable without a detour through the cage interior.
 
 Filenames and project names are `<entry>__<deformed cage stem>__<setup>`, iteration is
 sorted, so regenerating an unchanged configuration reproduces byte-identical output.

@@ -93,11 +93,13 @@ class CoordinateSetup:
     #: One of KNOWN_COORDINATE_TYPES.
     coordinate_type: str
 
-    #: PMVC depth-peeling layers. Three enables the alpha / beta / theta weights.
+    #: PMVC depth-peeling layers. The hits along a ray are weighted against each other
+    #: and normalized, so every ray contributes the same leverage however often it
+    #: crosses the cage. Raise it until the viewer stops reporting truncated rays.
     hit_count: Optional[int] = None
-    alpha: Optional[float] = None
-    beta: Optional[float] = None
-    theta: Optional[float] = None
+
+    #: Drop the entry (every second) hits from the per-ray weight split.
+    skip_even_hits: bool = False
 
     #: Weight PMVC with heat-method interior distances instead of the rasterized depth.
     #: This is what fills the table the interior distance map is read back from.
@@ -189,17 +191,20 @@ COORDINATE_SETUPS = [
         hit_count=1,
     ),
     CoordinateSetup(
-        name="pmvc_3hit",
+        name="pmvc_multihit",
         coordinate_type="PMVC",
-        hit_count=3,
-        alpha=1.0,
-        beta=-1.0,
-        theta=1.0,
+        hit_count=5,
     ),
     CoordinateSetup(
-        name="pmvc_interior",
+        name="pmvc_multihit_skipeven",
         coordinate_type="PMVC",
-        hit_count=1,
+        hit_count=5,
+        skip_even_hits=True,
+    ),
+    CoordinateSetup(
+        name="pmvc_multihit_interior",
+        coordinate_type="PMVC",
+        hit_count=5,
         use_interior_distance=True,
         distance_interval=0.05,
         distance_emphasis=5,
@@ -235,7 +240,6 @@ KNOWN_COORDINATE_TYPES = (
 EMBEDDING_COORDINATE_TYPES = ("Harmonic", "BBW", "LBC")
 
 #: The hit count that enables the three-hit PMVC weights, mirroring PMVCSettings.
-THREE_HIT_COUNT = 3
 
 #: Characters allowed in a name that becomes part of a filename and a directory.
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
@@ -482,13 +486,12 @@ def _validate_setup(problems, setup):
                 "Use the PMVC coordinate type for the interior distance variant.",
             )
 
-    if canonical == "PMVC" and setup.hit_count != THREE_HIT_COUNT:
-        if setup.alpha is not None or setup.beta is not None or setup.theta is not None:
-            problems.warn(
-                where,
-                "alpha / beta / theta only apply to the three-hit variant "
-                "(hit_count={}), they are ignored here.".format(THREE_HIT_COUNT),
-            )
+    if canonical == "PMVCO" and setup.skip_even_hits:
+        problems.warn(
+            where,
+            "PMVCO weights by solid angle alone and has no per-ray split, so "
+            "skip_even_hits has no effect here.",
+        )
 
     if setup.distance_emphasis is not None and setup.distance_emphasis < 0:
         problems.error(
@@ -627,12 +630,7 @@ def build_project(entry, deformed_cage, setup, coordinate_type, project_name, pa
     if is_pmvc(coordinate_type):
         if setup.hit_count is not None:
             project["hitCount"] = setup.hit_count
-        if setup.alpha is not None:
-            project["alpha"] = setup.alpha
-        if setup.beta is not None:
-            project["beta"] = setup.beta
-        if setup.theta is not None:
-            project["theta"] = setup.theta
+        project["skipEvenHits"] = bool(setup.skip_even_hits)
         project["useInteriorDistance"] = bool(setup.use_interior_distance)
 
     project["influenceMap"] = bool(entry.influence_map)

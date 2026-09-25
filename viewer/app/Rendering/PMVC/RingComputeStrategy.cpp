@@ -1,5 +1,7 @@
 #include <Rendering/PMVC/RingComputeStrategy.h>
 
+#include <Logging/Logging.h>
+
 #include <algorithm>
 
 uint32_t RingComputeStrategy::RequiredRenderTargetCount() const
@@ -113,6 +115,18 @@ void RingComputeStrategy::Cleanup()
 		_interiorDistanceBuffer = Buffer();
 	}
 
+	if (_diagnosticsBuffer._deviceBuffer != VK_NULL_HANDLE)
+	{
+		_diagnosticsBuffer.ReleaseResource(_device);
+		_diagnosticsBuffer = Buffer();
+	}
+
+	if (_diagnosticsStaging._deviceBuffer != VK_NULL_HANDLE)
+	{
+		_diagnosticsStaging.ReleaseResource(_device);
+		_diagnosticsStaging = MemoryMappedBuffer();
+	}
+
 	for (auto& slot : _slots)
 	{
 		if (slot.lambda._deviceBuffer != VK_NULL_HANDLE)
@@ -158,13 +172,8 @@ void RingComputeStrategy::DispatchAfterRender(
 	VkSemaphore timeline,
 	const uint64_t waitValue,
 	const uint64_t signalValue,
-	const RenderedHit& first,
-	const std::optional<RenderedHit>& second)
+	const RenderedHit& hits)
 {
-	// Without a second hit the shader only needs a valid binding for set B, so it is
-	// pointed at set A and disabled with a weight of zero.
-	RenderedHit secondHit = second.value_or(RenderedHit{ first.colorView, first.depthView, 0.0f });
-
 	// ------------------------------------------------------------
 	// 1) Reset & record command buffer
 	// ------------------------------------------------------------
@@ -177,7 +186,7 @@ void RingComputeStrategy::DispatchAfterRender(
 	VK_CHECK(vkBeginCommandBuffer(cmd, &begin));
 
 	// Descriptor update MUST happen before bind
-	UpdateComputeDescriptorSet(slot, first, secondHit);
+	UpdateComputeDescriptorSet(slot, hits);
 
 	assert(slot < _computeDescriptorSets.size());
 
@@ -202,10 +211,10 @@ void RingComputeStrategy::DispatchAfterRender(
 	pc.uMeshVertexIdx = static_cast<int32_t>(deformableIndex);
 	pc.uNearPlane = _interiorDistance.nearPlane;
 	pc.uFarPlane = _interiorDistance.farPlane;
-	pc.uHitWeightA = first.weight;
-	pc.uHitWeightB = secondHit.weight;
+	pc.uHitCount = static_cast<int32_t>(_hitCount);
 	pc.uFlags = (_offset ? ComputePushConstants::SolidAngleOnly : 0) |
-		(UseInteriorDistance() ? ComputePushConstants::InteriorDistance : 0);
+		(UseInteriorDistance() ? ComputePushConstants::InteriorDistance : 0) |
+		(_skipEvenHits ? ComputePushConstants::SkipEvenHits : 0);
 
 	vkCmdPushConstants(
 		cmd,
@@ -441,7 +450,106 @@ Eigen::MatrixXd RingComputeStrategy::Readback()
 		}
 	}
 
+	LogWeightDiagnostics();
+
 	return _lambdaResults;
+}
+
+/**
+ * Linear reproduction and positivity are properties of the weighting alone, so both can be
+ * checked on the rest pose before any deformation happens. Linear reproduction holds only
+ * when every ray carries the same leverage; a non-zero residual means the coordinates do
+ * not reproduce the undeformed mesh and every deformation starts from a displaced rest
+ * state.
+ */
+void RingComputeStrategy::LogWeightDiagnostics()
+{
+	if (_lambdaResults.rows() == 0 || _lambdaResults.cols() == 0)
+	{
+		return;
+	}
+
+	const auto cagePositions = _cageMesh._vertices.leftCols<3>();
+	const auto meshPositions = _deformableMesh._vertices.leftCols<3>();
+
+	// Relative to the cage bounding box diagonal so the number is comparable across models.
+	const double diagonal = (cagePositions.colwise().maxCoeff() - cagePositions.colwise().minCoeff()).norm();
+	const double scale = diagonal > 0.0 ? diagonal : 1.0;
+
+	double maxResidual = 0.0;
+	Eigen::Index worstVertex = 0;
+	for (Eigen::Index mesh = 0; mesh < _lambdaResults.rows(); ++mesh)
+	{
+		const Eigen::RowVector3d reproduced = _lambdaResults.row(mesh) * cagePositions;
+		const double residual = (reproduced - meshPositions.row(mesh)).norm() / scale;
+		if (residual > maxResidual)
+		{
+			maxResidual = residual;
+			worstVertex = mesh;
+		}
+	}
+
+	const double minWeight = _lambdaResults.minCoeff();
+
+	LOG_INFO("PMVC weights: linear reproduction residual max={:.3e} (relative to cage bbox diagonal, worst mesh vertex {}), min weight={:.3e}",
+		maxResidual,
+		worstVertex,
+		minWeight);
+
+	if (maxResidual > 1e-4)
+	{
+		LOG_WARN("PMVC weights: linear reproduction violated, the rest pose is not reproduced exactly.");
+	}
+
+	if (minWeight < 0.0)
+	{
+		LOG_WARN("PMVC weights: {} negative weights, positivity violated.", (_lambdaResults.array() < 0.0).count());
+	}
+
+	LogRayDiagnostics();
+}
+
+/**
+ * Reports the validity counters the shader accumulated over every ray of the run. A ray
+ * leaving a closed cage crosses it an odd number of times, so an even count means the ray
+ * leaked through a hole in the cage or its intersections were miscounted. A truncated ray
+ * filled every rendered layer, which means the hit count is too low for this model: the
+ * weight of the last hit assumes the ray leaves towards infinity behind it.
+ */
+void RingComputeStrategy::LogRayDiagnostics()
+{
+	if (_diagnosticsStaging._mappedData == nullptr || _diagnosticsBuffer._deviceBuffer == VK_NULL_HANDLE)
+	{
+		return;
+	}
+
+	CopyBuffer(
+		_diagnosticsBuffer._deviceBuffer,
+		_diagnosticsStaging._deviceBuffer,
+		kDiagnosticsSlotCount * sizeof(uint32_t));
+
+	const auto* counters = static_cast<const uint32_t*>(_diagnosticsStaging._mappedData);
+	const uint32_t evenCrossings = counters[0];
+	const uint32_t truncated = counters[1];
+	const uint32_t noHit = counters[2];
+
+	if (evenCrossings == 0 && truncated == 0 && noHit == 0)
+	{
+		LOG_INFO("PMVC rays: all rays crossed the cage an odd number of times and exited within the rendered layers.");
+		return;
+	}
+
+	if (evenCrossings > 0 || noHit > 0)
+	{
+		LOG_WARN("PMVC rays: {} rays with an even number of crossings and {} rays that never crossed the cage; the cage is probably not watertight.",
+			evenCrossings,
+			noHit);
+	}
+
+	if (truncated > 0)
+	{
+		LOG_WARN("PMVC rays: {} rays filled every rendered layer, raise the hit count for this model.", truncated);
+	}
 }
 
 void RingComputeStrategy::CreatePipelineAndLayouts()
@@ -465,14 +573,12 @@ void RingComputeStrategy::CreatePipelineAndLayouts()
 		{ 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
 		// Solid angle lookup
 		{ 4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
-		// Depth cubemap of the first hit
+		// Depth of every hit
 		{ 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
 		// Interior detour table
 		{ 6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
-		// Barycentric + triangle index image of the second hit
-		{ 7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT },
-		// Depth cubemap of the second hit
-		{ 8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
+		// Validity counters
+		{ 7, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT }
 	};
 
 	_computeLayout = _descriptorPool->CreateDescriptorSetLayout(bindings);
@@ -620,15 +726,47 @@ void RingComputeStrategy::AllocateResources()
 		tableBytes
 	);
 
+	// --------------------------------------------------
+	// Validity counters, shared by every slot and accumulated over the whole run, so they
+	// are zeroed once here rather than per dispatch.
+	// --------------------------------------------------
+	const std::vector<uint32_t> zeroedCounters(kDiagnosticsSlotCount, 0u);
+	const VkDeviceSize diagnosticsBytes = zeroedCounters.size() * sizeof(uint32_t);
+
+	auto diagnosticsStaging = _resourceManager->CreateBufferAndCopy(
+		std::span<const uint32_t>(zeroedCounters.data(), zeroedCounters.size()),
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	_diagnosticsBuffer = _resourceManager->AllocateDeviceBuffer(
+		diagnosticsBytes,
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	CopyBuffer(diagnosticsStaging._deviceBuffer, _diagnosticsBuffer._deviceBuffer, diagnosticsBytes);
+
+	_diagnosticsStaging = _resourceManager->CreateBufferAndMapMemory(
+		std::span<std::byte>(static_cast<std::byte*>(nullptr), diagnosticsBytes),
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+	);
+
+	diagnosticsStaging.ReleaseResource(_device);
 	tableStaging.ReleaseResource(_device);
 	vertexListStaging.ReleaseResource(_device);
 }
 
-void RingComputeStrategy::UpdateComputeDescriptorSet(const uint32_t slotIndex, const RenderedHit& first, const RenderedHit& second)
+void RingComputeStrategy::UpdateComputeDescriptorSet(const uint32_t slotIndex, const RenderedHit& hits)
 {
 	VkDescriptorImageInfo imageInfo{};
 	imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	imageInfo.imageView = first.colorView;
+	imageInfo.imageView = hits.colorView;
 	imageInfo.sampler = _barySampler;
 
 	VkDescriptorBufferInfo vertexListInfo{
@@ -637,18 +775,8 @@ void RingComputeStrategy::UpdateComputeDescriptorSet(const uint32_t slotIndex, c
 
 	VkDescriptorImageInfo depthImageInfo{};
 	depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-	depthImageInfo.imageView = first.depthView;
+	depthImageInfo.imageView = hits.depthView;
 	depthImageInfo.sampler = _depthSampler;
-
-	VkDescriptorImageInfo secondImageInfo{};
-	secondImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	secondImageInfo.imageView = second.colorView;
-	secondImageInfo.sampler = _barySampler;
-
-	VkDescriptorImageInfo secondDepthImageInfo{};
-	secondDepthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-	secondDepthImageInfo.imageView = second.depthView;
-	secondDepthImageInfo.sampler = _depthSampler;
 
 	VkDescriptorBufferInfo lambdaInfo{
 		_slots[slotIndex].lambda._deviceBuffer, 0, VK_WHOLE_SIZE
@@ -667,7 +795,11 @@ void RingComputeStrategy::UpdateComputeDescriptorSet(const uint32_t slotIndex, c
 		_interiorDistanceBuffer._deviceBuffer, 0, VK_WHOLE_SIZE
 	};
 
-	std::array<VkWriteDescriptorSet, 9> writes{};
+	VkDescriptorBufferInfo diagnosticsInfo{
+		_diagnosticsBuffer._deviceBuffer, 0, VK_WHOLE_SIZE
+	};
+
+	std::array<VkWriteDescriptorSet, 8> writes{};
 
 	writes[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 		_computeDescriptorSets[slotIndex], 0, 0, 1,
@@ -699,11 +831,7 @@ void RingComputeStrategy::UpdateComputeDescriptorSet(const uint32_t slotIndex, c
 
 	writes[7] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
 		_computeDescriptorSets[slotIndex], 7, 0, 1,
-		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &secondImageInfo };
-
-	writes[8] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
-		_computeDescriptorSets[slotIndex], 8, 0, 1,
-		VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &secondDepthImageInfo };
+		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &diagnosticsInfo };
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }

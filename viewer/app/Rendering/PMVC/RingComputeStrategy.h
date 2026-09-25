@@ -31,10 +31,12 @@ struct ComputePushConstants
 	/// Bit flags of the uFlags field.
 	enum Flags : int32_t
 	{
-		/// Lengthen the rasterized hit distance by the interpolated interior detour.
+		/// Bias the per-ray weight split towards hits reachable without a detour.
 		InteriorDistance = 1 << 0,
 		/// Weight by the solid angle alone, without any distance term (PMVCO).
-		SolidAngleOnly = 1 << 1
+		SolidAngleOnly = 1 << 1,
+		/// Drop the entry (every second) hits from the per-ray weight split.
+		SkipEvenHits = 1 << 2
 	};
 
 	glm::ivec2 uFaceSize { 0, 0 };
@@ -43,26 +45,22 @@ struct ComputePushConstants
 	int32_t uMeshVertexIdx = 0;
 	float uNearPlane = 1e-4f;
 	float uFarPlane = 1.0f;
-	float uHitWeightA = 1.0f;
-	float uHitWeightB = 0.0f;
+	int32_t uHitCount = 1;
 	int32_t uFlags = 0;
 };
 
 /**
- * One rendered hit handed to the compute dispatch. Two of them are combined per texel by
- * the three-hit variant, where the second one is weighted by a negative beta and is
- * therefore subtracted from the first one on the ray it belongs to.
+ * Every rendered hit of one cubemap, handed to the compute dispatch in one go. Both views
+ * cover all layers of their image, where hit k occupies the layers [6k, 6k + 6): the
+ * dispatch normalizes the hits of a ray against each other and therefore needs all of them.
  */
 struct RenderedHit
 {
-	/// Barycentric coordinates + triangle index of the hit.
+	/// Barycentric coordinates + triangle index of every hit.
 	VkImageView colorView = VK_NULL_HANDLE;
 
-	/// Depth layer the hit was rendered into.
+	/// Depth of every hit.
 	VkImageView depthView = VK_NULL_HANDLE;
-
-	/// Scales the contribution of the hit (alpha / beta / theta, or 1). May be negative.
-	float weight = 1.0f;
 };
 
 /**
@@ -111,6 +109,8 @@ public:
 		EigenMesh& cageMesh,
 		EigenMesh& deformableMesh,
 		bool offset,
+		bool skipEvenHits,
+		uint32_t hitCount,
 		uint32_t targetCount,
 		const InteriorDistanceSettings& interiorDistance)
 		: _device(device)
@@ -123,6 +123,8 @@ public:
 		, _cageMesh(cageMesh)
 		, _deformableMesh(deformableMesh)
 		, _offset(offset)
+		, _skipEvenHits(skipEvenHits)
+		, _hitCount(hitCount == 0 ? 1u : hitCount)
 		, _targetCount(targetCount == 0 ? 1 : static_cast<int>(targetCount))
 		, _interiorDistance(interiorDistance)
 	{
@@ -145,12 +147,11 @@ public:
 	void BeginVertex(uint32_t deformableIndex);
 
 	/**
-	 * Records and submits the compute dispatch consuming one or two rendered hits.
+	 * Records and submits the compute dispatch consuming every rendered hit of one vertex.
 	 *
-	 * @param first The hit to accumulate.
-	 * @param second An optional second hit of the same cubemap, accumulated in the same
-	 *               invocation so its (negative) contribution meets the first one per
-	 *               texel. Both hits have to still be resident when this is called.
+	 * @param hits Colour and depth of all peeled layers, which all have to still be
+	 *             resident: the weights of the hits along a ray are normalized against each
+	 *             other, so none of them can be accumulated on its own.
 	 */
 	void DispatchAfterRender(
 		uint32_t deformableIndex,
@@ -158,8 +159,7 @@ public:
 		VkSemaphore timeline,
 		uint64_t waitValue,
 		uint64_t signalValue,
-		const RenderedHit& first,
-		const std::optional<RenderedHit>& second = std::nullopt);
+		const RenderedHit& hits);
 
 	void SubmitReadbackCopy(
 		uint32_t slot,
@@ -180,10 +180,16 @@ public:
 private:
 	void CreatePipelineAndLayouts();
 	void AllocateResources();
-	void UpdateComputeDescriptorSet(uint32_t slotIndex, const RenderedHit& first, const RenderedHit& second);
+	void UpdateComputeDescriptorSet(uint32_t slotIndex, const RenderedHit& hits);
 	void CreateSampler();
 	void CreateDepthSampler();
 	void CopyBuffer(VkBuffer src, VkBuffer dst, VkDeviceSize size);
+
+	/// Reports the linear reproduction residual and the smallest weight of the rest pose.
+	void LogWeightDiagnostics();
+
+	/// Reports the validity counters the shader accumulated over every ray.
+	void LogRayDiagnostics();
 
 	[[nodiscard]] bool UseInteriorDistance() const
 	{
@@ -193,6 +199,9 @@ private:
 	}
 
 	static constexpr uint32_t kDispatchGroupSize = 8;
+
+	/// Slots of the diagnostics buffer, mirroring the kDiag* constants of the shader.
+	static constexpr uint32_t kDiagnosticsSlotCount = 3;
 
 	RenderResourceRef<Device> _device;
 	uint32_t _computeQueueFamily = 0;
@@ -240,9 +249,21 @@ private:
 
 	bool _offset = false;
 
+	/// Drops the entry (every second) hits from the per-ray weight split.
+	bool _skipEvenHits = false;
+
+	/// Peeled layers rendered per vertex, which bounds the hits the shader walks.
+	uint32_t _hitCount = 1;
+
 	// Interior-distance PMVC variant: the detour table is uploaded once and read by the
-	// compute shader on top of the rasterized depth. The shader always declares the
-	// binding, so a dummy buffer is bound when the variant is disabled.
+	// compute shader, which uses it to bias the weight split along a ray. The shader always
+	// declares the binding, so a dummy buffer is bound when the variant is disabled.
 	InteriorDistanceSettings _interiorDistance;
 	Buffer _interiorDistanceBuffer;
+
+	// Validity counters written by the shader: rays with an even number of crossings (a
+	// watertightness failure), rays that filled every rendered layer (the hit count is too
+	// low for the model) and rays that never crossed the cage.
+	Buffer _diagnosticsBuffer;
+	MemoryMappedBuffer _diagnosticsStaging;
 };
