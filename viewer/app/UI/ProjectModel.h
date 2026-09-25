@@ -144,16 +144,17 @@ struct ProjectModelData
 	}
 
 	/**
-	 * Keeps the PMVC settings consistent with the selected coordinate type: the offset
+	 * Keeps the PMVC settings consistent with the selected coordinate type. The offset
 	 * variant is not a setting of its own anymore, it is the PMVCO coordinate type, and
-	 * it always runs with a single hit because it has no distance term to peel against.
+	 * because it weights by solid angle alone it has no per-ray split: it runs with a single
+	 * hit and none of the settings that shape that split apply to it.
 	 */
 	void ApplyPMVCPreset()
 	{
 		if (_deformationType == DeformationType::PMVC)
 		{
 			_pmvcUseOffset = false;
-			_pmvcHitCount = std::max<uint64_t>(1, _pmvcHitCount);
+			_pmvcHitCount = std::clamp<uint64_t>(_pmvcHitCount, 1, PMVCSettings::kMaxHitCount);
 		}
 		else if (_deformationType == DeformationType::PMVCO)
 		{

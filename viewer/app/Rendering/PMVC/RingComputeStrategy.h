@@ -17,7 +17,6 @@
 #include <cassert>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <vector>
 #include <vulkan/vulkan.h>
 #include <glm/ext/vector_int2.hpp>
@@ -64,12 +63,16 @@ struct RenderedHit
 };
 
 /**
- * Configuration for the interior-distance PMVC variant: when a detour table is set the
- * compute strategy lengthens the rasterized (Euclidean) hit distance by the barycentric
- * interpolation of the precomputed heat-method interior detours (interior distance minus
- * Euclidean distance, zero wherever the cage is convex from the mesh vertex, so the
- * variant reduces exactly to the Euclidean weighting on locally convex cages). The table
- * has one row per cage vertex and one column per deformable mesh vertex.
+ * Configuration for the interior-distance PMVC variant. When a detour table is set, the
+ * share a hit receives of its ray is scaled by r / (r + detour), where the detour is the
+ * barycentric interpolation of the precomputed heat-method detours of its cage triangle
+ * (interior minus Euclidean distance, so zero wherever the interior path is the straight
+ * one). The kernel itself keeps the Euclidean distance, which is what preserves linear
+ * reproduction, so the variant only ever redistributes weight within a ray.
+ *
+ * The first hit of a ray is unaffected by construction: the segment from the mesh vertex to
+ * its first crossing lies inside the cage, so its interior distance equals its Euclidean
+ * one. The table has one row per cage vertex and one column per deformable mesh vertex.
  */
 struct InteriorDistanceSettings
 {
@@ -86,14 +89,16 @@ struct InteriorDistanceSettings
 /**
  * The one and only PMVC compute pipeline ("Ring"): a ring of render targets is filled by
  * the cubemap renderer and every slot is consumed by a compute dispatch that accumulates
- * the barycentric coordinates of the rendered hit, weighted by the solid angle of the
- * texel and (unless the offset variant is used) by its distance, into a per-slot lambda
- * buffer that is copied back and added to the result row of the mesh vertex.
+ * the barycentric coordinates of the rendered hits into a per-slot lambda buffer, which is
+ * copied back and added to the result row of the mesh vertex.
  *
- * A mesh vertex may be rendered several times (depth peeling), each of those hits is
- * dispatched with its own weight, and two hits that have to meet per texel (the first and
- * second hit of the three-hit variant) are dispatched together, so multi-hit PMVC, the
- * three-hit variant and the interior distance variant all share this single pipeline.
+ * All peeling layers of a vertex are consumed by a single dispatch, because the weights of
+ * the hits along one ray are normalized against each other: per texel the dispatch divides
+ * one unit of weight between the hits and only then applies the distance kernel, so every
+ * direction contributes the same amount however often it crosses the cage. Skipping the
+ * entry hits and the interior distance variant are both choices of that division and
+ * therefore share this one pipeline; the offset variant (PMVCO) has no division to make and
+ * weights by the solid angle alone.
  */
 class RingComputeStrategy final
 {

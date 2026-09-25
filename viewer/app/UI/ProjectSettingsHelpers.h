@@ -48,10 +48,12 @@ struct ProjecSettingsHelpers
 	 * The PMVC settings of a project, shared by the new project, project settings and
 	 * project options panels.
 	 *
-	 * Everything runs through the Ring pipeline with a fixed cubemap size and ring size,
-	 * and the offset variant is selected through the PMVCO coordinate type, so the only
-	 * settings left are the distance type, the hit count and the weights of the three-hit
-	 * variant.
+	 * The cubemap and ring sizes are fixed, and the offset variant is selected through the
+	 * PMVCO coordinate type, so what is left are the three settings that shape the per-ray
+	 * weight split: how many hits are peeled, whether the entry hits take part, and whether
+	 * the split is biased by the interior distance. All three are meaningless for PMVCO,
+	 * which weights by solid angle alone, and for every non-PMVC coordinate type, so the
+	 * whole block is disabled unless the plain PMVC type is selected.
 	 *
 	 * @param model The project model to edit, expected to be up to date with
 	 *              ApplyPMVCPreset().
@@ -59,25 +61,56 @@ struct ProjecSettingsHelpers
 	 */
 	static void PushPMVCSettingsUI(ProjectModelData& model, const char* idSuffix)
 	{
-		const auto isPMVC = DeformationTypeHelpers::IsPMVC(model._deformationType);
-		const auto isOffsetVariant = (model._deformationType == DeformationType::PMVCO);
-
-		ImGui::BeginDisabled(!isPMVC);
+		ImGui::BeginDisabled(model._deformationType != DeformationType::PMVC);
 		{
+			ImGui::TableNextRow();
+			{
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextEx("Hit Count");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("Depth peeling layers rendered per mesh vertex. The hits along a ray are weighted against each other and normalized, so every ray contributes the same amount however often it crosses the cage. Raise it until the log stops reporting truncated rays; each layer costs cubemap memory for the whole ring.");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(100.0f);
+
+				const auto hitCountLabel = std::string("##PMVCHitCount") + idSuffix;
+
+				if (ImGui::InputScalar(hitCountLabel.c_str(), ImGuiDataType_U64, &model._pmvcHitCount))
+				{
+					model._pmvcHitCount = std::clamp<uint64_t>(model._pmvcHitCount, 1, PMVCSettings::kMaxHitCount);
+				}
+			}
+
+			ImGui::TableNextRow();
+			{
+				ImGui::TableSetColumnIndex(0);
+				ImGui::TextEx("Skip Even Hits");
+				ImGui::SameLine();
+				UIHelpers::HelpMarker("Drop the entry (every second) hits from the per-ray weight split. Their distance still shapes the weights of the hits around them, they simply receive none themselves.");
+
+				ImGui::TableSetColumnIndex(1);
+				UIHelpers::SetRightAligned(100.0f);
+
+				const auto skipEvenLabel = std::string("##PMVCSkipEvenHits") + idSuffix;
+				ImGui::Checkbox(skipEvenLabel.c_str(), &model._pmvcSkipEvenHits);
+			}
+
 			ImGui::TableNextRow();
 			{
 				ImGui::TableSetColumnIndex(0);
 				ImGui::TextEx("Distance");
 				ImGui::SameLine();
-				UIHelpers::HelpMarker("Euclidean weights PMVC with the rasterized depth of the hit, Interior with the heat-method interior distance, which respects the interior of the cage. The offset variant (PMVCO) weights by solid angle alone and has no distance term.");
+				UIHelpers::HelpMarker("Biases the per-ray weight split towards hits that are reachable without a detour through the interior of the cage, which keeps the influence of the cage local. It needs at least two hits: the straight segment from a mesh vertex to its first hit lies inside the cage, so the first hit never carries a detour and the setting would do nothing.");
 
 				ImGui::TableSetColumnIndex(1);
 				UIHelpers::SetRightAligned(125.0f);
 
-				ImGui::BeginDisabled(isOffsetVariant);
+				// With a single hit there is nothing to bias: the only hit is the first one,
+				// whose interior distance equals its Euclidean distance by construction.
+				ImGui::BeginDisabled(model._pmvcHitCount < 2);
 				{
 					const auto distanceLabel = std::string("##PMVCDistance") + idSuffix;
-					const auto selectedDistance = (!isOffsetVariant && model._pmvcUseInteriorDistance) ? 1 : 0;
+					const auto selectedDistance = model._pmvcUseInteriorDistance ? 1 : 0;
 
 					if (ImGui::BeginCombo(distanceLabel.c_str(), PMVCDistanceTypeNames[selectedDistance], ImGuiComboFlags_HeightRegular))
 					{
@@ -98,49 +131,6 @@ struct ProjecSettingsHelpers
 
 						ImGui::EndCombo();
 					}
-				}
-				ImGui::EndDisabled();
-			}
-
-			ImGui::TableNextRow();
-			{
-				ImGui::TableSetColumnIndex(0);
-				ImGui::TextEx("Hit Count");
-				ImGui::SameLine();
-				UIHelpers::HelpMarker("Number of hits (depth peeling layers) sampled per mesh vertex. The hits along a ray are weighted against each other and normalized, so every ray contributes the same amount however often it crosses the cage. Raise this until the log stops reporting truncated rays.");
-
-				ImGui::TableSetColumnIndex(1);
-				UIHelpers::SetRightAligned(100.0f);
-
-				// The offset variant has no distance term to peel against and always runs
-				// with a single hit.
-				ImGui::BeginDisabled(isOffsetVariant);
-				{
-					const auto hitCountLabel = std::string("##PMVCHitCount") + idSuffix;
-
-					if (ImGui::InputScalar(hitCountLabel.c_str(), ImGuiDataType_U64, &model._pmvcHitCount))
-					{
-						model._pmvcHitCount = std::max<uint64_t>(1, model._pmvcHitCount);
-					}
-				}
-				ImGui::EndDisabled();
-			}
-
-			ImGui::TableNextRow();
-			{
-				ImGui::TableSetColumnIndex(0);
-				ImGui::TextEx("Skip Even Hits");
-				ImGui::SameLine();
-				UIHelpers::HelpMarker("Drop the entry (every second) hits from the per-ray weight split. Their distance still shapes the weights of the hits around them, they simply receive none themselves.");
-
-				ImGui::TableSetColumnIndex(1);
-				UIHelpers::SetRightAligned(100.0f);
-
-				// The offset variant has no per-ray split to drop anything from.
-				ImGui::BeginDisabled(isOffsetVariant);
-				{
-					const auto skipEvenLabel = std::string("##PMVCSkipEvenHits") + idSuffix;
-					ImGui::Checkbox(skipEvenLabel.c_str(), &model._pmvcSkipEvenHits);
 				}
 				ImGui::EndDisabled();
 			}

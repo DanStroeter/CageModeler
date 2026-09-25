@@ -159,9 +159,8 @@ private:
 	bool _pmvcUseOffset = false;
 
 	// Interior detour table (rows = cage vertices, cols = mesh vertices, entries are
-	// interior minus Euclidean distance); when set the compute strategy lengthens the
-	// rasterized hit distance by the interpolated detour. Owned by the CubemapManager,
-	// must outlive this instance.
+	// interior minus Euclidean distance); when set the compute strategy uses it to bias the
+	// weight split along a ray. Owned by the CubemapManager, must outlive this instance.
 	const Eigen::MatrixXf* _interiorDetours = nullptr;
 
 	//parameters

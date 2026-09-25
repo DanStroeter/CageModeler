@@ -89,7 +89,6 @@ class CoordinateSetup:
 
     #: Short identifier, used in the generated filenames. Must be unique.
     name: str
-
     #: One of KNOWN_COORDINATE_TYPES.
     coordinate_type: str
 
@@ -221,6 +220,10 @@ COORDINATE_SETUPS = [
 # ===========================================================================
 
 #: The coordinate types the evaluation config reader accepts (matched case-insensitively).
+#: Mirrors PMVCSettings::kMaxHitCount: six cubemap array layers per hit against the
+#: 256 array layers Vulkan guarantees.
+MAX_HIT_COUNT = 42
+
 KNOWN_COORDINATE_TYPES = (
     "MVC",
     "QMVC",
@@ -238,8 +241,6 @@ KNOWN_COORDINATE_TYPES = (
 
 #: Coordinate types that cannot be computed without a tetrahedral embedding.
 EMBEDDING_COORDINATE_TYPES = ("Harmonic", "BBW", "LBC")
-
-#: The hit count that enables the three-hit PMVC weights, mirroring PMVCSettings.
 
 #: Characters allowed in a name that becomes part of a filename and a directory.
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
@@ -460,6 +461,15 @@ def _validate_setup(problems, setup):
 
     if setup.hit_count is not None and setup.hit_count <= 0:
         problems.error(where, "hit_count must be greater than zero, got {}.".format(setup.hit_count))
+
+    if setup.hit_count is not None and setup.hit_count > MAX_HIT_COUNT:
+        problems.error(
+            where,
+            "hit_count {} exceeds the supported maximum of {}; every hit occupies six "
+            "cubemap array layers and Vulkan only guarantees 256.".format(
+                setup.hit_count, MAX_HIT_COUNT
+            ),
+        )
 
     if not is_pmvc(canonical):
         if setup.hit_count is not None:

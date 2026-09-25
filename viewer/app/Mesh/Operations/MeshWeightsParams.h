@@ -39,6 +39,15 @@ struct PMVCSettings
 
 	/// Number of render targets in the ring.
 	static constexpr uint32_t kRingTargetCount = 64;
+
+	/**
+	 * Upper bound on the peeling layers a project may request. Every hit occupies six
+	 * array layers of the cubemap images, and Vulkan only guarantees 256 array layers, so
+	 * 256 / 6 is the portable ceiling. Devices that allow more are not exploited here
+	 * because the footprint also grows with the ring size; a request that exceeds what the
+	 * device actually supports is rejected when the render targets are created.
+	 */
+	static constexpr uint64_t kMaxHitCount = 42;
 };
 
 struct DeformationTypeHelpers
