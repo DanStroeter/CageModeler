@@ -273,6 +273,11 @@ struct PMVCMirrorParams
 	/// nullptr = Euclidean variant; otherwise the interior detour table (rows = cage
 	/// vertices, cols = mesh vertices, entries are interior minus Euclidean distance).
 	const Eigen::MatrixXf* interiorDetours = nullptr;
+	/// Interpolates the absolute interior distance across the hit triangle instead of the
+	/// detour. Kept so the tests can show why the detour formulation is used: the absolute
+	/// distance carries the curvature of the distance function, so its linear interpolant
+	/// overestimates it inside a triangle and discounts hits that have no detour at all.
+	bool absoluteInteriorDistance = false;
 };
 
 /**
@@ -281,7 +286,8 @@ struct PMVCMirrorParams
  * towards infinity exactly like the shader does.
  */
 double hitWeight(const PMVCMirrorParams& params, const size_t hit, const size_t rendered,
-	const std::vector<RayHit>& hits, const TestMesh& cage, const Eigen::Index meshIdx)
+	const std::vector<RayHit>& hits, const TestMesh& cage, const Eigen::Index meshIdx,
+	const Eigen::Vector3d& center)
 {
 	if (params.skipEvenHits && (hit % 2) == 1)
 	{
@@ -300,11 +306,29 @@ double hitWeight(const PMVCMirrorParams& params, const size_t hit, const size_t 
 	if (hit > 0 && params.interiorDetours != nullptr)
 	{
 		const RayHit& h = hits[hit];
-		const double detour = std::max(
-			h.b0 * static_cast<double>((*params.interiorDetours)(cage.F(h.triangle, 0), meshIdx)) +
-			h.b1 * static_cast<double>((*params.interiorDetours)(cage.F(h.triangle, 1), meshIdx)) +
-			h.b2 * static_cast<double>((*params.interiorDetours)(cage.F(h.triangle, 2), meshIdx)), 0.0);
-		eta = rCur / std::max(rCur + detour, 1e-20);
+		const auto detourAt = [&](const int corner)
+		{
+			return static_cast<double>((*params.interiorDetours)(cage.F(h.triangle, corner), meshIdx));
+		};
+
+		if (params.absoluteInteriorDistance)
+		{
+			const auto absoluteAt = [&](const int corner)
+			{
+				const Eigen::Vector3d p = cage.V.row(cage.F(h.triangle, corner));
+				return detourAt(corner) + (p - center).norm();
+			};
+
+			const double interpolated =
+				h.b0 * absoluteAt(0) + h.b1 * absoluteAt(1) + h.b2 * absoluteAt(2);
+			eta = rCur / std::max(interpolated, rCur);
+		}
+		else
+		{
+			const double detour = std::max(
+				h.b0 * detourAt(0) + h.b1 * detourAt(1) + h.b2 * detourAt(2), 0.0);
+			eta = rCur / std::max(rCur + detour, 1e-20);
+		}
 	}
 
 	return std::max(gatePrev, 0.0) * std::max(gateNext, 0.0) * eta;
@@ -516,7 +540,7 @@ PMVCMirrorResult computePMVCMirrorRaw(const TestMesh& cage, const Eigen::MatrixX
 					double weightSum = 0.0;
 					for (size_t hit = 0; hit < rendered; ++hit)
 					{
-						weightSum += hitWeight(params, hit, rendered, hits, cage, meshIdx);
+						weightSum += hitWeight(params, hit, rendered, hits, cage, meshIdx, center);
 					}
 
 					// Every gate vanished, which only happens when the hits of this ray are
@@ -531,7 +555,7 @@ PMVCMirrorResult computePMVCMirrorRaw(const TestMesh& cage, const Eigen::MatrixX
 
 					for (size_t hit = 0; hit < rendered; ++hit)
 					{
-						const double w = hitWeight(params, hit, rendered, hits, cage, meshIdx);
+						const double w = hitWeight(params, hit, rendered, hits, cage, meshIdx, center);
 						if (w <= 0.0)
 						{
 							continue;
@@ -918,6 +942,30 @@ void testPhase6MultiHit()
 	const Eigen::MatrixXd zeroDetourWeights = computePMVCMirror(uCage, samples, zeroDetourMulti);
 	check((zeroDetourWeights - five).cwiseAbs().maxCoeff() < 1e-12,
 		"zero detours reduce the interior variant exactly to the Euclidean multi-hit weights");
+
+	// Why the table stores detours and not absolute interior distances. Both are read at the
+	// cage vertices and interpolated across the hit triangle, but the absolute distance
+	// carries the curvature of the distance function, and a linear interpolant of a convex
+	// function overestimates it in the interior of the triangle. With every detour set to
+	// zero the correct result is the Euclidean one, and the detour formulation reproduces it
+	// exactly while interpolating absolute distances discounts hits that have no detour.
+	PMVCMirrorParams absoluteZeroDetour = zeroDetourMulti;
+	absoluteZeroDetour.absoluteInteriorDistance = true;
+	const Eigen::MatrixXd absoluteWeights = computePMVCMirror(uCage, samples, absoluteZeroDetour);
+
+	const double absoluteDeviation = (absoluteWeights - five).cwiseAbs().maxCoeff();
+	std::cout << "absolute-distance interpolation, all detours zero: deviation from Euclidean = "
+		<< absoluteDeviation << std::endl;
+	// Modest in the normalized weights, because the hits that carry eta are the deep ones
+	// whose share is small, but eleven orders of magnitude above the 1e-15 the detour
+	// formulation achieves on the same input.
+	check(absoluteDeviation > 1e-4,
+		"interpolating absolute interior distances corrupts hits that carry no detour");
+
+	// The corruption is in which hits receive the weight, not in the invariant: the per-ray
+	// normalization holds whatever the split is.
+	check(linearReproductionResidual(absoluteWeights, uCage, samples) < 1e-12,
+		"the absolute-distance variant still reproduces the rest pose");
 }
 
 /**
