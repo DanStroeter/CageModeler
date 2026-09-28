@@ -121,9 +121,8 @@ struct DeformationTypeHelpers
 };
 
 /**
- * Resolves the cage vertices an export is centered on: the explicit selection when one was
- * made, otherwise every vertex the parametrization translates. Shared by the influence
- * color map and the distance field color map so both are driven by the same selection.
+ * Resolves the cage vertices the influence color map is centered on: the explicit selection
+ * when one was made, otherwise every vertex the parametrization translates.
  */
 [[nodiscard]] inline std::vector<int> ResolveControlVertexIndices(const std::optional<std::vector<int32_t>>& selectedVertices,
 	const Parametrization& parametrization)
