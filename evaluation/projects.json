@@ -2,104 +2,15 @@
   "timingsFile": "timings.json",
   "projects": [
     {
-      "name": "PMVCRingNoOffset_armadillo64",
+      "name": "PMVC_armadillo",
       "coordinateType": "PMVC",
-      "pmvcComputeType": "Ring",
-      "pmvcUseOffset": false,
-      "mesh": "../assets/meshes/armadilloman.obj",
-      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
-      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj",
-      "cubemapSize": 64
-    },
-    {
-      "name": "PMVCRingNoOffset_armadillo32",
-      "coordinateType": "PMVC",
-      "pmvcComputeType": "Ring",
-      "pmvcUseOffset": false,
-      "mesh": "../assets/meshes/armadilloman.obj",
-      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
-      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj",
-      "cubemapSize": 32
-    },
-    {
-      "name": "1MVC_armadillo",
-      "coordinateType": "MVC",
-      "mesh": "../assets/meshes/armadilloman.obj",
-      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
-      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj",
-      "cubemapSize": 64
-    },
-    {
-      "name": "2MVC_armadillo",
-      "coordinateType": "MVC",
       "mesh": "../assets/meshes/armadilloman.obj",
       "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
       "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
     },
     {
-      "name": "3MVC_armadillo",
-      "coordinateType": "MVC",
-      "mesh": "../assets/meshes/armadilloman.obj",
-      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
-      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
-    },
-    {
-      "name": "4MVC_armadillo",
-      "coordinateType": "MVC",
-      "mesh": "../assets/meshes/armadilloman.obj",
-      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
-      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
-    },
-    {
-      "name": "PMVCRingNoOffset_armadillo",
+      "name": "PMVC_armadillo",
       "coordinateType": "PMVC",
-      "pmvcComputeType": "Ring",
-      "pmvcUseOffset": false,
-      "mesh": "../assets/meshes/armadilloman.obj",
-      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
-      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
-    },
-    {
-      "name": "PMVCRingOffset_armadillo",
-      "coordinateType": "PMVC",
-      "pmvcComputeType": "Ring",
-      "pmvcUseOffset": true,
-      "mesh": "../assets/meshes/armadilloman.obj",
-      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
-      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
-    },
-    {
-      "name": "PMVCAtomicOffset_armadillo",
-      "coordinateType": "PMVC",
-      "pmvcComputeType": "All",
-      "pmvcUseOffset": true,
-      "mesh": "../assets/meshes/armadilloman.obj",
-      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
-      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
-    },
-    {
-      "name": "PMVCAtomicNoOffset_armadillo",
-      "coordinateType": "PMVC",
-      "pmvcComputeType": "All",
-      "pmvcUseOffset": false,
-      "mesh": "../assets/meshes/armadilloman.obj",
-      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
-      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
-    },
-    {
-      "name": "PMVCAtomicOffset_armadillo",
-      "coordinateType": "PMVC",
-      "pmvcComputeType": "All",
-      "pmvcUseOffset": true,
-      "mesh": "../assets/meshes/armadilloman.obj",
-      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
-      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
-    },
-    {
-      "name": "PMVCRingNoOffset_armadillo",
-      "coordinateType": "PMVC",
-      "pmvcComputeType": "Ring",
-      "pmvcUseOffset": false,
       "mesh": "../assets/meshes/armadilloman.obj",
       "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
       "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
@@ -133,37 +44,99 @@
       "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
     },
     {
-      "name": "PMVCAtomicOffset_armadillo",
+      "name": "PMVC_armadillo",
       "coordinateType": "PMVC",
-      "pmvcComputeType": "All",
-      "pmvcUseOffset": true,
       "mesh": "../assets/meshes/armadilloman.obj",
       "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
       "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
     },
     {
-      "name": "PMVCRingNoOffset_armadillo",
-      "coordinateType": "PMVC",
-      "pmvcComputeType": "Ring",
-      "pmvcUseOffset": false,
+      "name": "PMVCO_armadillo",
+      "coordinateType": "PMVCO",
       "mesh": "../assets/meshes/armadilloman.obj",
       "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
       "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
     },
     {
-      "name": "PMVCRingNoOffset_armadillo",
-      "coordinateType": "PMVC",
-      "pmvcComputeType": "Ring",
-      "pmvcUseOffset": false,
+      "name": "PMVCO_armadillo",
+      "coordinateType": "PMVCO",
       "mesh": "../assets/meshes/armadilloman.obj",
       "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
       "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
     },
     {
-      "name": "PMVCAtomicNoOffset_armadillo",
+      "name": "PMVC_armadillo",
       "coordinateType": "PMVC",
-      "pmvcComputeType": "All",
-      "pmvcUseOffset": false,
+      "mesh": "../assets/meshes/armadilloman.obj",
+      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
+      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
+    },
+    {
+      "name": "PMVCO_armadillo",
+      "coordinateType": "PMVCO",
+      "mesh": "../assets/meshes/armadilloman.obj",
+      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
+      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
+    },
+    {
+      "name": "PMVC_armadillo",
+      "coordinateType": "PMVC",
+      "mesh": "../assets/meshes/armadilloman.obj",
+      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
+      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
+    },
+    {
+      "name": "1MVC_armadillo",
+      "coordinateType": "MVC",
+      "mesh": "../assets/meshes/armadilloman.obj",
+      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
+      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
+    },
+    {
+      "name": "2MVC_armadillo",
+      "coordinateType": "MVC",
+      "mesh": "../assets/meshes/armadilloman.obj",
+      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
+      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
+    },
+    {
+      "name": "3MVC_armadillo",
+      "coordinateType": "MVC",
+      "mesh": "../assets/meshes/armadilloman.obj",
+      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
+      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
+    },
+    {
+      "name": "4MVC_armadillo",
+      "coordinateType": "MVC",
+      "mesh": "../assets/meshes/armadilloman.obj",
+      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
+      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
+    },
+    {
+      "name": "PMVCO_armadillo",
+      "coordinateType": "PMVCO",
+      "mesh": "../assets/meshes/armadilloman.obj",
+      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
+      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
+    },
+    {
+      "name": "PMVC_armadillo",
+      "coordinateType": "PMVC",
+      "mesh": "../assets/meshes/armadilloman.obj",
+      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
+      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
+    },
+    {
+      "name": "PMVC_armadillo",
+      "coordinateType": "PMVC",
+      "mesh": "../assets/meshes/armadilloman.obj",
+      "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
+      "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"
+    },
+    {
+      "name": "PMVC_armadillo",
+      "coordinateType": "PMVC",
       "mesh": "../assets/meshes/armadilloman.obj",
       "cage": "../assets/meshes/armadilloman_cages_triangulated.obj",
       "deformedCage": "../assets/meshes/armadilloman_cages_triangulated_deformed_1.obj"

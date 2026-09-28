@@ -101,7 +101,6 @@ namespace
 	}
 
 	[[nodiscard]] std::optional<DeformationType> ParseDeformationType(const std::string& value);
-	[[nodiscard]] std::optional<PMVCComputeType> ParsePMVCComputeType(const std::string& value);
 	[[nodiscard]] std::optional<bool> ExtractJsonBoolValue(const std::string& objectText, const std::string& key);
 
 	[[nodiscard]] std::string EscapeJsonString(const std::string& value)
@@ -127,17 +126,16 @@ namespace
 	{
 		std::string _name;
 		std::string _coordinateType = "MVC";
-		std::string _pmvcComputeType = "Ring";
-		std::optional<bool> _pmvcUseOffset;
 		std::string _mesh;
 		std::string _cage;
 		std::string _deformedCage;
 		std::optional<std::string> _embedding;
 		std::optional<int32_t> _samples;
-		std::optional<int32_t> _cubemapSize;
-		std::optional<int32_t> _pmvcTargetCount;
 		std::optional<int32_t> _pmvcHitCount;
-		std::optional<bool> _pmvcOmitNegative;
+		std::optional<float> _pmvcAlpha;
+		std::optional<float> _pmvcBeta;
+		std::optional<float> _pmvcTheta;
+		std::optional<bool> _pmvcUseInteriorDistance;
 		std::optional<std::vector<int32_t>> _vertices;
 	};
 
@@ -176,6 +174,17 @@ namespace
 		if (std::regex_search(objectText, match, pattern) && match.size() > 1)
 		{
 			return static_cast<int32_t>(std::stoi(match[1].str()));
+		}
+		return std::nullopt;
+	}
+
+	[[nodiscard]] std::optional<float> ExtractJsonFloatValue(const std::string& objectText, const std::string& key)
+	{
+		const std::regex pattern("\"" + key + "\"\\s*:\\s*(-?[0-9]+(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)");
+		std::smatch match;
+		if (std::regex_search(objectText, match, pattern) && match.size() > 1)
+		{
+			return std::stof(match[1].str());
 		}
 		return std::nullopt;
 	}
@@ -299,17 +308,16 @@ namespace
 			EvaluationProjectConfig project;
 			project._name = ExtractJsonStringValue(objectText, "name").value_or("");
 			project._coordinateType = ExtractJsonStringValue(objectText, "coordinateType").value_or("MVC");
-			project._pmvcComputeType = ExtractJsonStringValue(objectText, "pmvcComputeType").value_or("Ring");
-			project._pmvcUseOffset = ExtractJsonBoolValue(objectText, "pmvcUseOffset").value_or(false);
 			project._mesh = ExtractJsonStringValue(objectText, "mesh").value_or("");
 			project._cage = ExtractJsonStringValue(objectText, "cage").value_or("");
 			project._deformedCage = ExtractJsonStringValue(objectText, "deformedCage").value_or("");
 			project._embedding = ExtractJsonStringValue(objectText, "embedding");
 			project._samples = ExtractJsonIntValue(objectText, "samples");
-			project._cubemapSize = ExtractJsonIntValue(objectText, "cubemapSize");
-			project._pmvcTargetCount = ExtractJsonIntValue(objectText, "targetCount");
 			project._pmvcHitCount = ExtractJsonIntValue(objectText, "hitCount");
-			project._pmvcOmitNegative = ExtractJsonBoolValue(objectText, "omitNegative");
+			project._pmvcAlpha = ExtractJsonFloatValue(objectText, "alpha");
+			project._pmvcBeta = ExtractJsonFloatValue(objectText, "beta");
+			project._pmvcTheta = ExtractJsonFloatValue(objectText, "theta");
+			project._pmvcUseInteriorDistance = ExtractJsonBoolValue(objectText, "useInteriorDistance");
 			project._vertices = ExtractJsonIntArrayValue(objectText, "vertices");
 			if (!project._vertices.has_value())
 			{
@@ -335,23 +343,6 @@ namespace
 		if (const auto deformationType = ParseDeformationType(project._coordinateType); !deformationType.has_value())
 		{
 			LOG_WARN("Skipping project {} due to unsupported coordinateType '{}'.", projectIndex, project._coordinateType);
-			return false;
-		}
-		else if (DeformationTypeHelpers::IsPMVC(*deformationType) && !ParsePMVCComputeType(project._pmvcComputeType).has_value())
-		{
-			LOG_WARN("Skipping project {} due to unsupported pmvcComputeType '{}'.", projectIndex, project._pmvcComputeType);
-			return false;
-		}
-
-		if (project._cubemapSize.has_value() && project._cubemapSize.value() <= 0)
-		{
-			LOG_WARN("Skipping project {} due to invalid cubemapSize {} (must be > 0).", projectIndex, project._cubemapSize.value());
-			return false;
-		}
-
-		if (project._pmvcTargetCount.has_value() && project._pmvcTargetCount.value() <= 0)
-		{
-			LOG_WARN("Skipping project {} due to invalid targetCount {} (must be > 0).", projectIndex, project._pmvcTargetCount.value());
 			return false;
 		}
 
@@ -387,21 +378,6 @@ namespace
 			return std::nullopt;
 		}
 
-		return it->second;
-	}
-	[[nodiscard]] std::optional<PMVCComputeType> ParsePMVCComputeType(const std::string& value)
-	{
-		static const std::unordered_map<std::string, PMVCComputeType> mapping = {
-			{ "serial", PMVCComputeType::Serial },
-			{ "ring", PMVCComputeType::Ring },
-			{ "all", PMVCComputeType::All },
-			{ "cpu", PMVCComputeType::Cpu }
-		};
-		const auto it = mapping.find(ToLower(value));
-		if (it == mapping.end())
-		{
-			return std::nullopt;
-		}
 		return it->second;
 	}
 }
@@ -459,12 +435,14 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 		[this] { OnNewProjectCreated(); });
 
 	_projectModel->_deformationType = DeformationType::PMVC;
-	_projectModel->_pmvcComputeType = PMVCComputeType::Ring;
-	_projectModel->_pmvcUseOffset = false;
-	_projectModel->_pmvcTargetCount = 64;
-	_projectModel->_pmvcHitCount = 1;
-	_projectModel->_pmvcOmitNegative = true;
-	_projectModel->_cubemapSize = 32;
+	// Use the three-hit PMVC variant for the default startup project so the combined-hit
+	// weighting is exercised on launch.
+	_projectModel->_pmvcHitCount = PMVCSettings::kThreeHitCount;
+	_projectModel->_pmvcAlpha = 1.0f;
+	_projectModel->_pmvcBeta = -1.0f;
+	_projectModel->_pmvcTheta = 1.0f;
+	_projectModel->_pmvcUseInteriorDistance = false;
+	_projectModel->ApplyPMVCPreset();
 	//_projectModel->_meshFilepath = "assets/meshes/tri.obj";
 	//_projectModel->_cageFilepath = "assets/meshes/sphere_cages_triangulated.obj";
 	_projectModel->_meshFilepath = "assets/meshes/armadilloman.obj";
@@ -529,12 +507,8 @@ void Editor::StartEvaluation()
 		std::optional<double> _deformationApplyMs;
 		std::optional<int32_t> _meshVertexCount;
 		std::optional<int32_t> _cageVertexCount;
-		std::optional<std::string> _pmvcComputeType;
-		std::optional<bool> _pmvcUseOffset;
-		std::optional<int32_t> _cubemapSize;
-		std::optional<int32_t> _pmvcTargetCount;
 		std::optional<int32_t> _pmvcHitCount;
-		std::optional<bool> _pmvcOmitNegative;
+		std::optional<bool> _pmvcUseInteriorDistance;
 	};
 
 	std::vector<EvaluationResult> results;
@@ -569,15 +543,16 @@ void Editor::StartEvaluation()
 		std::filesystem::create_directories(projectOutputDir);
 
 		_projectModel->_deformationType = *deformationType;
-		_projectModel->_pmvcComputeType = ParsePMVCComputeType(project._pmvcComputeType).value_or(PMVCComputeType::Ring);
-		_projectModel->_pmvcUseOffset = project._pmvcUseOffset.value_or(false);
 		_projectModel->_meshFilepath = evaluationRoot / project._mesh;
 		_projectModel->_cageFilepath = evaluationRoot / project._cage;
 		_projectModel->_deformedCageFilepath = evaluationRoot / project._deformedCage;
-		_projectModel->_cubemapSize = project._cubemapSize.value_or(32);
-		_projectModel->_pmvcTargetCount = project._pmvcTargetCount.value_or(64);
 		_projectModel->_pmvcHitCount = project._pmvcHitCount.value_or(1);
-		_projectModel->_pmvcOmitNegative = project._pmvcOmitNegative.value_or(true);
+		_projectModel->_pmvcAlpha = project._pmvcAlpha.value_or(1.0f);
+		_projectModel->_pmvcBeta = project._pmvcBeta.value_or(-1.0f);
+		_projectModel->_pmvcTheta = project._pmvcTheta.value_or(1.0f);
+		_projectModel->_pmvcUseInteriorDistance = project._pmvcUseInteriorDistance.value_or(false);
+		// The offset variant is the PMVCO coordinate type, so the preset derives it (and
+		// the hit count it implies) from the coordinate type of the project.
 		_projectModel->ApplyPMVCPreset();
 
 		const auto start = std::chrono::steady_clock::now();
@@ -632,12 +607,8 @@ void Editor::StartEvaluation()
 				std::nullopt,
 				std::nullopt,
 				std::nullopt,
-				(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<std::string>(project._pmvcComputeType) : std::nullopt,
-				(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<bool>(project._pmvcUseOffset.value_or(false)) : std::nullopt,
-				(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<int32_t>(project._pmvcTargetCount.value_or(64)) : std::nullopt,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<int32_t>(project._pmvcHitCount.value_or(1)) : std::nullopt,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<bool>(project._pmvcOmitNegative.value_or(true)) : std::nullopt });
+				(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<int32_t>(static_cast<int32_t>(_projectModel->_pmvcHitCount)) : std::nullopt,
+				(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<bool>(_projectModel->_pmvcUseInteriorDistance) : std::nullopt });
 			continue;
 		}
 
@@ -684,7 +655,6 @@ void Editor::StartEvaluation()
 		//_cubemapRenderer = std::make_shared<CubemapManager>(_sceneManager->_renderPipelineManager, _renderResourceManager, _device, _instance, 32, VK_FORMAT_R32G32B32A32_SFLOAT);
 		
 
-		//timingOutput << projectName << "," << project._coordinateType << "," << elapsedMs <<  ",cubemapSize: " << project._cubemapSize.value_or(32) <<'\n';
 		results.push_back(EvaluationResult{
 			projectName,
 			project._coordinateType,
@@ -698,12 +668,8 @@ void Editor::StartEvaluation()
 			stageTimings._deformationApplyMs,
 						meshVertexCount,
 			cageVertexCount,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<std::string>(project._pmvcComputeType) : std::nullopt,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<bool>(project._pmvcUseOffset.value_or(false)) : std::nullopt,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<int32_t>(project._cubemapSize.value_or(32)) : std::nullopt,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<int32_t>(project._pmvcTargetCount.value_or(64)) : std::nullopt,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<int32_t>(project._pmvcHitCount.value_or(1)) : std::nullopt,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<bool>(project._pmvcOmitNegative.value_or(true)) : std::nullopt });
+			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<int32_t>(static_cast<int32_t>(_projectModel->_pmvcHitCount)) : std::nullopt,
+			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<bool>(_projectModel->_pmvcUseInteriorDistance) : std::nullopt });
 		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
 	}
 
@@ -762,29 +728,13 @@ void Editor::StartEvaluation()
 		{
 			timingOutput << ",\n      \"numCageVertices\": " << result._cageVertexCount.value();
 		}
-		if (result._pmvcComputeType.has_value())
-		{
-			timingOutput << ",\n      \"pmvcComputeType\": \"" << EscapeJsonString(result._pmvcComputeType.value()) << "\"";
-		}
-		if (result._pmvcUseOffset.has_value())
-		{
-			timingOutput << ",\n      \"pmvcUseOffset\": " << (result._pmvcUseOffset.value() ? "true" : "false");
-		}
-		if (result._cubemapSize.has_value())
-		{
-			timingOutput << ",\n      \"cubemapSize\": " << result._cubemapSize.value();
-		}
-		if (result._pmvcTargetCount.has_value())
-		{
-			timingOutput << ",\n      \"targetCount\": " << result._pmvcTargetCount.value();
-		}
 		if (result._pmvcHitCount.has_value())
 		{
 			timingOutput << ",\n      \"hitCount\": " << result._pmvcHitCount.value();
 		}
-		if (result._pmvcOmitNegative.has_value())
+		if (result._pmvcUseInteriorDistance.has_value())
 		{
-			timingOutput << ",\n      \"omitNegative\": " << (result._pmvcOmitNegative.value() ? "true" : "false");
+			timingOutput << ",\n      \"useInteriorDistance\": " << (result._pmvcUseInteriorDistance.value() ? "true" : "false");
 		}
 		timingOutput << "\n    }" << (i + 1 < results.size() ? "," : "") << "\n";
 	}
@@ -1239,7 +1189,6 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 
 		auto projectResult = _meshOperationSystem->ExecuteOperation<MeshLoadOperation>(
 			projectModelSnapshot->_deformationType,
-			projectModelSnapshot->_pmvcComputeType,
 			projectModelSnapshot->_LBCWeightingScheme,
 			projectModelSnapshot->_meshFilepath.value(),
 			projectModelSnapshot->_cageFilepath.value_or(std::filesystem::path()),
@@ -1284,16 +1233,16 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 			{
 				try
 				{
-					_cubemapRenderer->Initialize(static_cast<uint32_t>(projectModelSnapshot->_cubemapSize));
+					_cubemapRenderer->Initialize(PMVCSettings::kCubemapSize);
 					_cubemapRenderer->SetCage(projectData->_cage);
 					_cubemapRenderer->SetMesh(projectData->_mesh);
 					promise->set_value(_cubemapRenderer->ComputeCoordinates(
-					projectData->_pmvcComputeType,
-					projectData->_pmvcUseOffset,
-					static_cast<uint32_t>(projectModelSnapshot->_pmvcTargetCount),
-					static_cast<uint32_t>(projectModelSnapshot->_pmvcHitCount),
-					projectModelSnapshot->_pmvcOmitNegative));
-					//promise->set_value(_cubemapRenderer->ComputeCoordinates(projectData->_deformationType));
+						projectData->_pmvcUseOffset,
+						static_cast<uint32_t>(projectModelSnapshot->_pmvcHitCount),
+						projectModelSnapshot->_pmvcAlpha,
+						projectModelSnapshot->_pmvcBeta,
+						projectModelSnapshot->_pmvcTheta,
+						projectModelSnapshot->_pmvcUseInteriorDistance));
 				}
 				catch (...)
 				{
@@ -2170,7 +2119,6 @@ MeshOperationResult<std::shared_ptr<ProjectData>> Editor::CreateProject() const
 {
 	return _meshOperationSystem->ExecuteOperation<MeshLoadOperation>(
 		_projectModel->_deformationType,
-		_projectModel->_pmvcComputeType,
 		_projectModel->_LBCWeightingScheme,
 		_projectModel->_meshFilepath.value(),
 		_projectModel->_cageFilepath.value_or(std::filesystem::path()),
