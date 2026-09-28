@@ -55,8 +55,6 @@ public:
 private:
 	void SetUpUIElements();
 
-	void StartEvaluation();
-
 	void CreateSceneLights() const;
 
 	/**
@@ -67,7 +65,7 @@ private:
 	/**
 	 * Invoked when a new project has been created from the window.
 	 */
-	void OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& completionPromise = nullptr);
+	void OnNewProjectCreated();
 
 	/**
 	 * Invoked when the project settings have been changed and new ones have been applied.
@@ -262,22 +260,6 @@ private:
 	void OnSequencerEndedDragging();
 
 private:
-	struct EvaluationStageTimings
-	{
-		std::optional<double> _initMs;
-		std::optional<double> _renderMs;
-		std::optional<double> _computeMs;
-		std::optional<double> _computeTotalMs;
-		std::optional<double> _transferMs;
-		std::optional<double> _deformationApplyMs;
-	};
-
-	void ClearEvaluationData();
-	bool _isEvaluationMode = false;
-	std::atomic<bool> _projectCreationFailed = false;
-	mutable std::mutex _evaluationTimingsMutex;
-	EvaluationStageTimings _latestEvaluationStageTimings;
-
 	/// A pointer to the input system to get input information.
 	SubsystemPtr<InputSubsystem> _inputSubsystem = nullptr;
 

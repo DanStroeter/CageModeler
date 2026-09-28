@@ -1,5 +1,4 @@
 #include <Editor/Editor.h>
-#include <Editor/EvaluationOptions.h>
 #include <Editor/Scene.h>
 #include <Input/InputSubsystem.h>
 #include <Mesh/Operations/MeshOperationSystem.h>
@@ -25,16 +24,9 @@
 #include <glm/gtx/string_cast.hpp> // <- stellt glm::to_string bereit
 
 #include <algorithm>
-#include <chrono>
-#include <cctype>
-#include <thread>
 #include <filesystem>
-#include <fstream>
-#include <unordered_map>
 #include <vector>
 #include <future>
-
-#include <regex>
 
 namespace
 {
@@ -94,425 +86,6 @@ namespace
 	[[nodiscard]] inline bool HasModifierKeysPressed(const SDL_Keymod modifierKeys)
 	{
 		return IsSet(modifierKeys, SDL_KMOD_LSHIFT) || IsSet(modifierKeys, SDL_KMOD_LALT) || IsSet(modifierKeys, SDL_KMOD_LGUI);
-	}
-
-	[[nodiscard]] std::string ToLower(std::string value)
-	{
-		std::transform(value.begin(), value.end(), value.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
-		return value;
-	}
-
-	[[nodiscard]] std::optional<DeformationType> ParseDeformationType(const std::string& value);
-	[[nodiscard]] std::optional<bool> ExtractJsonBoolValue(const std::string& objectText, const std::string& key);
-
-	[[nodiscard]] std::string EscapeJsonString(const std::string& value)
-	{
-		std::string escaped;
-		escaped.reserve(value.size());
-		for (const char c : value)
-		{
-			switch (c)
-			{
-			case '\\': escaped += "\\\\"; break;
-			case '"': escaped += '\\'; escaped += '"'; break;
-			case '\n': escaped += "\\n"; break;
-			case '\r': escaped += "\\r"; break;
-			case '\t': escaped += "\\t"; break;
-			default: escaped += c; break;
-			}
-		}
-		return escaped;
-	}
-
-	struct EvaluationProjectConfig
-	{
-		std::string _name;
-		std::string _coordinateType = "MVC";
-		std::string _mesh;
-		std::string _cage;
-		std::string _deformedCage;
-		std::optional<std::string> _embedding;
-		std::optional<int32_t> _samples;
-		std::optional<int32_t> _pmvcHitCount;
-		std::optional<bool> _pmvcSkipEvenHits;
-		std::optional<bool> _pmvcUseInteriorDistance;
-
-		/// The three color map exports are independent of each other and carry their own
-		/// vertex selection, so a single project can export all of them at once.
-		///
-		/// The influence map ("influenceMap") is exported for any number of marked cage
-		/// vertices ("influenceVertices"), while both distance maps are measured from
-		/// exactly one cage vertex each ("euclideanDistanceVertex" /
-		/// "interiorDistanceVertex").
-		///
-		/// The interior distances are read back from the table the interior distance PMVC
-		/// variant fills, so "interiorDistanceMap" only produces an export for a project
-		/// that runs with "useInteriorDistance".
-		std::optional<bool> _influenceMap;
-		std::optional<std::vector<int32_t>> _influenceVertices;
-		std::optional<bool> _euclideanDistanceMap;
-		std::optional<int32_t> _euclideanDistanceVertex;
-		std::optional<bool> _interiorDistanceMap;
-		std::optional<int32_t> _interiorDistanceVertex;
-
-		/// "distanceFieldInterval" is the isoline spacing in world units (unset spaces them
-		/// automatically, zero draws none), "distanceFieldEmphasis" emphasizes every n-th
-		/// isoline and "distanceFieldMax" fixes the normalization maximum so that the
-		/// colors of separate exports stay comparable. They apply to both distance maps.
-		std::optional<float> _distanceFieldInterval;
-		std::optional<int32_t> _distanceFieldEmphasis;
-		std::optional<float> _distanceFieldMax;
-
-		/// Superseded keys, kept so that hand written configs predating the three
-		/// independent toggles keep working: a shared "vertices" selection driving the
-		/// influence map, plus a "distanceField" toggle whose "distanceFieldEuclidean"
-		/// switch picked one of the two distance maps.
-		std::optional<std::vector<int32_t>> _vertices;
-		std::optional<bool> _exportDistanceField;
-		std::optional<bool> _distanceFieldEuclidean;
-
-		/// @return The cage vertices the influence map is exported for, if it is enabled.
-		[[nodiscard]] std::optional<std::vector<int32_t>> GetInfluenceVertices() const
-		{
-			const auto& vertices = _influenceVertices.has_value() ? _influenceVertices : _vertices;
-
-			// Without an explicit toggle the influence map follows the legacy behavior and
-			// is exported whenever a selection was given at all.
-			if (!_influenceMap.value_or(vertices.has_value()))
-			{
-				return std::nullopt;
-			}
-
-			return vertices;
-		}
-
-		/**
-		 * @return The single cage vertex a distance map is measured from, if it is enabled.
-		 * @param useEuclideanDistance Resolve the Euclidean map instead of the interior one.
-		 */
-		[[nodiscard]] std::optional<std::vector<int32_t>> GetDistanceFieldVertices(const bool useEuclideanDistance) const
-		{
-			const auto& toggle = useEuclideanDistance ? _euclideanDistanceMap : _interiorDistanceMap;
-			const auto& vertex = useEuclideanDistance ? _euclideanDistanceVertex : _interiorDistanceVertex;
-
-			if (toggle.value_or(false))
-			{
-				return vertex.has_value()
-					? std::optional<std::vector<int32_t>>(std::vector<int32_t> { vertex.value() })
-					: _vertices;
-			}
-
-			// The superseded keys select exactly one of the two maps rather than toggling
-			// them independently, so they only apply when the new toggle is absent.
-			if (toggle.has_value() || !_exportDistanceField.value_or(false))
-			{
-				return std::nullopt;
-			}
-
-			return (_distanceFieldEuclidean.value_or(false) == useEuclideanDistance) ? _vertices : std::nullopt;
-		}
-	};
-
-	struct EvaluationConfig
-	{
-		std::string _timingsFile = "timings.json";
-		std::vector<EvaluationProjectConfig> _projects;
-	};
-
-	[[nodiscard]] std::optional<std::string> ExtractJsonStringValue(const std::string& objectText, const std::string& key)
-	{
-		const std::regex pattern("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"");
-		std::smatch match;
-		if (std::regex_search(objectText, match, pattern) && match.size() > 1)
-		{
-			return match[1].str();
-		}
-		return std::nullopt;
-	}
-
-	[[nodiscard]] std::optional<bool> ExtractJsonBoolValue(const std::string& objectText, const std::string& key)
-	{
-		const std::regex pattern("\"" + key + "\"\\s*:\\s*(true|false)");
-		std::smatch match;
-		if (std::regex_search(objectText, match, pattern) && match.size() > 1)
-		{
-			return match[1].str() == "true";
-		}
-		return std::nullopt;
-	}
-
-	[[nodiscard]] std::optional<int32_t> ExtractJsonIntValue(const std::string& objectText, const std::string& key)
-	{
-		const std::regex pattern("\"" + key + "\"\\s*:\\s*(-?[0-9]+)");
-		std::smatch match;
-		if (std::regex_search(objectText, match, pattern) && match.size() > 1)
-		{
-			return static_cast<int32_t>(std::stoi(match[1].str()));
-		}
-		return std::nullopt;
-	}
-
-	[[nodiscard]] std::optional<float> ExtractJsonFloatValue(const std::string& objectText, const std::string& key)
-	{
-		const std::regex pattern("\"" + key + "\"\\s*:\\s*(-?[0-9]+(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)");
-		std::smatch match;
-		if (std::regex_search(objectText, match, pattern) && match.size() > 1)
-		{
-			return std::stof(match[1].str());
-		}
-		return std::nullopt;
-	}
-
-	[[nodiscard]] std::optional<std::vector<int32_t>> ExtractJsonIntArrayValue(const std::string& objectText, const std::string& key)
-	{
-		const std::regex pattern("\"" + key + "\"\\s*:\\s*\\[([^\\]]*)\\]");
-		std::smatch match;
-		if (!std::regex_search(objectText, match, pattern) || match.size() <= 1)
-		{
-			return std::nullopt;
-		}
-
-		std::vector<int32_t> values;
-		const auto content = match[1].str();
-		const std::regex intPattern("-?[0-9]+");
-		auto begin = std::sregex_iterator(content.begin(), content.end(), intPattern);
-		auto end = std::sregex_iterator();
-		for (auto it = begin; it != end; ++it)
-		{
-			values.push_back(static_cast<int32_t>(std::stoi(it->str())));
-		}
-
-		return values;
-	}
-
-	/// Writes the vertex indices a color map was exported for next to the export itself, so
-	/// it can be traced back to its selection.
-	void WriteSelectedVerticesFile(const std::filesystem::path& filepath, const std::vector<int32_t>& selectedVertices)
-	{
-		std::ofstream verticesOutput(filepath, std::ios::out | std::ios::trunc);
-		if (!verticesOutput.is_open())
-		{
-			LOG_WARN("Unable to write the selected vertices file '{}'.", filepath.string());
-
-			return;
-		}
-
-		for (const auto vertexIdx : selectedVertices)
-		{
-			verticesOutput << vertexIdx << "\n";
-		}
-	}
-
-	[[nodiscard]] std::vector<std::string> ExtractTopLevelObjects(const std::string& arrayText)
-	{
-		std::vector<std::string> objects;
-		int32_t braceDepth = 0;
-		bool isInString = false;
-		std::size_t objectStart = std::string::npos;
-		for (std::size_t i = 0; i < arrayText.size(); ++i)
-		{
-			const auto c = arrayText[i];
-			const auto escaped = (i > 0 && arrayText[i - 1] == '\\');
-			if (c == '"' && !escaped)
-			{
-				isInString = !isInString;
-				continue;
-			}
-			if (isInString)
-			{
-				continue;
-			}
-			if (c == '{')
-			{
-				if (braceDepth == 0)
-				{
-					objectStart = i;
-				}
-				++braceDepth;
-			}
-			else if (c == '}')
-			{
-				--braceDepth;
-				if (braceDepth == 0 && objectStart != std::string::npos)
-				{
-					objects.push_back(arrayText.substr(objectStart, i - objectStart + 1));
-					objectStart = std::string::npos;
-				}
-			}
-		}
-		return objects;
-	}
-
-	[[nodiscard]] std::optional<EvaluationConfig> ParseEvaluationConfig(const std::string& text)
-	{
-		EvaluationConfig config;
-		if (const auto timingsFile = ExtractJsonStringValue(text, "timingsFile"))
-		{
-			config._timingsFile = timingsFile.value();
-		}
-		const auto projectsPos = text.find("\"projects\"");
-		if (projectsPos == std::string::npos)
-		{
-			return std::nullopt;
-		}
-		const auto arrayStart = text.find('[', projectsPos);
-		if (arrayStart == std::string::npos)
-		{
-			return std::nullopt;
-		}
-		int32_t bracketDepth = 0;
-		bool isInString = false;
-		std::size_t arrayEnd = std::string::npos;
-		for (std::size_t i = arrayStart; i < text.size(); ++i)
-		{
-			const auto c = text[i];
-			const auto escaped = (i > 0 && text[i - 1] == '\\');
-			if (c == '"' && !escaped)
-			{
-				isInString = !isInString;
-				continue;
-			}
-			if (isInString)
-			{
-				continue;
-			}
-			if (c == '[')
-			{
-				++bracketDepth;
-			}
-			else if (c == ']')
-			{
-				--bracketDepth;
-				if (bracketDepth == 0)
-				{
-					arrayEnd = i;
-					break;
-				}
-			}
-		}
-		if (arrayEnd == std::string::npos)
-		{
-			return std::nullopt;
-		}
-		const auto projectsText = text.substr(arrayStart + 1, arrayEnd - arrayStart - 1);
-		for (const auto& objectText : ExtractTopLevelObjects(projectsText))
-		{
-			EvaluationProjectConfig project;
-			project._name = ExtractJsonStringValue(objectText, "name").value_or("");
-			project._coordinateType = ExtractJsonStringValue(objectText, "coordinateType").value_or("MVC");
-			project._mesh = ExtractJsonStringValue(objectText, "mesh").value_or("");
-			project._cage = ExtractJsonStringValue(objectText, "cage").value_or("");
-			project._deformedCage = ExtractJsonStringValue(objectText, "deformedCage").value_or("");
-			project._embedding = ExtractJsonStringValue(objectText, "embedding");
-			project._samples = ExtractJsonIntValue(objectText, "samples");
-			project._pmvcHitCount = ExtractJsonIntValue(objectText, "hitCount");
-			project._pmvcSkipEvenHits = ExtractJsonBoolValue(objectText, "skipEvenHits");
-			project._pmvcUseInteriorDistance = ExtractJsonBoolValue(objectText, "useInteriorDistance");
-
-			project._influenceMap = ExtractJsonBoolValue(objectText, "influenceMap");
-			project._influenceVertices = ExtractJsonIntArrayValue(objectText, "influenceVertices");
-			project._euclideanDistanceMap = ExtractJsonBoolValue(objectText, "euclideanDistanceMap");
-			project._euclideanDistanceVertex = ExtractJsonIntValue(objectText, "euclideanDistanceVertex");
-			project._interiorDistanceMap = ExtractJsonBoolValue(objectText, "interiorDistanceMap");
-			project._interiorDistanceVertex = ExtractJsonIntValue(objectText, "interiorDistanceVertex");
-
-			// The shared selection of the superseded schema, which the three maps fall back
-			// to when they carry no selection of their own.
-			project._vertices = ExtractJsonIntArrayValue(objectText, "vertices");
-			if (!project._vertices.has_value())
-			{
-				project._vertices = ExtractJsonIntArrayValue(objectText, "selectedVertices");
-			}
-			if (!project._vertices.has_value())
-			{
-				project._vertices = project._influenceVertices;
-			}
-			project._exportDistanceField = ExtractJsonBoolValue(objectText, "distanceField");
-			project._distanceFieldEuclidean = ExtractJsonBoolValue(objectText, "distanceFieldEuclidean");
-			project._distanceFieldInterval = ExtractJsonFloatValue(objectText, "distanceFieldInterval");
-			project._distanceFieldEmphasis = ExtractJsonIntValue(objectText, "distanceFieldEmphasis");
-			project._distanceFieldMax = ExtractJsonFloatValue(objectText, "distanceFieldMax");
-			config._projects.push_back(std::move(project));
-		}
-		return config;
-	}
-
-	[[nodiscard]] bool ValidateEvaluationProjectConfig(const EvaluationProjectConfig& project, const std::size_t projectIndex)
-	{
-		if (project._mesh.empty() || project._cage.empty() || project._deformedCage.empty())
-		{
-			LOG_WARN("Skipping project {} due to missing required file keys (mesh/cage/deformedCage).", projectIndex);
-			return false;
-		}
-
-		if (const auto deformationType = ParseDeformationType(project._coordinateType); !deformationType.has_value())
-		{
-			LOG_WARN("Skipping project {} due to unsupported coordinateType '{}'.", projectIndex, project._coordinateType);
-			return false;
-		}
-
-		if (project._pmvcHitCount.has_value() && project._pmvcHitCount.value() <= 0)
-		{
-			LOG_WARN("Skipping project {} due to invalid hitCount {} (must be > 0).", projectIndex, project._pmvcHitCount.value());
-			return false;
-		}
-
-		if (project._influenceMap.value_or(false) && !project.GetInfluenceVertices().has_value())
-		{
-			LOG_WARN("Skipping project {} because 'influenceMap' is enabled but no 'influenceVertices' were given.", projectIndex);
-			return false;
-		}
-
-		// Both distance maps are measured from exactly one cage vertex, so an enabled map
-		// without a vertex of its own (and without a selection to fall back to) cannot be
-		// exported at all.
-		if (project._euclideanDistanceMap.value_or(false) && !project.GetDistanceFieldVertices(true).has_value())
-		{
-			LOG_WARN("Skipping project {} because 'euclideanDistanceMap' is enabled but no 'euclideanDistanceVertex' was given.", projectIndex);
-			return false;
-		}
-
-		if (project._interiorDistanceMap.value_or(false) && !project.GetDistanceFieldVertices(false).has_value())
-		{
-			LOG_WARN("Skipping project {} because 'interiorDistanceMap' is enabled but no 'interiorDistanceVertex' was given.", projectIndex);
-			return false;
-		}
-
-		// The interior distances are read back from the table the interior distance PMVC
-		// variant fills, so this combination would export nothing at all.
-		if (project._interiorDistanceMap.value_or(false) && !project._pmvcUseInteriorDistance.value_or(false))
-		{
-			LOG_WARN("Project {} enables 'interiorDistanceMap' but does not run with 'useInteriorDistance'. "
-				"No interior distances will have been computed, so the export will be skipped.", projectIndex);
-		}
-
-		return true;
-	}
-
-	[[nodiscard]] std::optional<DeformationType> ParseDeformationType(const std::string& value)
-	{
-		static const std::unordered_map<std::string, DeformationType> mapping = {
-			{ "mvc", DeformationType::MVC },
-			{ "qmvc", DeformationType::QMVC },
-			{ "harmonic", DeformationType::Harmonic },
-			{ "bbw", DeformationType::BBW },
-			{ "lbc", DeformationType::LBC },
-			{ "mec", DeformationType::MEC },
-			{ "mlc", DeformationType::MLC },
-			{ "green", DeformationType::Green },
-			{ "qgc", DeformationType::QGC },
-			{ "somigliana", DeformationType::Somigliana },
-			{ "pmvc", DeformationType::PMVC },
-			{ "pmvco", DeformationType::PMVCO }
-		};
-
-		const auto it = mapping.find(ToLower(value));
-		if (it == mapping.end())
-		{
-			return std::nullopt;
-		}
-
-		return it->second;
 	}
 }
 
@@ -584,354 +157,8 @@ void Editor::Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, con
 	_newProjectPanel->SetModel(_projectModel);
 	_projectOptionsPanel->SetModelData(_projectModel);
 
-	StartEvaluation();
 	OnNewProjectCreated();
 //#endif
-}
-
-void Editor::StartEvaluation()
-{
-	const auto kEvaluationRoot = std::filesystem::path("evaluation");
-	constexpr auto kEvaluationConfig = "projects.json";
-
-	const auto evaluationRoot = std::filesystem::absolute(kEvaluationRoot);
-
-	// A generated config is run without copying it over the default one, either with
-	// "--eval-config <path>" or with the CAGEMODELER_EVAL_CONFIG environment variable, so
-	// that a batch run can iterate over the generated manifest. Paths inside the config
-	// stay relative to the evaluation directory regardless of where the config itself is.
-	auto configPath = evaluationRoot / kEvaluationConfig;
-	if (const auto configOverride = EvaluationOptions::GetEvaluationConfigPath(); !configOverride.empty())
-	{
-		configPath = std::filesystem::absolute(configOverride);
-	}
-
-	if (!std::filesystem::exists(configPath))
-	{
-		LOG_WARN("Evaluation config '{}' does not exist. Skipping evaluation run.", configPath.string());
-		return;
-	}
-
-	std::ifstream configFile(configPath);
-	if (!configFile.is_open())
-	{
-		LOG_ERROR("Unable to open evaluation config '{}'.", configPath.string());
-		return;
-	}
-
-	const std::string configContent((std::istreambuf_iterator<char>(configFile)), std::istreambuf_iterator<char>());
-	const auto parsedConfig = ParseEvaluationConfig(configContent);
-	if (!parsedConfig.has_value())
-	{
-		LOG_ERROR("Failed to parse evaluation config '{}'.", configPath.string());
-		return;
-	}
-
-	const auto timingOutputPath = evaluationRoot / parsedConfig->_timingsFile;
-
-	// A generated config points its timings at a per-config file inside a results
-	// directory, which only exists once something has created it.
-	if (timingOutputPath.has_parent_path())
-	{
-		std::filesystem::create_directories(timingOutputPath.parent_path());
-	}
-
-#ifdef NDEBUG
-	constexpr auto buildType = "Release";
-#else
-	constexpr auto buildType = "Debug/Development";
-#endif
-
-	struct EvaluationResult
-	{
-		std::string _projectName;
-		std::string _coordinateType;
-		std::string _status;
-		std::optional<double> _elapsedMs;
-		std::optional<double> _initMs;
-		std::optional<double> _renderMs;
-		std::optional<double> _computeMs;
-		std::optional<double> _computeTotalMs;
-		std::optional<double> _transferMs;
-		std::optional<double> _deformationApplyMs;
-		std::optional<int32_t> _meshVertexCount;
-		std::optional<int32_t> _cageVertexCount;
-		std::optional<int32_t> _pmvcHitCount;
-		std::optional<bool> _pmvcSkipEvenHits;
-		std::optional<bool> _pmvcUseInteriorDistance;
-	};
-
-	std::vector<EvaluationResult> results;
-	results.reserve(parsedConfig->_projects.size());
-
-	
-	_isEvaluationMode = true;
-
-	for (std::size_t i = 0; i < parsedConfig->_projects.size(); ++i)
-	{
-		const auto& project = parsedConfig->_projects[i];
-		// A single invalid project skips that project, it does not abandon the rest of the
-		// batch. ValidateEvaluationProjectConfig has already logged why.
-		if (!ValidateEvaluationProjectConfig(project, i))
-		{
-			continue;
-		}
-
-		const auto deformationType = ParseDeformationType(project._coordinateType);
-		if (!deformationType.has_value())
-		{
-			LOG_WARN("Skipping project {} due to unsupported coordinateType '{}'.", i, project._coordinateType);
-			continue;
-		}
-
-		const auto projectName = project._name.empty() ? (std::string("project_") + std::to_string(i)) : project._name;
-		const auto projectOutputDir = evaluationRoot / projectName;
-		std::filesystem::create_directories(projectOutputDir);
-
-		_projectModel->_deformationType = *deformationType;
-		_projectModel->_meshFilepath = evaluationRoot / project._mesh;
-		_projectModel->_cageFilepath = evaluationRoot / project._cage;
-		_projectModel->_deformedCageFilepath = evaluationRoot / project._deformedCage;
-
-		// Reset rather than inherit: leaving the embedding of the previous project (or of
-		// the startup project) in place would silently evaluate the wrong one.
-		_projectModel->_embeddingFilepath = project._embedding.has_value()
-			? std::optional<std::filesystem::path>(evaluationRoot / project._embedding.value())
-			: std::nullopt;
-		if (DeformationTypeHelpers::RequiresEmbedding(*deformationType) && !_projectModel->_embeddingFilepath.has_value())
-		{
-			LOG_WARN("Project '{}' uses coordinateType '{}', which requires an embedding, but the config has no 'embedding' key.",
-				projectName,
-				project._coordinateType);
-		}
-
-		if (project._samples.has_value())
-		{
-			_projectModel->_numSamples = project._samples.value();
-		}
-
-		_projectModel->_pmvcHitCount = project._pmvcHitCount.value_or(1);
-		_projectModel->_pmvcSkipEvenHits = project._pmvcSkipEvenHits.value_or(false);
-		_projectModel->_pmvcUseInteriorDistance = project._pmvcUseInteriorDistance.value_or(false);
-		// The offset variant is the PMVCO coordinate type, so the preset derives it (and
-		// the hit count it implies) from the coordinate type of the project.
-		_projectModel->ApplyPMVCPreset();
-
-		const auto start = std::chrono::steady_clock::now();
-
-		_projectCreationFailed.store(false, std::memory_order_seq_cst);
-		{
-			std::scoped_lock lock(_evaluationTimingsMutex);
-			_latestEvaluationStageTimings = {};
-		}
-
-		auto completionPromise = std::make_shared<std::promise<void>>();
-		auto completionFuture = completionPromise->get_future();
-
-		OnNewProjectCreated(completionPromise);
-
-		while (completionFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready)
-		{
-			if (_projectCreationFailed.load(std::memory_order_seq_cst))
-			{
-				break;
-			}
-
-			FunctionWrapper mainThreadFunction;
-			while (_mainThreadQueue->TryPop(mainThreadFunction))
-			{
-				mainThreadFunction();
-			}
-
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
-
-		FunctionWrapper mainThreadFunction;
-		while (_mainThreadQueue->TryPop(mainThreadFunction))
-		{
-			mainThreadFunction();
-		}
-
-		if (_projectCreationFailed.load(std::memory_order_seq_cst))
-		{
-			LOG_WARN("Evaluation project '{}' failed.", projectName);
-
-			results.push_back(EvaluationResult{
-				projectName,
-				project._coordinateType,
-				"FAILED",
-				std::nullopt,
-				std::nullopt,
-				std::nullopt,
-				std::nullopt,
-				std::nullopt,
-				std::nullopt,
-				std::nullopt,
-				std::nullopt,
-				std::nullopt,
-				(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<int32_t>(static_cast<int32_t>(_projectModel->_pmvcHitCount)) : std::nullopt,
-				(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<bool>(_projectModel->_pmvcSkipEvenHits) : std::nullopt,
-				(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<bool>(_projectModel->_pmvcUseInteriorDistance) : std::nullopt });
-			continue;
-		}
-
-		const auto end = std::chrono::steady_clock::now();
-		const auto elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
-
-		EvaluationStageTimings stageTimings;
-		{
-			std::scoped_lock lock(_evaluationTimingsMutex);
-			stageTimings = _latestEvaluationStageTimings;
-		}
-
-		ExportWeights(projectOutputDir / "weights.dmat");
-		ExportDeformedCage(projectOutputDir / "deformed_cage.obj");
-		ExportDeformedMeshes(projectOutputDir / "deformed_mesh.obj");
-		if (const auto influenceVertices = project.GetInfluenceVertices(); influenceVertices.has_value())
-		{
-			LOG_DEBUG("Exporting influence map for project '{}' with {} vertices.", projectName, influenceVertices->size());
-			ExportInfluenceColorMap(projectOutputDir / "influence_map.obj", influenceVertices);
-			WriteSelectedVerticesFile(projectOutputDir / "influence_map_vertices.txt", influenceVertices.value());
-		}
-
-		// The two distance maps follow the influence map (same vertex colored format) but
-		// are toggled independently of it and of each other, each measured from its own
-		// single cage vertex, so one project can export both.
-		for (const auto useEuclideanDistance : { true, false })
-		{
-			const auto distanceVertices = project.GetDistanceFieldVertices(useEuclideanDistance);
-			if (!distanceVertices.has_value())
-			{
-				continue;
-			}
-
-			// Keeps the defaults of the color map (automatic isoline spacing, normalized
-			// against the maximum of the data set) for every key the project omits.
-			DistanceColorMapParams colorMapParams;
-			if (project._distanceFieldInterval.has_value())
-			{
-				colorMapParams.contourInterval = project._distanceFieldInterval.value();
-			}
-			if (project._distanceFieldEmphasis.has_value())
-			{
-				colorMapParams.contourEmphasisEvery = project._distanceFieldEmphasis.value();
-			}
-			if (project._distanceFieldMax.has_value())
-			{
-				colorMapParams.maxDistance = project._distanceFieldMax.value();
-			}
-
-			const std::string fileStem = useEuclideanDistance ? "euclidean_distance_map" : "interior_distance_map";
-			LOG_DEBUG("Exporting the {} distance field for project '{}'.", useEuclideanDistance ? "euclidean" : "interior", projectName);
-			ExportDistanceFieldColorMap(projectOutputDir / (fileStem + ".obj"),
-				useEuclideanDistance,
-				distanceVertices,
-				std::move(colorMapParams));
-			WriteSelectedVerticesFile(projectOutputDir / (fileStem + "_vertices.txt"), distanceVertices.value());
-		}
-		const auto meshVertexCount = _projectData
-			? std::optional<int32_t>(static_cast<int32_t>(_projectData->_mesh._vertices.rows()))
-			: std::nullopt;
-		const auto cageVertexCount = _projectData
-			? std::optional<int32_t>(static_cast<int32_t>(_projectData->_cage._vertices.rows()))
-			: std::nullopt;
-		//_cubemapRenderer->Cleanup();
-		ClearEvaluationData();
-		
-		//_cubemapRenderer->~CubemapManager();
-		//_cubemapRenderer = std::make_shared<CubemapManager>(_sceneManager->_renderPipelineManager, _renderResourceManager, _device, _instance, 32, VK_FORMAT_R32G32B32A32_SFLOAT);
-		
-
-		results.push_back(EvaluationResult{
-			projectName,
-			project._coordinateType,
-			"OK",
-			elapsedMs,
-			stageTimings._initMs,
-			stageTimings._renderMs,
-			stageTimings._computeMs,
-			stageTimings._computeTotalMs,
-			stageTimings._transferMs,
-			stageTimings._deformationApplyMs,
-						meshVertexCount,
-			cageVertexCount,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<int32_t>(static_cast<int32_t>(_projectModel->_pmvcHitCount)) : std::nullopt,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<bool>(_projectModel->_pmvcSkipEvenHits) : std::nullopt,
-			(DeformationTypeHelpers::IsPMVC(*deformationType)) ? std::optional<bool>(_projectModel->_pmvcUseInteriorDistance) : std::nullopt });
-		LOG_INFO("Evaluation project '{}' finished in {} ms.", projectName, elapsedMs);
-	}
-
-	_isEvaluationMode = false;
-	std::ofstream timingOutput(timingOutputPath, std::ios::out | std::ios::trunc);
-	if (!timingOutput.is_open())
-	{
-		LOG_ERROR("Unable to open timing output file '{}'.", timingOutputPath.string());
-		return;
-	}
-
-	timingOutput << "{\n";
-	timingOutput << "  \"buildType\": \"" << EscapeJsonString(buildType) << "\",\n";
-	timingOutput << "  \"projectCount\": " << parsedConfig->_projects.size() << ",\n";
-	timingOutput << "  \"results\": [\n";
-	for (std::size_t i = 0; i < results.size(); ++i)
-	{
-		const auto& result = results[i];
-		timingOutput << "    {\n";
-		timingOutput << "      \"projectName\": \"" << EscapeJsonString(result._projectName) << "\",\n";
-		timingOutput << "      \"coordinateType\": \"" << EscapeJsonString(result._coordinateType) << "\",\n";
-		timingOutput << "      \"status\": \"" << EscapeJsonString(result._status) << "\"";
-		if (result._elapsedMs.has_value())
-		{
-			timingOutput << ",\n      \"elapsedMs\": " << result._elapsedMs.value();
-		}
-		if (result._initMs.has_value())
-		{
-			timingOutput << ",\n      \"initMs\": " << result._initMs.value();
-		}
-		if (result._renderMs.has_value())
-		{
-			timingOutput << ",\n      \"renderMs\": " << result._renderMs.value();
-		}
-		if (result._transferMs.has_value())
-		{
-			timingOutput << ",\n      \"transferMs\": " << result._transferMs.value();
-		}
-		if (result._computeMs.has_value())
-		{
-			timingOutput << ",\n      \"computeMs\": " << result._computeMs.value();
-		}
-		if (result._computeTotalMs.has_value())
-		{
-			timingOutput << ",\n      \"computeTotalMs\": " << result._computeTotalMs.value();
-		}
-		if (result._deformationApplyMs.has_value())
-		{
-			timingOutput << ",\n      \"deformationApplyMs\": " << result._deformationApplyMs.value();
-		}
-		if (result._meshVertexCount.has_value())
-		{
-			timingOutput << ",\n      \"numMeshVertices\": " << result._meshVertexCount.value();
-		}
-		if (result._cageVertexCount.has_value())
-		{
-			timingOutput << ",\n      \"numCageVertices\": " << result._cageVertexCount.value();
-		}
-		if (result._pmvcHitCount.has_value())
-		{
-			timingOutput << ",\n      \"hitCount\": " << result._pmvcHitCount.value();
-		}
-		if (result._pmvcSkipEvenHits.has_value())
-		{
-			timingOutput << ",\n      \"skipEvenHits\": " << (result._pmvcSkipEvenHits.value() ? "true" : "false");
-		}
-		if (result._pmvcUseInteriorDistance.has_value())
-		{
-			timingOutput << ",\n      \"useInteriorDistance\": " << (result._pmvcUseInteriorDistance.value() ? "true" : "false");
-		}
-		timingOutput << "\n    }" << (i + 1 < results.size() ? "," : "") << "\n";
-	}
-	timingOutput << "  ]\n";
-	timingOutput << "}\n";
 }
 
 void Editor::CreateSceneLights() const
@@ -1364,16 +591,13 @@ void Editor::OnNewCageCreated()
 	return;
 }
 
-void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& completionPromise)
+void Editor::OnNewProjectCreated()
 {
 	LOG_DEBUG("Set Cage and Mesh");
-
-	_projectCreationFailed.store(false, std::memory_order_seq_cst);
 
 	if (_projectModel->CheckMissingFiles())
 	{
 		_statusBar->SetError("Unable to load all files, check if some of them are missing.");
-		_projectCreationFailed.store(true, std::memory_order_seq_cst);
 		return;
 	}
 
@@ -1387,16 +611,12 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 	}
 	projectModelSnapshot->ApplyPMVCPreset();
 
-	const bool isEvaluationMode = _isEvaluationMode;
-
-	_threadPool->Submit([this, completionPromise, projectModelSnapshot, isEvaluationMode]()
+	_threadPool->Submit([this, projectModelSnapshot]()
 	{
-		const auto initStart = std::chrono::steady_clock::now();
 		const auto fail = [this]()
 		{
 			_isComputingWeightsData.store(false, std::memory_order_seq_cst);
 			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
-			_projectCreationFailed.store(true, std::memory_order_seq_cst);
 		};
 
 		auto projectResult = _meshOperationSystem->ExecuteOperation<MeshLoadOperation>(
@@ -1430,8 +650,6 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 		}
 
 		auto projectData = projectResult.GetValue();
-		const auto initEnd = std::chrono::steady_clock::now();
-		const auto initMs = std::chrono::duration<double, std::milli>(initEnd - initStart).count();
 
 		using WeightsResult = decltype(ComputeCageWeights(*projectData));
 		std::future<WeightsResult> future;
@@ -1508,12 +726,6 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 		_isComputingDeformationData.store(true, std::memory_order_seq_cst);
 		_isComputingWeightsData.store(false, std::memory_order_seq_cst);
 
-		const auto renderMs = weightsResult.GetValue()._renderMs;
-		const auto computeMs = weightsResult.GetValue()._computeMs;
-		const auto computeTotalMs = weightsResult.GetValue()._computeTotalMs;
-		const auto transferMs = weightsResult.GetValue()._transferMs;
-		const auto cubemapInitMs = weightsResult.GetValue()._initMs;
-
 		_weightsData.Update(std::move(weightsResult.GetValue()._skinningMatrix),
 			std::move(weightsResult.GetValue()._weights),
 			std::move(weightsResult.GetValue()._interpolatedWeights),
@@ -1529,7 +741,6 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 		LOG_DEBUG("CAGE vertices: {} x {}", cage._vertices.rows(), cage._vertices.cols());
 		LOG_DEBUG("DEF CAGE vertices: {} x {}", defCage._vertices.rows(), defCage._vertices.cols());
 
-		const auto deformationApplyStart = std::chrono::steady_clock::now();
 		auto deformedMeshResult = ComputeDeformedMesh(projectData->_mesh,
 			projectData->_cage,
 			projectData->_deformedCage,
@@ -1553,50 +764,8 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 		}
 
 		_deformationData.Update(std::move(deformedMeshResult.GetValue()._vertexData));
-		const auto deformationApplyEnd = std::chrono::steady_clock::now();
-		const auto deformationApplyMs = std::chrono::duration<double, std::milli>(deformationApplyEnd - deformationApplyStart).count();
 
-		if (isEvaluationMode)
-		{
-			// Evaluation/offscreen mode:
-			// keep computed data, skip all scene/render proxy churn.
-			_projectData = projectData;
-			{
-				std::scoped_lock lock(_evaluationTimingsMutex);
-				_latestEvaluationStageTimings._initMs = initMs + cubemapInitMs.value_or(0.0);
-				_latestEvaluationStageTimings._computeTotalMs = computeTotalMs;
-				if (DeformationTypeHelpers::IsPMVC(projectData->_deformationType))
-				{
-					_latestEvaluationStageTimings._renderMs = renderMs;
-					_latestEvaluationStageTimings._computeMs = computeMs;
-					_latestEvaluationStageTimings._transferMs = transferMs;
-				}
-				else
-				{
-					_latestEvaluationStageTimings._renderMs.reset();
-					_latestEvaluationStageTimings._computeMs.reset();
-					_latestEvaluationStageTimings._transferMs.reset();
-				}
-				_latestEvaluationStageTimings._deformationApplyMs = deformationApplyMs;
-			}
-
-			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
-
-			if (completionPromise != nullptr)
-			{
-				try
-				{
-					completionPromise->set_value();
-				}
-				catch (const std::future_error&)
-				{
-				}
-			}
-
-			return;
-		}
-
-		_mainThreadQueue->Push([this, projectData, completionPromise]() mutable
+		_mainThreadQueue->Push([this, projectData]() mutable
 		{
 			const auto& viewInfo = _cameraSubsystem->GetCamera().GetViewInfo();
 			_gizmo->SetPosition(viewInfo, glm::vec3(0.0f));
@@ -1666,47 +835,8 @@ void Editor::OnNewProjectCreated(const std::shared_ptr<std::promise<void>>& comp
 			}
 
 			_isComputingDeformationData.store(false, std::memory_order_seq_cst);
-
-			if (completionPromise != nullptr)
-			{
-				try
-				{
-					completionPromise->set_value();
-				}
-				catch (const std::future_error&)
-				{
-				}
-			}
 		});
 	});
-}
-
-void Editor::ClearEvaluationData()
-{
-	/* {
-		auto emptyWeights = MeshComputeWeightsOperationResult{};
-		_weightsData.Update(std::move(emptyWeights._skinningMatrix),
-			std::move(emptyWeights._weights),
-			std::move(emptyWeights._interpolatedWeights),
-			std::move(emptyWeights._psi),
-			std::move(emptyWeights._psiTri),
-			std::move(emptyWeights._psiQuad));
-	}
-
-
-
-	_weightsData.Update(Eigen::MatrixXd(),
-		Eigen::MatrixXd(),
-		Eigen::MatrixXd(),
-		Eigen::MatrixXd(),
-		Eigen::MatrixXd(),
-		Eigen::MatrixXd());
-	*/
-	//_deformationData.Update({});
-
-	_projectData.reset();
-
-
 }
 
 void Editor::OnProjectSettingsCancelled()
