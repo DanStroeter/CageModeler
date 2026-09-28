@@ -281,11 +281,10 @@ struct PMVCMirrorParams
 };
 
 /**
- * Unnormalized weight of one hit, mirroring hitWeight() of PMVCCompute.comp. rendered is
- * the number of hits the pipeline actually has, so the last of them is treated as leaving
- * towards infinity exactly like the shader does.
+ * Unnormalized weight of one hit, mirroring hitWeight() of PMVCCompute.comp: its share of
+ * the ray before normalization.
  */
-double hitWeight(const PMVCMirrorParams& params, const size_t hit, const size_t rendered,
+double hitWeight(const PMVCMirrorParams& params, const size_t hit,
 	const std::vector<RayHit>& hits, const TestMesh& cage, const Eigen::Index meshIdx,
 	const Eigen::Vector3d& center)
 {
@@ -294,44 +293,37 @@ double hitWeight(const PMVCMirrorParams& params, const size_t hit, const size_t 
 		return 0.0;
 	}
 
-	const double rCur = hits[hit].rayT;
-	const double rPrev = (hit == 0) ? 0.0 : hits[hit - 1].rayT;
-	const double rNext = (hit + 1 < rendered) ? hits[hit + 1].rayT : -1.0;
-
-	// Vanish as this hit annihilates with the surface in front of or behind it.
-	const double gatePrev = 1.0 - rPrev / rCur;
-	const double gateNext = (rNext > 0.0) ? (1.0 / rCur - 1.0 / rNext) : (1.0 / rCur);
-
-	double eta = 1.0;
-	if (hit > 0 && params.interiorDetours != nullptr)
+	// The first hit carries no detour by construction, so it is never looked up.
+	if (hit == 0 || params.interiorDetours == nullptr)
 	{
-		const RayHit& h = hits[hit];
-		const auto detourAt = [&](const int corner)
-		{
-			return static_cast<double>((*params.interiorDetours)(cage.F(h.triangle, corner), meshIdx));
-		};
-
-		if (params.absoluteInteriorDistance)
-		{
-			const auto absoluteAt = [&](const int corner)
-			{
-				const Eigen::Vector3d p = cage.V.row(cage.F(h.triangle, corner));
-				return detourAt(corner) + (p - center).norm();
-			};
-
-			const double interpolated =
-				h.b0 * absoluteAt(0) + h.b1 * absoluteAt(1) + h.b2 * absoluteAt(2);
-			eta = rCur / std::max(interpolated, rCur);
-		}
-		else
-		{
-			const double detour = std::max(
-				h.b0 * detourAt(0) + h.b1 * detourAt(1) + h.b2 * detourAt(2), 0.0);
-			eta = rCur / std::max(rCur + detour, 1e-20);
-		}
+		return 1.0;
 	}
 
-	return std::max(gatePrev, 0.0) * std::max(gateNext, 0.0) * eta;
+	const double rCur = hits[hit].rayT;
+	const RayHit& h = hits[hit];
+	const auto detourAt = [&](const int corner)
+	{
+		return static_cast<double>((*params.interiorDetours)(cage.F(h.triangle, corner), meshIdx));
+	};
+
+	if (params.absoluteInteriorDistance)
+	{
+		const auto absoluteAt = [&](const int corner)
+		{
+			const Eigen::Vector3d p = cage.V.row(cage.F(h.triangle, corner));
+			return detourAt(corner) + (p - center).norm();
+		};
+
+		const double interpolated =
+			h.b0 * absoluteAt(0) + h.b1 * absoluteAt(1) + h.b2 * absoluteAt(2);
+
+		return rCur / std::max(interpolated, rCur);
+	}
+
+	const double detour = std::max(
+		h.b0 * detourAt(0) + h.b1 * detourAt(1) + h.b2 * detourAt(2), 0.0);
+
+	return rCur / std::max(rCur + detour, 1e-20);
 }
 
 /// Near/far plane heuristics copied from CubemapRenderInstance::UpdateProjectionPlanes.
@@ -540,22 +532,19 @@ PMVCMirrorResult computePMVCMirrorRaw(const TestMesh& cage, const Eigen::MatrixX
 					double weightSum = 0.0;
 					for (size_t hit = 0; hit < rendered; ++hit)
 					{
-						weightSum += hitWeight(params, hit, rendered, hits, cage, meshIdx, center);
+						weightSum += hitWeight(params, hit, hits, cage, meshIdx, center);
 					}
 
-					// Every gate vanished, which only happens when the hits of this ray are
-					// coincident. Fall back to the first hit so the ray still carries its
-					// leverage: dropping the texel would break the direction symmetry that
-					// linear reproduction relies on.
+					// Every weight is strictly positive, so this only fires for a ray with no
+					// hits at all.
 					if (weightSum <= 0.0)
 					{
-						accumulate(hits[0], solidAngle / hits[0].rayT);
 						continue;
 					}
 
 					for (size_t hit = 0; hit < rendered; ++hit)
 					{
-						const double w = hitWeight(params, hit, rendered, hits, cage, meshIdx, center);
+						const double w = hitWeight(params, hit, hits, cage, meshIdx, center);
 						if (w <= 0.0)
 						{
 							continue;

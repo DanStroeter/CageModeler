@@ -7,7 +7,7 @@
 // one deformable mesh vertex. The hits along a ray are first weighted against each other
 // and normalized to sum to one, and only then divided by the Euclidean hit distance:
 //
-//   w_k = gatePrev_k * gateNext_k * eta_k
+//   w_k = eta_k
 //   t_k = w_k / sum_j w_j                 per ray, so sum_k t_k == 1
 //   a_k = (t_k / r_k) * solidAngle        the PMVC kernel
 //
@@ -18,17 +18,12 @@
 // applied to the kernel, or a hit count that varies per ray - destroys that cancellation
 // and displaces the mesh, which no amount of global normalization can repair.
 //
-//   * gatePrev_k = 1 - r_{k-1}/r_k  vanishes as a surface appears in front of hit k,
-//     gateNext_k = 1/r_k - 1/r_{k+1} vanishes as hit k merges with the surface behind it.
-//     Hits only ever appear and disappear in pairs, and at that instant both members sit on
-//     the same cage edge with the same barycentric weights. Plain PMVC keeps all the weight
-//     on the first hit and therefore jumps when the first hit changes surface; with both
-//     gates each member of an annihilating pair reaches zero weight instead.
 //   * eta_k = r_k / d_C(x, hit_k) biases the split towards hits reachable without a detour
 //     through the cage interior. It is exactly 1 on the first hit, where the straight
 //     segment to the hit lies inside the cage and the interior distance equals the
 //     Euclidean one, so the interior-distance variant only ever acts on hits beyond the
-//     first.
+//     first. Without it every eta is 1 and a ray simply divides its contribution equally
+//     between the surfaces it crosses.
 //   * kFlagSolidAngleOnly selects the offset (PMVCO) weighting, which has no distance term
 //     at all and therefore nothing to split.
 
@@ -130,19 +125,15 @@ float hitDetour(vec4 tex)
 }
 
 /**
- * Unnormalized weight of one hit. rPrev is 0 for the first hit (the segment towards x never
- * collapses) and rNext is negative for the last one (the ray leaves towards infinity).
+ * Unnormalized weight of one hit: its share of the ray before normalization.
  */
-float hitWeight(int hit, float rPrev, float rCur, float rNext, ivec3 coord)
+float hitWeight(int hit, float rCur, ivec3 coord)
 {
     // Skipping every second hit drops the entry hits from the split. The weight still goes
     // through the same per-ray normalization, so the leverage of the ray stays at one and
     // linear reproduction survives.
     if ((params.uFlags & kFlagSkipEvenHits) != 0 && (hit % 2) == 1)
         return 0.0;
-
-    float gatePrev = 1.0 - rPrev / rCur;
-    float gateNext = (rNext > 0.0) ? (1.0 / rCur - 1.0 / rNext) : (1.0 / rCur);
 
     // The first hit is forced to 1 rather than read from the table, and not merely as an
     // optimization. Its true detour is zero for every cage: the segment from the mesh vertex
@@ -151,17 +142,16 @@ float hitWeight(int hit, float rPrev, float rCur, float rNext, ivec3 coord)
     // and a vertex of the hit triangle can be occluded while the hit itself is visible, so
     // interpolating it here would apply a detour that does not exist and discount the nearest
     // surface by how close it happens to sit to a silhouette.
-    float eta = 1.0;
     if (hit > 0 && (params.uFlags & kFlagInteriorDistance) != 0)
     {
         // The interior distance is reconstructed as r + detour, with r the exact rasterized
         // distance of this texel; the table stores the difference only because it
         // interpolates without error wherever the interior path is straight.
         float detour = max(hitDetour(texelFetch(uBaryTex, coord, 0)), 0.0);
-        eta = rCur / max(rCur + detour, 1e-20);
+        return rCur / max(rCur + detour, 1e-20);
     }
 
-    return max(gatePrev, 0.0) * max(gateNext, 0.0) * eta;
+    return 1.0;
 }
 
 /**
@@ -214,25 +204,20 @@ void main()
     }
 
     // ---------------------------------------------------------------------------------
-    // Pass 1: total weight along the ray. The weights are recomputed in pass 2 rather than
-    // stored, which keeps the hit count free of any compile time bound.
+    // Pass 1: how many hits this ray has, and the total to normalize them by. The weights
+    // are recomputed in pass 2 rather than stored, which keeps the hit count free of any
+    // compile time bound.
     // ---------------------------------------------------------------------------------
-    float rPrev = 0.0;
-    float rCur = radialDistance(0, texel, faceIndex, cosTheta);
     float weightSum = 0.0;
     int hitCount = 0;
 
-    while (hitCount < params.uHitCount && rCur > 0.0)
+    while (hitCount < params.uHitCount)
     {
-        float rNext = (hitCount + 1 < params.uHitCount)
-            ? radialDistance(hitCount + 1, texel, faceIndex, cosTheta)
-            : -1.0;
+        float r = radialDistance(hitCount, texel, faceIndex, cosTheta);
+        if (r <= 0.0)
+            break;
 
-        weightSum += hitWeight(hitCount, rPrev, rCur, rNext,
-                               ivec3(texel, hitCount * 6 + faceIndex));
-
-        rPrev = rCur;
-        rCur = rNext;
+        weightSum += hitWeight(hitCount, r, ivec3(texel, hitCount * 6 + faceIndex));
         ++hitCount;
     }
 
@@ -246,41 +231,23 @@ void main()
     if (hitCount == params.uHitCount)
         atomicAdd(diagnostics[kDiagTruncated], 1u);
 
-    // Every gate vanished, which happens when the hits of this ray are coincident. Fall
-    // back to the first hit so the ray still carries its leverage: dropping the texel
-    // would break the direction symmetry sum_s dOmega_s * u_s == 0 that linear
-    // reproduction relies on, and a degenerate ray should reduce to plain PMVC.
+    // Every weight is strictly positive, so this only fires for a ray with no hits at all.
     if (weightSum <= 0.0)
-    {
-        float rFirst = radialDistance(0, texel, faceIndex, cosTheta);
-        if (rFirst > 0.0)
-            accumulate(texelFetch(uBaryTex, ivec3(texel, faceIndex), 0), solidAngle / rFirst);
-
         return;
-    }
 
     // ---------------------------------------------------------------------------------
     // Pass 2: normalize per ray and accumulate.
     // ---------------------------------------------------------------------------------
-    rPrev = 0.0;
-    rCur = radialDistance(0, texel, faceIndex, cosTheta);
-
     for (int hit = 0; hit < hitCount; ++hit)
     {
-        float rNext = (hit + 1 < params.uHitCount)
-            ? radialDistance(hit + 1, texel, faceIndex, cosTheta)
-            : -1.0;
-
+        float r = radialDistance(hit, texel, faceIndex, cosTheta);
         ivec3 coord = ivec3(texel, hit * 6 + faceIndex);
-        float w = hitWeight(hit, rPrev, rCur, rNext, coord);
+        float w = hitWeight(hit, r, coord);
 
         if (w > 0.0)
         {
             // The per-ray share divided by the Euclidean distance: the PMVC kernel.
-            accumulate(texelFetch(uBaryTex, coord, 0), (w / weightSum) / rCur * solidAngle);
+            accumulate(texelFetch(uBaryTex, coord, 0), (w / weightSum) / r * solidAngle);
         }
-
-        rPrev = rCur;
-        rCur = rNext;
     }
 }
