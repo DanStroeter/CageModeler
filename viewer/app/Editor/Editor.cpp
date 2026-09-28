@@ -4,7 +4,6 @@
 #include <Mesh/Operations/MeshOperationSystem.h>
 #include <Mesh/Operations/MeshComputeDeformationOperation.h>
 #include <Mesh/Operations/MeshExportInfluenceMapOperation.h>
-#include <Mesh/Operations/MeshExportDistanceFieldOperation.h>
 #include <Mesh/Operations/MeshComputeInfluenceMapOperation.h>
 #include <Mesh/Operations/MeshExportWeightsOperation.h>
 #include <Mesh/Operations/MeshComputeWeightsOperation.h>
@@ -229,26 +228,6 @@ void Editor::RecordUI()
 						if (filepath.has_value())
 						{
 							ExportInfluenceColorMap(filepath.value());
-						}
-					}
-
-					if (ImGui::MenuItem("Interior Distance Color Map...", nullptr))
-					{
-						const auto filepath = UIHelpers::PresentExportFilePopup({ { "Mesh (.obj)", "obj" } }, "interior_distance_map.obj");
-
-						if (filepath.has_value())
-						{
-							ExportDistanceFieldColorMap(filepath.value(), false);
-						}
-					}
-
-					if (ImGui::MenuItem("Euclidean Distance Color Map...", nullptr))
-					{
-						const auto filepath = UIHelpers::PresentExportFilePopup({ { "Mesh (.obj)", "obj" } }, "euclidean_distance_map.obj");
-
-						if (filepath.has_value())
-						{
-							ExportDistanceFieldColorMap(filepath.value(), true);
 						}
 					}
 
@@ -1425,49 +1404,6 @@ void Editor::ExportInfluenceColorMap(std::filesystem::path filepath,
 		std::move(weights),
 		_projectData->_modelVerticesOffset,
 		_projectData->CanInterpolateWeights());
-}
-
-void Editor::ExportDistanceFieldColorMap(std::filesystem::path filepath,
-	const bool useEuclideanDistance,
-	std::optional<std::vector<int32_t>> selectedVertices,
-	DistanceColorMapParams colorMapParams) const
-{
-	CheckFormat(!_isComputingWeightsData.load(std::memory_order_relaxed), "The weights and the deformation mesh haven't been computed yet to export.");
-	if (!selectedVertices.has_value() && !_projectData->_parametrization.has_value())
-	{
-		LOG_WARN("Skipping distance field export because parametrization data is missing and no selected vertices were provided.");
-
-		return;
-	}
-
-	// Only the interior distances have to be read from somewhere, the Euclidean ones follow
-	// from the vertex positions alone.
-	const Eigen::MatrixXf* interiorDetours = nullptr;
-	if (!useEuclideanDistance)
-	{
-		// The interior distances are read back from the table the interior distance PMVC
-		// variant filled, an empty table means the field does not exist yet.
-		interiorDetours = (_cubemapRenderer != nullptr) ? &_cubemapRenderer->GetInteriorDetours() : nullptr;
-
-		if (interiorDetours == nullptr || interiorDetours->size() == 0)
-		{
-			LOG_WARN("Skipping interior distance field export because no interior distances have been computed for this project. "
-				"Run the project with the interior distance PMVC variant first, or export the euclidean distance field instead.");
-
-			return;
-		}
-	}
-
-	auto parametrization = _projectData->_parametrization.value_or(Parametrization { });
-
-	_meshOperationSystem->ExecuteOperation<MeshExportDistanceFieldOperation>(
-		_projectData->_mesh,
-		_projectData->_cage,
-		std::move(parametrization),
-		std::move(selectedVertices),
-		std::move(filepath),
-		interiorDetours,
-		std::move(colorMapParams));
 }
 
 void Editor::OnComputeInfluenceColorMap(const bool shouldRenderInfluenceMap) const
