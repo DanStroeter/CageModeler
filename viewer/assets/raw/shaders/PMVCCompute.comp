@@ -144,9 +144,19 @@ float hitWeight(int hit, float rPrev, float rCur, float rNext, ivec3 coord)
     float gatePrev = 1.0 - rPrev / rCur;
     float gateNext = (rNext > 0.0) ? (1.0 / rCur - 1.0 / rNext) : (1.0 / rCur);
 
+    // The first hit is forced to 1 rather than read from the table, and not merely as an
+    // optimization. Its true detour is zero for every cage: the segment from the mesh vertex
+    // to its first crossing lies inside the cage by definition, so the straight line already
+    // is the shortest interior path. The table, however, holds detours at cage *vertices*,
+    // and a vertex of the hit triangle can be occluded while the hit itself is visible, so
+    // interpolating it here would apply a detour that does not exist and discount the nearest
+    // surface by how close it happens to sit to a silhouette.
     float eta = 1.0;
     if (hit > 0 && (params.uFlags & kFlagInteriorDistance) != 0)
     {
+        // The interior distance is reconstructed as r + detour, with r the exact rasterized
+        // distance of this texel; the table stores the difference only because it
+        // interpolates without error wherever the interior path is straight.
         float detour = max(hitDetour(texelFetch(uBaryTex, coord, 0)), 0.0);
         eta = rCur / max(rCur + detour, 1e-20);
     }
