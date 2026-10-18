@@ -137,14 +137,14 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 		}
 		else if (DeformationTypeHelpers::IsPMVC(_params._deformationType))
 		{
-			//if (_params._pmvcUseOffset)
-			//{
-			//	vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices + _params._mesh._vertices - _params._weightsData._weights * _params._cage._vertices;
-			//}
-			//else
-			//{
+			if (_params._pmvcUseOffset)
+			{
+				vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices + _params._mesh._vertices - _params._weightsData._weights * _params._cage._vertices;
+			}
+			else
+			{
 				vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices;
-			//}
+			}
 		}
 		else if (_params._deformationType == DeformationType::Somigliana)
 		{
