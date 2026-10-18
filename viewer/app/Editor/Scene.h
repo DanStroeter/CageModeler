@@ -15,7 +15,6 @@ class CameraSubsystem;
 class InputSubsystem;
 struct Ray;
 class PolygonMesh;
-class CubemapRenderer;
 
 struct MeshHitResult
 {

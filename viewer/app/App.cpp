@@ -3,7 +3,6 @@
 #include <Navigation/CameraSubsystem.h>
 #include <Rendering/RenderSubsystem.h>
 #include <UI/WindowSubsystem.h>
-#include <Rendering/PMVC/CubemapRenderInstance.h>
 
 void App::Initialize()
 {
@@ -11,7 +10,7 @@ void App::Initialize()
 	REGISTER_SUBSYSTEM(_collection, WindowSubsystem)
 	REGISTER_SUBSYSTEM(_collection, CameraSubsystem)
 	REGISTER_SUBSYSTEM(_collection, RenderSubsystem)
-	
+
 	_collection.PostInitializeSubsystems();
 }
 
@@ -24,13 +23,8 @@ void App::Start()
 
 	const auto renderSubsystem = _collection.GetDependencySubsystem<RenderSubsystem>();
 
-	
 	// TODO: Separate the editor from the editor rendering to avoid post-initialization from the rendering subsystem.
 	renderSubsystem->InitializeEditor(_editor);
-
-	//TODO put this where rendering for cube maps is actually needed(when pmvc get calculated)
-	
-	// Add input delegates for window events.
 
 	AddInputDelegates();
 
@@ -39,10 +33,8 @@ void App::Start()
 
 	auto currentTime = std::chrono::high_resolution_clock::now();
 	auto accumulator = 0.0;
-	bool cubemapstart = true;
 
-	//_editor->OnNewProjectCreated();
-	while (_isRunning) //_isRunning
+	while (_isRunning)
 	{
 		auto newTime = std::chrono::high_resolution_clock::now();
 		const auto frameTime = newTime - currentTime;

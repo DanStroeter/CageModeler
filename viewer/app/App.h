@@ -3,11 +3,9 @@
 #include <memory>
 
 #include <Core/Subsystem.h>
-#include <Rendering/PMVC/CubemapRenderInstance.h>
 
 class Editor;
 union SDL_Event;
-class CubemapRenderer;
 
 class App
 {
@@ -27,7 +25,6 @@ private:
 
 private:
 	std::shared_ptr<Editor> _editor = nullptr;
-	std::shared_ptr<CubemapRenderer> _cubemapRenderer = nullptr;
 	SubsystemsCollection _collection { SubsystemsCollection::Uninitialized };
 	bool _isRunning = true;
 };
