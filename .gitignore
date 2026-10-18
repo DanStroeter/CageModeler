@@ -41,3 +41,14 @@ build/
 # Python
 __pycache__/
 *.pyc
+
+# Visual Studio build output
+viewer/external/SDL3/VisualC/**/x64/
+*.vcxproj.user
+*.pdb
+*.ilk
+*.exp
+*.tlog
+
+# Compiled shaders
+*.spv
