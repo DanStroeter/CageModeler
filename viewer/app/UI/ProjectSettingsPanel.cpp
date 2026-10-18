@@ -83,6 +83,7 @@ void ProjectSettingsPanel::Layout()
 					}
 
 					_modifiedProjectModel._deformationType = static_cast<DeformationType>(_selectedDeformationTypeIndex);
+					_modifiedProjectModel.ApplyPMVCPreset();
 
 					ImGui::EndCombo();
 				}
@@ -297,6 +298,8 @@ void ProjectSettingsPanel::Layout()
 				ImGui::SameLine();
 			}
 
+			ProjecSettingsHelpers::PushPMVCSettingsUI(_modifiedProjectModel, "##Settings");
+
 			ImGui::BeginDisabled(_modifiedProjectModel._deformationType != DeformationType::BBW && _modifiedProjectModel._deformationType != DeformationType::LBC);
 			{
 				ImGui::TableNextRow();
@@ -460,4 +463,5 @@ void ProjectSettingsPanel::SetModel(const std::shared_ptr<ProjectModelData>& mod
 	//_selectedBulgingTypeIndex = static_cast<uint32_t>(_model->_somigBulgingType);
 
 	_modifiedProjectModel = *_model;
+	_modifiedProjectModel.ApplyPMVCPreset();
 }

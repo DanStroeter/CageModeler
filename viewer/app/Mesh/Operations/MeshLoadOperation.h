@@ -22,6 +22,7 @@ struct MeshLoadOperationParams
 		const bool interpolateWeights,
 		const bool findOffset,
 		const bool noOffset,
+		const bool pmvcUseOffset,
 		const double somigNu,
 		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer
 		)
@@ -39,6 +40,7 @@ struct MeshLoadOperationParams
 		, _interpolateWeights(interpolateWeights)
 		, _findOffset(findOffset)
 		, _noOffset(noOffset)
+		, _pmvcUseOffset(pmvcUseOffset)
 		, _somigNu(somigNu)
 	{ }
 
@@ -82,6 +84,7 @@ struct MeshLoadOperationParams
 	bool _interpolateWeights = false;
 	bool _findOffset = false;
 	bool _noOffset = false;
+	bool _pmvcUseOffset = false;
 
 	double _somigNu = 0;
 };

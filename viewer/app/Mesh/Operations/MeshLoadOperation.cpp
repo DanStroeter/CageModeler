@@ -341,5 +341,6 @@ MeshLoadOperation::ExecutionResult MeshLoadOperation::Execute()
 		centerOffset,
 		_params._interpolateWeights,
 		_params._findOffset,
-		_params._noOffset);
+		_params._noOffset,
+		_params._pmvcUseOffset);
 }

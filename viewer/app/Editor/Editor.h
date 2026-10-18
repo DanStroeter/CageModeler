@@ -9,6 +9,15 @@
 #include <Mesh/MeshTransformation.h>
 #include <Thread/ThreadPool.h>
 #include <Tools/Tool.h>
+#include <Rendering//PMVC/CubemapRenderInstance.h>
+
+#include <cagedeformations/InfluenceMap.h>
+
+#include <future>
+#include <optional>
+#include <vector>
+#include <cstdint>
+#include <mutex>
 
 class ProjectSettingsPanel;
 class ProjectOptionsPanel;
@@ -23,6 +32,7 @@ class StatusBar;
 class RenderPipelineManager;
 class InputSubsystem;
 class NewCagePanel;
+class CubemapManager;
 
 /**
  * This class serves as a mediator between the user interface backend and the current state of the application.
@@ -35,12 +45,13 @@ public:
 	Editor(const SubsystemPtr<InputSubsystem>& inputSubsystem,
 		const SubsystemPtr<CameraSubsystem>& cameraSubsystem);
 
-	void Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer);
+	void Initialize(const std::shared_ptr<SceneRenderer>& sceneRenderer, const std::shared_ptr<CubemapManager>& cubemapRenderer);
 
 	void RecordUI();
 
 	void Update(const double deltaTime);
 
+	
 private:
 	void SetUpUIElements();
 
@@ -111,7 +122,8 @@ private:
 	 * Exports the influence color map as an .OBJ file.
 	 * @param filepath A filepath for the output .OBJ file.
 	 */
-	void ExportInfluenceColorMap(std::filesystem::path filepath) const;
+	void ExportInfluenceColorMap(std::filesystem::path filepath,
+		std::optional<std::vector<int32_t>> selectedVertices = std::nullopt) const;
 
 	/**
 	 * Exports the weights as a .DMAT file.
@@ -138,6 +150,7 @@ private:
 		EigenMesh cage,
 		EigenMesh deformedCage,
 		const DeformationType deformationType,
+		const bool pmvcUseOffset,
 		const LBC::DataSetup::WeightingScheme weightingScheme,
 		const std::shared_ptr<somig_deformer_3>& somiglianaDeformer,
 		const int32_t modelVerticesOffset,
@@ -236,6 +249,9 @@ private:
 
 	/// The currently active scene.
 	std::unique_ptr<Scene> _scene = nullptr;
+
+	std::shared_ptr<CubemapManager> _cubemapRenderer = nullptr;
+
 
 	/// All gizmos in the scene.
 	std::shared_ptr<Gizmo> _gizmo;

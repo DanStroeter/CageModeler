@@ -67,7 +67,7 @@ Image RenderResourceManager::CreateImage(const uint32_t width,
 	return Image(image, imageMemory);
 }
 
-Buffer RenderResourceManager::AllocateDeviceBuffer(const VkDeviceSize deviceSize,
+/*Buffer RenderResourceManager::AllocateDeviceBuffer(const VkDeviceSize deviceSize,
 											 const VkBufferUsageFlags bufferUsage,
 											 const VkMemoryPropertyFlags properties) const
 {
@@ -97,6 +97,49 @@ Buffer RenderResourceManager::AllocateDeviceBuffer(const VkDeviceSize deviceSize
 
 	// Bind the memory to the buffer object.
 	vkBindBufferMemory(_device, buffer, deviceMemory, 0);
+
+	return Buffer(buffer, deviceMemory, deviceSize);
+}*/
+Buffer RenderResourceManager::AllocateDeviceBuffer(
+	const VkDeviceSize deviceSize,
+	const VkBufferUsageFlags bufferUsage,
+	const VkMemoryPropertyFlags properties) const
+{
+	CHECK_VK_HANDLE(_device);
+
+	VkBufferCreateInfo bufferInfo{};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size = deviceSize;
+	bufferInfo.usage = bufferUsage;
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	VkBuffer buffer = VK_NULL_HANDLE;
+	VK_CHECK(vkCreateBuffer(_device, &bufferInfo, nullptr, &buffer));
+
+	VkMemoryRequirements memRequirements;
+	vkGetBufferMemoryRequirements(_device, buffer, &memRequirements);
+
+	VkMemoryAllocateInfo allocateInfo{};
+	allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocateInfo.allocationSize = memRequirements.size;
+	allocateInfo.memoryTypeIndex = VulkanUtils::FindMemoryType(
+		_device->GetPhysicalDeviceHandle(),
+		memRequirements.memoryTypeBits,
+		properties
+	);
+
+	// --- NEW: attach device address flag if needed ---
+	VkMemoryAllocateFlagsInfo allocFlags{};
+	if (bufferUsage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+		allocFlags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+		allocFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+		allocateInfo.pNext = &allocFlags;
+	}
+
+	VkDeviceMemory deviceMemory = VK_NULL_HANDLE;
+	VK_CHECK(vkAllocateMemory(_device, &allocateInfo, nullptr, &deviceMemory));
+
+	VK_CHECK(vkBindBufferMemory(_device, buffer, deviceMemory, 0));
 
 	return Buffer(buffer, deviceMemory, deviceSize);
 }
@@ -149,4 +192,22 @@ VkSampler RenderResourceManager::CreateTextureSampler() const
 	VK_CHECK(vkCreateSampler(_device, &createInfo, nullptr, &sampler));
 
 	return sampler;
+}
+
+MemoryMappedBuffer RenderResourceManager::CreateScratchBuffer(
+	VkDeviceSize size,
+	VkBufferUsageFlags usage,
+	VkMemoryPropertyFlags properties,
+	VkDeviceSize alignment = 0
+) const
+{
+	CHECK_VK_HANDLE(_device);
+
+	Buffer buffer = AllocateDeviceBuffer(size, usage, properties);
+
+	MemoryMappedBuffer result;
+	result.CopyFrom(buffer);
+	result._mappedData = nullptr; // explicitly not mapped
+
+	return result;
 }

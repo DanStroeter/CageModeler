@@ -1,0 +1,253 @@
+#version 450
+#extension GL_EXT_shader_atomic_float : require
+
+// Unified PMVC weight accumulation for the Ring pipeline.
+//
+// One dispatch consumes every peeled hit of one cubemap and turns them into the weights of
+// one deformable mesh vertex. The hits along a ray are first weighted against each other
+// and normalized to sum to one, and only then divided by the Euclidean hit distance:
+//
+//   w_k = eta_k
+//   t_k = w_k / sum_j w_j                 per ray, so sum_k t_k == 1
+//   a_k = (t_k / r_k) * solidAngle        the PMVC kernel
+//
+// Keeping sum_k t_k == 1 for *every* direction is what makes the coordinates reproduce the
+// rest pose. A hit sits at x + r_k * u, so the r_k of the kernel cancels the r_k of the
+// position and all that is left is a sum over directions, which vanishes by the symmetry of
+// the cubemap. Anything that weights whole directions differently - interior distance
+// applied to the kernel, or a hit count that varies per ray - destroys that cancellation
+// and displaces the mesh, which no amount of global normalization can repair.
+//
+//   * eta_k = r_k / d_C(x, hit_k) biases the split towards hits reachable without a detour
+//     through the cage interior. It is exactly 1 on the first hit, where the straight
+//     segment to the hit lies inside the cage and the interior distance equals the
+//     Euclidean one, so the interior-distance variant only ever acts on hits beyond the
+//     first. Without it every eta is 1 and a ray simply divides its contribution equally
+//     between the surfaces it crosses.
+//   * kFlagSolidAngleOnly selects the offset (PMVCO) weighting, which has no distance term
+//     at all and therefore nothing to split.
+
+// Rendered barycentric + triangle index image, layer = hit * 6 + face.
+layout(binding = 0) uniform sampler2DArray uBaryTex;
+
+// Triangle vertex index list (3 indices per triangle).
+layout(std430, binding = 1) readonly buffer VertexList {
+    uint vertexList[];
+};
+
+// Output λ values (one buffer per slot).
+layout(std430, binding = 2) buffer LambdaOut {
+    float lambda[];
+};
+
+// Output wsum (single float per slot).
+layout(std430, binding = 3) buffer WSumOut {
+    float wsum[];
+};
+
+// Solid angle lookup, 6 layers (independent of the hit).
+layout(binding = 4) uniform sampler2DArray uSolidAngleTex;
+
+// Depth of every hit, layer = hit * 6 + face.
+layout(binding = 5) uniform sampler2DArray uDepthTex;
+
+// Interior detour table: interiorDetour[meshVertexIdx * numCageVertices + cageVertexIdx]
+// holds interiorDistance - euclideanDistance (>= 0) between the two vertices. Bound to
+// a dummy buffer when kFlagInteriorDistance is not set.
+layout(std430, binding = 6) readonly buffer InteriorDetours {
+    float interiorDetour[];
+};
+
+// Validity counters, see the atomicAdd calls in main().
+layout(std430, binding = 7) buffer Diagnostics {
+    uint diagnostics[];
+};
+
+layout(push_constant) uniform Params {
+    ivec2 uFaceSize;        // cubemap face resolution
+    int   uNumTriangles;    // number of triangles in the cage mesh
+    int   uNumCageVertices; // number of cage vertices (detour table row stride)
+    int   uMeshVertexIdx;   // deformable vertex this cubemap belongs to
+    float uNearPlane;       // near plane of the cubemap projection
+    float uFarPlane;        // far plane of the cubemap projection
+    int   uHitCount;        // number of peeled layers rendered per vertex
+    int   uFlags;           // see the flag constants below
+} params;
+
+const int kFlagInteriorDistance = 1;
+const int kFlagSolidAngleOnly = 2;
+const int kFlagSkipEvenHits = 4;
+
+// Diagnostic slots.
+const int kDiagEvenHitCount = 0;   // rays crossing the cage an even number of times
+const int kDiagTruncated = 1;      // rays that filled every rendered layer
+const int kDiagNoHit = 2;          // rays that never crossed the cage
+
+// 1.0 is the depth clear value, which also covers the texels the peeling pass discarded.
+const float kNoHitDepth = 0.999999;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+/**
+ * Radial distance of one hit, or -1 when this layer holds no geometry. The depth buffer
+ * stores the eye space depth along the face axis, while every weight below is expressed in
+ * the distance along the ray, so the perspective depth is unprojected and then divided by
+ * the cosine between the texel direction and the face axis.
+ */
+float radialDistance(int hit, ivec2 texel, int face, float cosTheta)
+{
+    float depth = texelFetch(uDepthTex, ivec3(texel, hit * 6 + face), 0).r;
+    if (depth >= kNoHitDepth)
+        return -1.0;
+
+    float zEye = (params.uFarPlane * params.uNearPlane) /
+                 (params.uFarPlane - depth * (params.uFarPlane - params.uNearPlane));
+
+    return max(zEye / cosTheta, 1e-20);
+}
+
+/**
+ * Interior detour at a hit, barycentrically interpolated from the detours of the cage
+ * vertices of the hit triangle. The cubemap render encodes the barycentric coordinates of
+ * the hit in RGB, so they come for free.
+ */
+float hitDetour(vec4 tex)
+{
+    uint tri = uint(tex.a * float(params.uNumTriangles) + 0.5);
+    if (tri >= uint(params.uNumTriangles))
+        return 0.0;
+
+    uint tableBase = uint(params.uMeshVertexIdx) * uint(params.uNumCageVertices);
+
+    return tex.r * interiorDetour[tableBase + vertexList[tri * 3 + 0]]
+         + tex.g * interiorDetour[tableBase + vertexList[tri * 3 + 1]]
+         + tex.b * interiorDetour[tableBase + vertexList[tri * 3 + 2]];
+}
+
+/**
+ * Unnormalized weight of one hit: its share of the ray before normalization.
+ */
+float hitWeight(int hit, float rCur, ivec3 coord)
+{
+    // Skipping every second hit drops the entry hits from the split. The weight still goes
+    // through the same per-ray normalization, so the leverage of the ray stays at one and
+    // linear reproduction survives.
+    if ((params.uFlags & kFlagSkipEvenHits) != 0 && (hit % 2) == 1)
+        return 0.0;
+
+    // The first hit is forced to 1 rather than read from the table, and not merely as an
+    // optimization. Its true detour is zero for every cage: the segment from the mesh vertex
+    // to its first crossing lies inside the cage by definition, so the straight line already
+    // is the shortest interior path. The table, however, holds detours at cage *vertices*,
+    // and a vertex of the hit triangle can be occluded while the hit itself is visible, so
+    // interpolating it here would apply a detour that does not exist and discount the nearest
+    // surface by how close it happens to sit to a silhouette.
+    if (hit > 0 && (params.uFlags & kFlagInteriorDistance) != 0)
+    {
+        // The interior distance is reconstructed as r + detour, with r the exact rasterized
+        // distance of this texel; the table stores the difference only because it
+        // interpolates without error wherever the interior path is straight.
+        float detour = max(hitDetour(texelFetch(uBaryTex, coord, 0)), 0.0);
+        return rCur / max(rCur + detour, 1e-20);
+    }
+
+    return 1.0;
+}
+
+/**
+ * Distributes one hit over the cage vertices of its triangle.
+ */
+void accumulate(vec4 tex, float weight)
+{
+    uint tri = uint(tex.a * float(params.uNumTriangles) + 0.5);
+    if (tri >= uint(params.uNumTriangles))
+        return;
+
+    atomicAdd(lambda[vertexList[tri * 3 + 0]], tex.r * weight);
+    atomicAdd(lambda[vertexList[tri * 3 + 1]], tex.g * weight);
+    atomicAdd(lambda[vertexList[tri * 3 + 2]], tex.b * weight);
+    atomicAdd(wsum[0], weight);
+}
+
+void main()
+{
+    uint x    = gl_GlobalInvocationID.x;
+    uint y    = gl_GlobalInvocationID.y;
+    uint face = gl_GlobalInvocationID.z;
+
+    if (x >= uint(params.uFaceSize.x) ||
+        y >= uint(params.uFaceSize.y) ||
+        face >= 6u)
+    {
+        return;
+    }
+
+    ivec2 texel = ivec2(x, y);
+    int faceIndex = int(face);
+
+    float solidAngle = texelFetch(uSolidAngleTex, ivec3(texel, faceIndex), 0).r;
+    if (solidAngle <= 0.0)
+        return;
+
+    float u = (2.0 * (float(x) + 0.5) / float(params.uFaceSize.x)) - 1.0;
+    float v = (2.0 * (float(y) + 0.5) / float(params.uFaceSize.y)) - 1.0;
+    float cosTheta = inversesqrt(1.0 + u * u + v * v);
+
+    // The offset variant has no distance term, so there is nothing to normalize along the
+    // ray: the first hit carries the whole solid angle of the texel.
+    if ((params.uFlags & kFlagSolidAngleOnly) != 0)
+    {
+        if (radialDistance(0, texel, faceIndex, cosTheta) > 0.0)
+            accumulate(texelFetch(uBaryTex, ivec3(texel, faceIndex), 0), solidAngle);
+
+        return;
+    }
+
+    // ---------------------------------------------------------------------------------
+    // Pass 1: how many hits this ray has, and the total to normalize them by. The weights
+    // are recomputed in pass 2 rather than stored, which keeps the hit count free of any
+    // compile time bound.
+    // ---------------------------------------------------------------------------------
+    float weightSum = 0.0;
+    int hitCount = 0;
+
+    while (hitCount < params.uHitCount)
+    {
+        float r = radialDistance(hitCount, texel, faceIndex, cosTheta);
+        if (r <= 0.0)
+            break;
+
+        weightSum += hitWeight(hitCount, r, ivec3(texel, hitCount * 6 + faceIndex));
+        ++hitCount;
+    }
+
+    // A closed cage is crossed an odd number of times from the inside; anything else means
+    // the ray leaked through a gap in the cage, or the layers ran out before it exited.
+    if (hitCount == 0)
+        atomicAdd(diagnostics[kDiagNoHit], 1u);
+    else if ((hitCount % 2) == 0)
+        atomicAdd(diagnostics[kDiagEvenHitCount], 1u);
+
+    if (hitCount == params.uHitCount)
+        atomicAdd(diagnostics[kDiagTruncated], 1u);
+
+    // Every weight is strictly positive, so this only fires for a ray with no hits at all.
+    if (weightSum <= 0.0)
+        return;
+
+    // ---------------------------------------------------------------------------------
+    // Pass 2: normalize per ray and accumulate.
+    // ---------------------------------------------------------------------------------
+    for (int hit = 0; hit < hitCount; ++hit)
+    {
+        float r = radialDistance(hit, texel, faceIndex, cosTheta);
+        ivec3 coord = ivec3(texel, hit * 6 + faceIndex);
+        float w = hitWeight(hit, r, coord);
+
+        if (w > 0.0)
+        {
+            // The per-ray share divided by the Euclidean distance: the PMVC kernel.
+            accumulate(texelFetch(uBaryTex, coord, 0), (w / weightSum) / r * solidAngle);
+        }
+    }
+}

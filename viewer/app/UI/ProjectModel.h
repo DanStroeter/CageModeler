@@ -4,6 +4,8 @@
 #include <cagedeformations/somig.h>
 #include <Mesh/Operations/MeshCageGeneration.h>
 
+#include <algorithm>
+
 struct ProjectModelData
 {
 	ProjectModelData() = default;
@@ -27,7 +29,11 @@ struct ProjectModelData
 		_interpolateWeights = other._interpolateWeights;
 		_findOffset = other._findOffset;
 		_noOffset = other._noOffset;
+		_pmvcUseOffset = other._pmvcUseOffset;
 		_renderInfluenceMap = other._renderInfluenceMap;
+		_pmvcHitCount = other._pmvcHitCount;
+		_pmvcSkipEvenHits = other._pmvcSkipEvenHits;
+		_pmvcUseInteriorDistance = other._pmvcUseInteriorDistance;
 	}
 
 	ProjectModelData(ProjectModelData&& other) noexcept
@@ -71,7 +77,11 @@ struct ProjectModelData
 		swap(lhs._interpolateWeights, rhs._interpolateWeights);
 		swap(lhs._findOffset, rhs._findOffset);
 		swap(lhs._noOffset, rhs._noOffset);
+		swap(lhs._pmvcUseOffset, rhs._pmvcUseOffset);
 		swap(lhs._renderInfluenceMap, rhs._renderInfluenceMap);
+		swap(lhs._pmvcHitCount, rhs._pmvcHitCount);
+		swap(lhs._pmvcSkipEvenHits, rhs._pmvcSkipEvenHits);
+		swap(lhs._pmvcUseInteriorDistance, rhs._pmvcUseInteriorDistance);
 	}
 
 	[[nodiscard]] bool IsFBX() const
@@ -111,7 +121,11 @@ struct ProjectModelData
 			lhs._scalingFactor == rhs._scalingFactor &&
 			lhs._interpolateWeights == rhs._interpolateWeights &&
 			lhs._findOffset == rhs._findOffset &&
-			lhs._noOffset == rhs._noOffset;
+			lhs._noOffset == rhs._noOffset &&
+			lhs._pmvcUseOffset == rhs._pmvcUseOffset &&
+			lhs._pmvcHitCount == rhs._pmvcHitCount &&
+			lhs._pmvcSkipEvenHits == rhs._pmvcSkipEvenHits &&
+			lhs._pmvcUseInteriorDistance == rhs._pmvcUseInteriorDistance;
 	}
 
 	[[nodiscard]] bool friend operator!=(const ProjectModelData& lhs, const ProjectModelData& rhs)
@@ -127,6 +141,28 @@ struct ProjectModelData
 	[[nodiscard]] bool CanRenderInfluenceMap() const
 	{
 		return _deformationType != DeformationType::Somigliana && _renderInfluenceMap;
+	}
+
+	/**
+	 * Keeps the PMVC settings consistent with the selected coordinate type. The offset
+	 * variant is not a setting of its own anymore, it is the PMVCO coordinate type, and
+	 * because it weights by solid angle alone it has no per-ray split: it runs with a single
+	 * hit and none of the settings that shape that split apply to it.
+	 */
+	void ApplyPMVCPreset()
+	{
+		if (_deformationType == DeformationType::PMVC)
+		{
+			_pmvcUseOffset = false;
+			_pmvcHitCount = std::clamp<uint64_t>(_pmvcHitCount, 1, PMVCSettings::kMaxHitCount);
+		}
+		else if (_deformationType == DeformationType::PMVCO)
+		{
+			_pmvcUseOffset = true;
+			_pmvcHitCount = 1;
+			_pmvcSkipEvenHits = false;
+			_pmvcUseInteriorDistance = false;
+		}
 	}
 
 	/**
@@ -158,6 +194,18 @@ struct ProjectModelData
 	std::optional<std::filesystem::path> _deformedCageFilepath;
 	std::optional<std::filesystem::path> _parametersFilepath;
 
+	/// Number of depth peeling layers rendered per mesh vertex. All of them are weighted
+	/// against each other along their ray and normalized, so every ray contributes the
+	/// same leverage regardless of how often it crosses the cage.
+	uint64_t _pmvcHitCount = 1;
+
+	/// Drop the entry (every second) hits from the per-ray weight split.
+	bool _pmvcSkipEvenHits = false;
+
+	/// Bias the per-ray weight split towards hits that are reachable without a detour
+	/// through the cage interior. Ignored by the offset (PMVCO) variant.
+	bool _pmvcUseInteriorDistance = false;
+
 	std::shared_ptr<somig_deformer_3> _somiglianaDeformer = nullptr;
 
 	double _somigNu = 0;
@@ -168,6 +216,9 @@ struct ProjectModelData
 	bool _interpolateWeights = false;
 	bool _findOffset = false;
 	bool _noOffset = false;
+
+	/// Derived from the coordinate type (PMVCO), not an independent setting.
+	bool _pmvcUseOffset = false;
 
 	/// Render the influence of the mesh as vertex colors.
 	bool _renderInfluenceMap = false;

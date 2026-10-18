@@ -87,6 +87,7 @@ void NewProjectPanel::Layout()
 					}
 
 					_model->_deformationType = static_cast<DeformationType>(_selectedDeformationTypeIndex);
+					_model->ApplyPMVCPreset();
 
 					ImGui::EndCombo();
 				}
@@ -283,6 +284,8 @@ void NewProjectPanel::Layout()
 				ImGui::SameLine();
 			}
 
+			ProjecSettingsHelpers::PushPMVCSettingsUI(*_model, "##New");
+
 			ImGui::BeginDisabled(_model->_deformationType != DeformationType::BBW && _model->_deformationType != DeformationType::LBC);
 			{
 				ImGui::TableNextRow();
@@ -380,6 +383,7 @@ void NewProjectPanel::Layout()
 void NewProjectPanel::SetModel(const std::shared_ptr<ProjectModelData>& model)
 {
 	UIPanel::SetModel(model);
+	_model->ApplyPMVCPreset();
 
 	_selectedDeformationTypeIndex = static_cast<uint32_t>(_model->_deformationType);
 	_selectedWeightingSchemeIndex = static_cast<uint32_t>(_model->_LBCWeightingScheme);
@@ -406,4 +410,3 @@ std::shared_ptr<ProjectModelData> NewProjectPanel::GetModel() const
 { 
 	return _model; 
 }
-

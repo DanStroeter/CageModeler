@@ -8,6 +8,9 @@
 #include <Eigen/Core>
 #include <LBC/DataSetup.h>
 
+#include <optional>
+#include <vector>
+
 enum class DeformationType : uint8_t
 {
 	MVC,
@@ -19,7 +22,32 @@ enum class DeformationType : uint8_t
 	MLC,
 	Green,
 	QGC,
-	Somigliana
+	Somigliana,
+	PMVC,
+	PMVCO
+};
+
+/**
+ * Fixed settings of the PMVC Ring pipeline. They used to be configurable per project, but
+ * every variant now runs through the same pipeline with the same cubemap resolution and
+ * ring size, so they are constants instead of project settings.
+ */
+struct PMVCSettings
+{
+	/// Resolution of a single cubemap face.
+	static constexpr uint32_t kCubemapSize = 32;
+
+	/// Number of render targets in the ring.
+	static constexpr uint32_t kRingTargetCount = 64;
+
+	/**
+	 * Upper bound on the peeling layers a project may request. Every hit occupies six
+	 * array layers of the cubemap images, and Vulkan only guarantees 256 array layers, so
+	 * 256 / 6 is the portable ceiling. Devices that allow more are not exploited here
+	 * because the footprint also grows with the ring size; a request that exceeds what the
+	 * device actually supports is rejected when the render targets are created.
+	 */
+	static constexpr uint64_t kMaxHitCount = 42;
 };
 
 struct DeformationTypeHelpers
@@ -67,6 +95,13 @@ struct DeformationTypeHelpers
 		{
 			return "Somigliana";
 		}
+		else if (deformationType == DeformationType::PMVC) {
+			return "PMVC";
+		}
+		else if (deformationType == DeformationType::PMVCO)
+		{
+			return "PMVCO";
+		}
 
 		return { };
 	}
@@ -75,7 +110,44 @@ struct DeformationTypeHelpers
 	{
 		return deformationType == DeformationType::LBC || deformationType == DeformationType::Harmonic || deformationType == DeformationType::BBW;
 	}
+	[[nodiscard]] static bool IsPMVC(const DeformationType deformationType)
+	{
+		return deformationType == DeformationType::PMVC || deformationType == DeformationType::PMVCO;
+	}
+	[[nodiscard]] static bool CanInterpolateWeights(const DeformationType deformationType)
+	{
+		return deformationType == DeformationType::LBC || deformationType == DeformationType::Harmonic || deformationType == DeformationType::BBW;
+	}
 };
+
+/**
+ * Resolves the cage vertices the influence color map is centered on: the explicit selection
+ * when one was made, otherwise every vertex the parametrization translates.
+ */
+[[nodiscard]] inline std::vector<int> ResolveControlVertexIndices(const std::optional<std::vector<int32_t>>& selectedVertices,
+	const Parametrization& parametrization)
+{
+	std::vector<int> controlVerticesIdx;
+
+	if (selectedVertices.has_value())
+	{
+		controlVerticesIdx.reserve(selectedVertices->size());
+		for (const auto vertexIdx : selectedVertices.value())
+		{
+			controlVerticesIdx.push_back(vertexIdx);
+		}
+	}
+	else
+	{
+		controlVerticesIdx.reserve(parametrization.translations_per_vertex.size());
+		for (const auto& it : parametrization.translations_per_vertex)
+		{
+			controlVerticesIdx.push_back(it.first);
+		}
+	}
+
+	return controlVerticesIdx;
+}
 
 template <typename Scalar, int Rows, int Cols>
 struct std::hash<Eigen::Matrix<Scalar, Rows, Cols>>
@@ -101,7 +173,12 @@ struct MeshComputeWeightsOperationResult
 		Eigen::MatrixXd interpolatedWeights,
 		Eigen::MatrixXd psi,
 		std::vector<double> psiTri,
-		std::vector<Eigen::Vector4d> psiQuad)
+		std::vector<Eigen::Vector4d> psiQuad,
+		std::optional<double> renderMs = std::nullopt,
+		std::optional<double> computeMs = std::nullopt,
+		std::optional<double> computeTotalMs = std::nullopt,
+		std::optional<double> transferMs = std::nullopt,
+		std::optional<double> initMs = std::nullopt)
 	{
 		_skinningMatrix = std::move(skinningMatrix);
 		_weights = std::move(weights);
@@ -109,6 +186,11 @@ struct MeshComputeWeightsOperationResult
 		_psi = std::move(psi);
 		_psiTri = std::move(psiTri);
 		_psiQuad = std::move(psiQuad);
+		_renderMs = renderMs;
+		_computeMs = computeMs;
+		_computeTotalMs = computeTotalMs;
+		_transferMs = transferMs;
+		_initMs = initMs;
 	}
 
 	Eigen::MatrixXd _skinningMatrix;
@@ -117,6 +199,11 @@ struct MeshComputeWeightsOperationResult
 	Eigen::MatrixXd _psi;
 	std::vector<double> _psiTri;
 	std::vector<Eigen::Vector4d> _psiQuad;
+	std::optional<double> _renderMs;
+	std::optional<double> _computeMs;
+	std::optional<double> _computeTotalMs;
+	std::optional<double> _transferMs;
+	std::optional<double> _initMs;
 };
 
 struct InterpolatedVertexData
@@ -164,7 +251,8 @@ struct ProjectData
 		const glm::vec3& centerOffset,
 		const bool interpolateWeights,
 		const bool findOffset,
-		const bool noOffset)
+		const bool noOffset,
+		const bool pmvcUseOffset)
 		: _deformationType(deformationType)
 		, _LBCWeightingScheme(LBCWeightingScheme)
 		, _mesh(std::move(mesh))
@@ -187,6 +275,7 @@ struct ProjectData
 		, _interpolateWeights(interpolateWeights)
 		, _findOffset(findOffset)
 		, _noOffset(noOffset)
+		, _pmvcUseOffset(pmvcUseOffset)
 	{
 	}
 
@@ -194,6 +283,7 @@ struct ProjectData
 		: _interpolateWeights(false)
 		, _findOffset(false)
 		, _noOffset(false)
+		, _pmvcUseOffset(false)
 	{ }
 
 	[[nodiscard]] bool HarmonicOrLBC() const
@@ -251,4 +341,5 @@ struct ProjectData
 	uint32_t _interpolateWeights : 1;
 	uint32_t _findOffset : 1;
 	uint32_t _noOffset : 1;
+	uint32_t _pmvcUseOffset : 1;
 };

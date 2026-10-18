@@ -4,7 +4,7 @@
 DescriptorPool::DescriptorPool(const RenderResourceRef<Device>& device)
 	: _device(device)
 {
-	std::array<VkDescriptorPoolSize, 5> poolSizes { };
+	/*std::array<VkDescriptorPoolSize, 5> poolSizes{};
 
 	poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	poolSizes[0].descriptorCount = 10 * VulkanUtils::NumRenderFramesInFlight;
@@ -21,10 +21,27 @@ DescriptorPool::DescriptorPool(const RenderResourceRef<Device>& device)
 	poolSizes[4].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
 	poolSizes[4].descriptorCount = 1 * VulkanUtils::NumRenderFramesInFlight;
 
-	VkDescriptorPoolCreateInfo poolInfo { };
+	VkDescriptorPoolCreateInfo poolInfo { };*/
+	constexpr uint32_t kSetCapacity = 65536;
+	constexpr uint32_t kUniformBufferCapacity = 4096;
+	constexpr uint32_t kCombinedImageSamplerCapacity = kSetCapacity * 2;
+	constexpr uint32_t kStorageBufferCapacity = kSetCapacity * 2;
+	constexpr uint32_t kInputAttachmentCapacity = 1024;
+	constexpr uint32_t kDynamicUniformBufferCapacity = 1024;
+
+	std::array<VkDescriptorPoolSize, 5> poolSizes{ {
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kUniformBufferCapacity },
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kCombinedImageSamplerCapacity },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, kStorageBufferCapacity },
+		{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, kInputAttachmentCapacity },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, kDynamicUniformBufferCapacity }
+	} };
+
+	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolInfo.maxSets = 10 * VulkanUtils::NumRenderFramesInFlight * poolSizes.size();
-	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+	//poolInfo.maxSets = 10 * VulkanUtils::NumRenderFramesInFlight * poolSizes.size();
+	poolInfo.maxSets = kSetCapacity;
+	poolInfo.maxSets = kSetCapacity;poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	poolInfo.pPoolSizes = poolSizes.data();
 
 	VK_CHECK(vkCreateDescriptorPool(_device, &poolInfo, nullptr, &_descriptorPool));

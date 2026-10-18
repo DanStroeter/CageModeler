@@ -5,6 +5,35 @@
 
 #include <igl/lbs_matrix.h>
 #include <igl/EPS.h>
+#include <fstream>
+
+void WriteWeightsToFile(const std::string& filename, Eigen::MatrixXd _lambdaResults)
+{
+	std::ofstream file(filename);
+	if (!file.is_open())
+		throw std::runtime_error("Failed to open weight write file!");
+
+	const Eigen::Index rows = _lambdaResults.rows();
+	const Eigen::Index cols = _lambdaResults.cols();
+
+	file << "===== LAMBDA BUFFER (rows=" << rows
+		<< ", cols=" << cols << ") =====\n";
+
+	for (Eigen::Index r = 0; r < rows; ++r)
+	{
+		double sum = 0.0;
+
+		for (Eigen::Index c = 0; c < cols; ++c)
+		{
+			const double value = _lambdaResults(r, c);
+			file << "lambda[" << r << "][" << c << "] = " << value << "\n";
+			sum += value;
+		}
+	}
+
+	file.close();
+	LOG_INFO("Weights written to " + filename);
+}
 
 MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation::Execute()
 {
@@ -39,6 +68,11 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 
 	for (auto i = 0; i < translationFactors.size(); ++i)
 	{
+		LOG_DEBUG("DeformationType = {}, sample {} / {}",
+			static_cast<int>(_params._deformationType),
+			i,
+			translationFactors.size());
+
 		auto cageTransforms = finalTransformation;
 		_params._deformedCage._vertices = _params._cage._vertices;
 		const auto factor = translationFactors[i];
@@ -56,6 +90,24 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 		// Allocate the space for the vertices.
 		vertexData[i]._vertices = Eigen::MatrixXd(_params._mesh._vertices.rows(), 3);
 		vertexData[i]._translationFactor = factor;
+
+		if (i == 0)
+		{
+			LOG_DEBUG("CAGE verts: {} x {}",
+				_params._cage._vertices.rows(),
+				_params._cage._vertices.cols());
+
+			LOG_DEBUG("DEF CAGE verts: {} x {}",
+				_params._deformedCage._vertices.rows(),
+				_params._deformedCage._vertices.cols());
+			LOG_DEBUG("WEIGHTS matrix: {} x {}",
+				_params._weightsData._weights.rows(),
+				_params._weightsData._weights.cols());
+
+			LOG_DEBUG("WEIGHTS^T matrix: {} x {}",
+				_params._weightsData._weights.cols(),
+				_params._weightsData._weights.rows());
+		}
 
 		if (_params._deformationType == DeformationType::Green)
 		{
@@ -80,7 +132,19 @@ MeshComputeDeformationOperation::ExecutionResult MeshComputeDeformationOperation
 		else if (_params._deformationType == DeformationType::MVC ||_params._deformationType == DeformationType::QMVC || _params._deformationType == DeformationType::MLC ||
 			_params._deformationType == DeformationType::MEC)
 		{
+			//WriteWeightsToFile("mvc", _params._weightsData._weights.transpose());
 			vertexData[i]._vertices = _params._weightsData._weights.transpose() * _params._deformedCage._vertices;
+		}
+		else if (DeformationTypeHelpers::IsPMVC(_params._deformationType))
+		{
+			if (_params._pmvcUseOffset)
+			{
+				vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices + _params._mesh._vertices - _params._weightsData._weights * _params._cage._vertices;
+			}
+			else
+			{
+				vertexData[i]._vertices = _params._weightsData._weights * _params._deformedCage._vertices;
+			}
 		}
 		else if (_params._deformationType == DeformationType::Somigliana)
 		{

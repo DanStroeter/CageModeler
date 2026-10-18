@@ -72,7 +72,13 @@ add_executable(${PROJECT_NAME}
     Rendering/RenderSubsystem.cpp
     App.cpp
     main.cpp
+    Rendering/PMVC/CubemapRenderInstance.cpp
+    Rendering/PMVC/CubemapManager.cpp
+    Rendering/PMVC/RingComputeStrategy.cpp
+    Rendering/PMVC/SphereWeightCalculator.h
+    Rendering/PMVC/ScopedCmdBuffer.cpp
     ${IMGUI_BINDINGS})
+
 
 target_compile_definitions(
     ${PROJECT_NAME}

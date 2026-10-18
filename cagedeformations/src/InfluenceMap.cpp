@@ -2,15 +2,18 @@
 
 #include <iostream>
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 
 /// Modified from libigl
 bool writeOBJVertexColors(
 	const std::string& str,
 	const Eigen::MatrixXd& V,
 	const Eigen::MatrixXd& V_colors,
-	const Eigen::MatrixXi& F)
+	const Eigen::MatrixXi& F,
+	const std::vector<std::string>& header_comments)
 {
 	using namespace std;
 	assert(V.cols() == 3 && "V should have 3 columns");
@@ -19,6 +22,11 @@ bool writeOBJVertexColors(
 	{
 		fprintf(stderr, "IOError: writeOBJ() could not open %s\n", str.c_str());
 		return false;
+	}
+
+	for (const auto& comment : header_comments)
+	{
+		s << "# " << comment << "\n";
 	}
 
 	for (int i = 0; i < V.rows(); ++i)
@@ -104,7 +112,6 @@ void write_influence_color_map_OBJ(const std::string & file_name, const Eigen::M
 			val = std::log(1 + val) / std::log(1 + 100);
 			assert(val >= 0. && val <= 1.);
 			return val;
-			//return (val - min_influence) / (max_influence - min_influence);
 		};
 
 		V_colors.row(i) = HSVtoRGB(240. * (1. - interpolate(influences(i))), 100., 100.);

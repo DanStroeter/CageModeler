@@ -54,8 +54,6 @@ public:
 
 	void Execute()
 	{
-		CheckFormat(_params._deformationType == DeformationType::LBC || _params._deformationType == DeformationType::BBW, "Cannot export params of type that is not LBC or BBW.");
-
 		if (_params._deformationType == DeformationType::BBW)
 		{
 			// Only a few iterations for sake of demo.

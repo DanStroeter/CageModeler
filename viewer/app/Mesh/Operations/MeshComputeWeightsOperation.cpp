@@ -179,7 +179,13 @@ MeshComputeWeightsOperation::ExecutionResult MeshComputeWeightsOperation::Execut
 			return ExecutionResult("Failed to compute bounded biharmonic weights");
 		}
 	}
-
+	else if (DeformationTypeHelpers::IsPMVC(_params._deformationType))
+	{
+		//TODO
+		//calculatePMVCLIpmanCoordinates(_params._cage._vertices,_params._cage._faces,_params._mesh._vertices,weights);
+		LOG_ERROR("PMVCLipman implemented elsewhere, method shouldnt be called with this parameter!");
+		return ExecutionResult("Failed to compute PMVC weights");
+	}
 	if (DeformationTypeHelpers::RequiresEmbedding(_params._deformationType))
 	{
 		weights  = (weights.array().colwise() / weights.array().rowwise().sum()).eval();

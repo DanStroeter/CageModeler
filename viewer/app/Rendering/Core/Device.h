@@ -147,12 +147,19 @@ private:
 	struct SupportedPhysicalDeviceFeatures
 	{
 		bool _barycentricCoordinates = false;
+		bool _timelineSemaphore = false;
+		bool _synchronization2 = false;
+		bool _shaderAtomicFloat = false;
+		bool _raytracing = false;
 	};
 
 	struct PhysicalDeviceQueryResult
 	{
 		VkPhysicalDevice _device = VK_NULL_HANDLE;
 		SupportedPhysicalDeviceFeatures _supportedFeatures;
+
+		VkPhysicalDeviceRayTracingPipelinePropertiesKHR _rtProperties;
+		VkPhysicalDeviceAccelerationStructurePropertiesKHR _asProperties;
 	};
 
 	/**

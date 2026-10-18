@@ -8,6 +8,7 @@
 #include <Input/InputSubsystem.h>
 #include <UI/WindowSubsystem.h>
 #include <Configuration.h>
+#include <Rendering/PMVC/CubemapRenderInstance.h>
 
 #include "Core/RenderProxyCollector.h"
 
@@ -103,10 +104,12 @@ void RenderSubsystem::InitializeEditor(const std::shared_ptr<Editor>& editor)
 		_renderCommandScheduler,
 		_renderResourceManager,
 		_renderPass);
-
+	LOG_DEBUG("init editor");
+	_cubemapRenderer = std::make_shared<CubemapManager>(_renderPipelineManager, _renderResourceManager, _device, _instance, PMVCSettings::kCubemapSize, VK_FORMAT_R32G32B32A32_SFLOAT);
+	//_cubemapRenderer->Initialize();
+	LOG_DEBUG("init");
 	_editor = editor;
-	_editor->Initialize(_sceneRenderer);
-
+	_editor->Initialize(_sceneRenderer, _cubemapRenderer);
 	// Finishes the ImGui setup.
 	_uiBackend->Init(*_windowSubsystem->_window);
 }

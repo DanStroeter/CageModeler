@@ -7,6 +7,7 @@
 #include <filesystem>
 
 class RenderPipelineManager;
+struct ComputePipelineObjectProxy;
 
 struct InputAssemblyState
 {
@@ -92,6 +93,41 @@ public:
 		return *this;
 	}
 
+	GraphicsPipelineObjectProxy& SetMultisampleState(const VkPipelineMultisampleStateCreateInfo& multisampleState)
+	{
+		_multisampleState = multisampleState;
+		_multisampleStateSet = true;
+		return *this;
+	}
+
+	GraphicsPipelineObjectProxy& SetViewportAndScissor(const VkViewport& viewport, const VkRect2D& scissor)
+	{
+		_viewport = viewport;
+		_scissor = scissor;
+		_viewportStateSet = true;
+		return *this;
+	}
+
+	GraphicsPipelineObjectProxy& AddPushConstantRange(const VkPushConstantRange& pushConstantRange)
+	{
+		_pushConstantRanges.push_back(pushConstantRange);
+		return *this;
+	}
+
+	GraphicsPipelineObjectProxy& ResetMultisampleState()
+	{
+		_multisampleStateSet = false;
+		return *this;
+	}
+
+	GraphicsPipelineObjectProxy& ResetViewportAndScissor()
+	{
+		_viewportStateSet = false;
+		return *this;
+	}
+
+	void ReleasePipeline(PipelineHandle handle);
+
 	[[nodiscard]] PipelineHandle Build() const;
 
 private:
@@ -113,6 +149,12 @@ private:
 	std::unordered_map<ShaderModuleType, std::filesystem::path> _shaderModules;
 	uint32_t _subpassIndex = 0;
 	VkRenderPass _renderPass = VK_NULL_HANDLE;
+	VkPipelineMultisampleStateCreateInfo _multisampleState{};
+	bool _multisampleStateSet = false;
+	VkViewport _viewport = {};
+	VkRect2D _scissor = {};
+	bool _viewportStateSet = false;
+	std::vector<VkPushConstantRange> _pushConstantRanges = {};
 };
 
 /**
@@ -142,16 +184,33 @@ public:
 	}
 
 	void ReleaseResource();
+	void ReleasePipeline(PipelineHandle handle);
+	[[nodiscard]] PipelineHandle BuildComputePipeline(const ComputePipelineObjectProxy& objectProxy);
 
 private:
 	[[nodiscard]] PipelineHandle BuildGraphicsPipeline(const GraphicsPipelineObjectProxy& objectProxy);
 	[[nodiscard]] VkShaderModule CreateShaderModule(const std::vector<char>& shaderCode) const;
 
 private:
-	/// Maximum number of pipelines created.
-	static constexpr auto MaximumNumberPipelines = 32;
+	/// Initial number of pipeline slots. The manager grows on demand.
+	static constexpr auto InitialNumberPipelines = 32;
 
 	std::vector<bool> _allocatedPipelines;
-	std::array<PipelineObject, MaximumNumberPipelines> _pipelines;
+	std::vector<PipelineObject> _pipelines;
 	RenderResourceRef<Device> _device;
+};
+
+struct ComputePipelineObjectProxy
+{
+	std::weak_ptr<RenderPipelineManager> _renderPipelineManager;
+	std::filesystem::path _shaderModule;
+	std::vector<VkDescriptorSetLayout> _descriptorSetLayouts;
+	VkPushConstantRange _pushConstantRanges;
+
+	PipelineHandle Build() const
+	{
+		if (auto manager = _renderPipelineManager.lock())
+			return manager->BuildComputePipeline(*this);
+		return PipelineHandle();
+	}
 };

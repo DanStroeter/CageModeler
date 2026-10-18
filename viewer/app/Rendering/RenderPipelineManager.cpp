@@ -4,10 +4,12 @@
 #include <glm/mat4x4.hpp>
 
 RenderPipelineManager::RenderPipelineManager(const RenderResourceRef<Device>& device)
-	: _allocatedPipelines(MaximumNumberPipelines)
+	: _allocatedPipelines(InitialNumberPipelines)
+	, _pipelines(InitialNumberPipelines)
 	, _device(device)
 {
 	std::fill(_allocatedPipelines.begin(), _allocatedPipelines.end(), false);
+	std::fill(_pipelines.begin(), _pipelines.end(), PipelineObject());
 }
 
 RenderPipelineManager::~RenderPipelineManager()
@@ -19,7 +21,11 @@ VkShaderModule RenderPipelineManager::CreateShaderModule(const std::vector<char>
 {
 	CHECK_VK_HANDLE(_device);
 
-	VkShaderModuleCreateInfo createInfo { };
+	if (shaderCode.empty()) {
+		throw std::runtime_error("Shader code is empty. Failed to load SPIR-V.");
+	}
+
+	VkShaderModuleCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	createInfo.codeSize = shaderCode.size();
 	createInfo.pCode = reinterpret_cast<const uint32_t*>(shaderCode.data());
@@ -28,6 +34,33 @@ VkShaderModule RenderPipelineManager::CreateShaderModule(const std::vector<char>
 	VK_CHECK(vkCreateShaderModule(_device, &createInfo, nullptr, &result));
 
 	return result;
+}
+
+void RenderPipelineManager::ReleasePipeline(PipelineHandle handle)
+{
+	if (!_device)
+	{
+		return;
+	}
+
+	const auto index = handle.GetIndex();
+	if (index >= _allocatedPipelines.size() || !_allocatedPipelines[index])
+	{
+		return;
+	}
+
+	const auto& pipeline = _pipelines[index];
+	if (pipeline._handle != VK_NULL_HANDLE)
+	{
+		vkDestroyPipeline(_device, pipeline._handle, nullptr);
+	}
+	if (pipeline._pipelineLayout != VK_NULL_HANDLE)
+	{
+		vkDestroyPipelineLayout(_device, pipeline._pipelineLayout, nullptr);
+	}
+
+	_allocatedPipelines[index] = false;
+	_pipelines[index] = PipelineObject();
 }
 
 void RenderPipelineManager::ReleaseResource()
@@ -60,11 +93,20 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	if (vertexModuleIt != objectProxy._shaderModules.end())
 	{
 		const auto shaderCode = VulkanUtils::ReadBinaryFile(vertexModuleIt->second.string());
+
+		if (shaderCode.empty()) {
+			std::cout << "Current working directory: " << std::filesystem::current_path() << "\n";
+			std::cerr << "Error: Shader file empty or missing: "
+				<< vertexModuleIt->second << "\n";
+			std::terminate(); // stop here before Vulkan crash
+
+		}
+
 		const auto shaderModule = CreateShaderModule(shaderCode);
 		loadedShaderModules.push_back(shaderModule);
 
 		// Vertex shader stage.
-		VkPipelineShaderStageCreateInfo vertShaderStage { };
+		VkPipelineShaderStageCreateInfo vertShaderStage{ };
 		vertShaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShaderStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
 		vertShaderStage.module = shaderModule;
@@ -87,7 +129,7 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 		loadedShaderModules.push_back(shaderModule);
 
 		// Vertex shader stage.
-		VkPipelineShaderStageCreateInfo geomShaderStage { };
+		VkPipelineShaderStageCreateInfo geomShaderStage{ };
 		geomShaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		geomShaderStage.stage = VK_SHADER_STAGE_GEOMETRY_BIT;
 		geomShaderStage.module = shaderModule;
@@ -110,7 +152,7 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 		loadedShaderModules.push_back(shaderModule);
 
 		// Vertex shader stage.
-		VkPipelineShaderStageCreateInfo fragShaderStage { };
+		VkPipelineShaderStageCreateInfo fragShaderStage{ };
 		fragShaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShaderStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 		fragShaderStage.module = shaderModule;
@@ -125,19 +167,19 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 		shaderStages.push_back(fragShaderStage);
 	}
 
-	constexpr std::array dynamicStates {
+	constexpr std::array dynamicStates{
 		VK_DYNAMIC_STATE_VIEWPORT,
 		VK_DYNAMIC_STATE_SCISSOR
 	};
 
 	// Dynamic state creation.
-	VkPipelineDynamicStateCreateInfo dynamicState { };
+	VkPipelineDynamicStateCreateInfo dynamicState{ };
 	dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
 	dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
 	dynamicState.pDynamicStates = dynamicStates.data();
 
 	// Vertex input and vertex shader bindings.
-	VkPipelineVertexInputStateCreateInfo vertexInputState { };
+	VkPipelineVertexInputStateCreateInfo vertexInputState{ };
 	vertexInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	vertexInputState.vertexBindingDescriptionCount = static_cast<uint32_t>(objectProxy._vertexBindingDescriptions.size());
 	vertexInputState.pVertexBindingDescriptions = objectProxy._vertexBindingDescriptions.data();
@@ -145,15 +187,19 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	vertexInputState.pVertexAttributeDescriptions = objectProxy._vertexAttributeDescriptions.data();
 
 	// Input assembly of the pipeline.
-	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState { };
+	VkPipelineInputAssemblyStateCreateInfo inputAssemblyState{ };
 	inputAssemblyState.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 	inputAssemblyState.topology = objectProxy._assemblyState._topology;
 	inputAssemblyState.primitiveRestartEnable = VK_FALSE;
 
-	VkPipelineViewportStateCreateInfo viewportState { };
+	VkPipelineViewportStateCreateInfo viewportState{ };
 	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 	viewportState.viewportCount = 1;
 	viewportState.scissorCount = 1;
+	if (objectProxy._viewportStateSet) {
+		viewportState.pViewports = &objectProxy._viewport;
+		viewportState.pScissors = &objectProxy._scissor;
+	}
 
 	// Create the rasterization state to change any rasterizationState details.
 	VkPipelineRasterizationStateCreateInfo rasterizationState { };
@@ -169,13 +215,18 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	const auto sampleCount = _device->GetMaximumUsableSampleCount();
 
 	// Create the multisampling state.
-	VkPipelineMultisampleStateCreateInfo multisampleState { };
-	multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	multisampleState.rasterizationSamples = sampleCount;
-	multisampleState.sampleShadingEnable = VK_TRUE;
-	multisampleState.minSampleShading = 0.2f;
-	multisampleState.alphaToCoverageEnable = VK_TRUE;
-	multisampleState.alphaToOneEnable = VK_FALSE;
+	VkPipelineMultisampleStateCreateInfo multisampleState{ };
+	if (objectProxy._multisampleStateSet == false) {
+		multisampleState.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		multisampleState.rasterizationSamples = sampleCount;
+		multisampleState.sampleShadingEnable = VK_TRUE;
+		multisampleState.minSampleShading = 0.2f;
+		multisampleState.alphaToCoverageEnable = VK_TRUE;
+		multisampleState.alphaToOneEnable = VK_FALSE;
+	}
+	else {
+		multisampleState = objectProxy._multisampleState;
+	}
 
 	VkPipelineColorBlendStateCreateInfo colorBlendState { };
 	colorBlendState.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -190,8 +241,14 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	pipelineLayoutInfo.pNext = nullptr;
 	pipelineLayoutInfo.setLayoutCount = objectProxy._descriptorSetLayouts.size();
 	pipelineLayoutInfo.pSetLayouts = objectProxy._descriptorSetLayouts.data();
-	pipelineLayoutInfo.pushConstantRangeCount = 0;
-	pipelineLayoutInfo.pPushConstantRanges = nullptr;
+	if (objectProxy._pushConstantRanges.empty()) {
+		pipelineLayoutInfo.pushConstantRangeCount = 0;
+		pipelineLayoutInfo.pPushConstantRanges = nullptr;
+	}
+	else {
+		pipelineLayoutInfo.pushConstantRangeCount = static_cast<uint32_t>(objectProxy._pushConstantRanges.size());
+		pipelineLayoutInfo.pPushConstantRanges = objectProxy._pushConstantRanges.data();
+	}
 
 	VkPipelineLayout pipelineLayout;
 	VK_CHECK(vkCreatePipelineLayout(_device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
@@ -209,7 +266,14 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	graphicsPipelineCreateInfo.pMultisampleState = &multisampleState;
 	graphicsPipelineCreateInfo.pDepthStencilState = &objectProxy._depthStencil;
 	graphicsPipelineCreateInfo.pColorBlendState = &colorBlendState;
-	graphicsPipelineCreateInfo.pDynamicState = &dynamicState;
+	
+	if (objectProxy._viewportStateSet) {
+		graphicsPipelineCreateInfo.pDynamicState = nullptr;
+	}
+	else {
+		graphicsPipelineCreateInfo.pDynamicState = &dynamicState;
+	}
+
 	graphicsPipelineCreateInfo.layout = pipelineLayout;
 	graphicsPipelineCreateInfo.renderPass = objectProxy._renderPass;
 	graphicsPipelineCreateInfo.subpass = objectProxy._subpassIndex;
@@ -225,7 +289,14 @@ PipelineHandle RenderPipelineManager::BuildGraphicsPipeline(const GraphicsPipeli
 	}
 
 	// Get the next free index and mark it as set.
-	const auto nextFreeIndex = std::find(_allocatedPipelines.begin(), _allocatedPipelines.end(), false) - _allocatedPipelines.begin();
+	const auto nextFreeIt = std::find(_allocatedPipelines.begin(), _allocatedPipelines.end(), false);
+	const auto nextFreeIndex = static_cast<std::size_t>(nextFreeIt - _allocatedPipelines.begin());
+	if (nextFreeIt == _allocatedPipelines.end())
+	{
+		_allocatedPipelines.push_back(false);
+		_pipelines.push_back(PipelineObject());
+	}
+
 	_allocatedPipelines[nextFreeIndex] = true;
 
 	// Set the value of the pipeline object.
@@ -242,4 +313,54 @@ PipelineHandle GraphicsPipelineObjectProxy::Build() const
 	}
 
 	return PipelineHandle();
+}
+
+PipelineHandle RenderPipelineManager::BuildComputePipeline(const ComputePipelineObjectProxy& objectProxy)
+{
+	CHECK_VK_HANDLE(_device);
+
+	// Load shader module
+	const auto shaderCode = VulkanUtils::ReadBinaryFile(objectProxy._shaderModule.string());
+	const auto shaderModule = CreateShaderModule(shaderCode);
+
+	VkPipelineShaderStageCreateInfo stage{};
+	stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+	stage.module = shaderModule;
+	stage.pName = "main";
+
+	// Pipeline layout
+	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(objectProxy._descriptorSetLayouts.size());
+	pipelineLayoutInfo.pSetLayouts = objectProxy._descriptorSetLayouts.data();
+	pipelineLayoutInfo.pushConstantRangeCount = 1;
+	pipelineLayoutInfo.pPushConstantRanges = &objectProxy._pushConstantRanges;
+
+	VkPipelineLayout pipelineLayout;
+	VK_CHECK(vkCreatePipelineLayout(_device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
+
+	VkComputePipelineCreateInfo pipelineInfo{};
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	pipelineInfo.stage = stage;
+	pipelineInfo.layout = pipelineLayout;
+
+	VkPipeline pipeline;
+	VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline));
+
+	vkDestroyShaderModule(_device, shaderModule, nullptr);
+
+	// store pipeline in manager
+	const auto nextFreeIt = std::find(_allocatedPipelines.begin(), _allocatedPipelines.end(), false);
+	const auto nextFreeIndex = static_cast<std::size_t>(nextFreeIt - _allocatedPipelines.begin());
+	if (nextFreeIt == _allocatedPipelines.end())
+	{
+		_allocatedPipelines.push_back(false);
+		_pipelines.push_back(PipelineObject());
+	}
+
+	_allocatedPipelines[nextFreeIndex] = true;
+	_pipelines[nextFreeIndex] = PipelineObject(pipeline, pipelineLayout);
+
+	return PipelineHandle(nextFreeIndex);
 }

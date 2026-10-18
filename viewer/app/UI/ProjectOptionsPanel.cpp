@@ -79,6 +79,7 @@ void ProjectOptionsPanel::Layout()
 					}
 
 					_modifiedProjectModel._deformationType = static_cast<DeformationType>(_selectedDeformationTypeIndex);
+					_modifiedProjectModel.ApplyPMVCPreset();
 
 					ImGui::EndCombo();
 				}
@@ -178,6 +179,8 @@ void ProjectOptionsPanel::Layout()
 				ImGui::Checkbox("##Project_NoOffset", &_modifiedProjectModel._noOffset);
 				ImGui::SameLine();
 			}
+
+			ProjecSettingsHelpers::PushPMVCSettingsUI(_modifiedProjectModel, "##Project");
 
 			ImGui::BeginDisabled(!_model._projectData->CanEditInfluenceMapSetting());
 			{
@@ -450,4 +453,5 @@ void ProjectOptionsPanel::UpdateAfterNewModel()
 
 	//_selectedBulgingTypeIndex = static_cast<uint32_t>(_model._projectData->_somigBulgingType);
 	_modifiedProjectModel = *_model._projectData;
+	_modifiedProjectModel.ApplyPMVCPreset();
 }
