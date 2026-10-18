@@ -1,6 +1,9 @@
 #include <Logging/LoggingSubsystem.h>
 #include <App.h>
 
+#include <filesystem>
+#include <iostream>
+
 int main()
 {
 	std::cout << "Current working directory: " << std::filesystem::current_path() << "\n";
