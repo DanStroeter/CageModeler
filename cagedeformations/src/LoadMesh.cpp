@@ -3,6 +3,10 @@
 
 #include <vector>
 #include <iostream>
+#include <fstream>
+#include <sstream>
+#include <iomanip>
+#include <unordered_map>
 
 #include <igl/readMSH.h>
 #include <igl/read_triangle_mesh.h>
@@ -235,3 +239,286 @@ bool load_cage(std::string const& file_name, Eigen::MatrixXd& V,
 
 	return true;
 }
+
+struct Vector3dHash
+{
+	std::size_t operator()(const Eigen::Vector3d& v) const
+	{
+		double scale = 1e8;
+		int x = static_cast<int>(std::round(v[0] * scale));
+		int y = static_cast<int>(std::round(v[1] * scale));
+		int z = static_cast<int>(std::round(v[2] * scale));
+		return std::hash<int>()(x) ^ std::hash<int>()(y) ^ std::hash<int>()(z);
+	}
+
+	bool operator()(const Eigen::Vector3d& v1, const Eigen::Vector3d& v2) const
+	{
+		double tolerance = 1e-8;
+		return (std::abs(v1[0] - v2[0]) < tolerance &&
+			std::abs(v1[1] - v2[1]) < tolerance &&
+			std::abs(v1[2] - v2[2]) < tolerance);
+	}
+};
+//BGC related code begin
+bool load_bezier_surface_cage(const std::string& file_name, int dim, Eigen::MatrixXd& V, Eigen::MatrixXi& CF, std::vector<int>& num_vertices_per_line)
+{
+	num_vertices_per_line.clear();
+	int numControlPointsBezierTriangle = (dim + 2) * (dim + 1) / 2;
+	int nuCcontrolPointsBezierQuad = (dim + 1) * (dim + 1);
+
+	std::ifstream file(file_name);
+	if (!file.is_open()) {
+		std::cerr << "Cannot open file: " << file_name << std::endl;
+		return false;
+	}
+
+	std::vector<Eigen::Vector3d> all_points;
+	std::vector<std::vector<int>> surface_indices;
+
+	std::unordered_map<Eigen::Vector3d, int, Vector3dHash> point_to_index;
+
+	std::string line;
+	while (std::getline(file, line))
+	{
+		std::istringstream ss(line);
+		std::vector<Eigen::Vector3d> points;
+		Eigen::Vector3d point;
+
+		while (ss >> point[0] >> point[1] >> point[2])
+		{
+			points.push_back(point);
+
+			if (point_to_index.find(point) == point_to_index.end())
+			{
+				int index = all_points.size();
+				point_to_index[point] = index;
+				all_points.push_back(point);
+			}
+		}
+		int num_control_points = points.size();
+		if (num_control_points != numControlPointsBezierTriangle && num_control_points != nuCcontrolPointsBezierQuad)
+		{
+			std::cerr << "Invalid number of control points in line: " << line << std::endl;
+			return false;
+		}
+
+		std::vector<int> indices(num_control_points);
+		num_vertices_per_line.push_back(num_control_points);
+		for (int i = 0; i < num_control_points; ++i)
+		{
+			indices[i] = point_to_index[points[i]];
+		}
+		surface_indices.push_back(indices);
+	}
+
+	file.close();
+
+	// Resize the output matrices based on the collected data
+	V.resize(all_points.size(), 3);
+	CF.resize(surface_indices.size(), nuCcontrolPointsBezierQuad);
+
+	for (size_t i = 0; i < all_points.size(); ++i)
+	{
+		V.row(i) = all_points[i].transpose();
+	}
+
+	for (size_t i = 0; i < surface_indices.size(); ++i)
+	{
+		CF.row(i) = Eigen::VectorXi::Map(surface_indices[i].data(), surface_indices[i].size());
+	}
+
+	return true;
+}
+
+
+void computePointCross(Eigen::MatrixXd& V, Eigen::MatrixXi& CF, std::vector<Eigen::MatrixXd>& patch_point_cross, std::vector<int>& num_vertices_per_line)
+{
+	std::vector<std::vector<int>> patch_indices;
+	patch_indices.reserve(CF.rows());
+
+	for (int i = 0; i < CF.rows(); ++i) {
+		std::vector<int> patch;
+		patch.reserve(CF.cols());
+		for (int j = 0; j < CF.cols(); ++j) {
+			patch.push_back(CF(i, j));
+		}
+		patch_indices.push_back(patch);
+	}
+
+
+	int count = 0;
+	for (const auto& indices : patch_indices)
+	{
+		int numVertices = num_vertices_per_line[count];
+		Eigen::MatrixXd all_points_this_patch(numVertices, 3);
+		for (int i = 0; i < numVertices; ++i)
+		{
+			int vertexIndex = CF(count, i);
+			all_points_this_patch.row(i) = V.row(vertexIndex);
+		}
+
+		Eigen::MatrixXd cross_patch = Eigen::MatrixXd::Zero((int)(num_vertices_per_line[count] * (num_vertices_per_line[count] - 1) / 2), 3);
+		int cross_index = 0;
+		for (int i = 0; i < numVertices; ++i)
+		{
+			for (int j = i + 1; j < numVertices; ++j)
+			{
+				Eigen::Vector3d vec1 = all_points_this_patch.row(i).transpose();
+				Eigen::Vector3d vec2 = all_points_this_patch.row(j).transpose();
+				cross_patch.row(cross_index) = vec1.cross(vec2).transpose();
+				cross_index++;
+			}
+		}
+		patch_point_cross.push_back(cross_patch);
+
+		count++;
+	}
+}
+
+
+
+int returnTriangleIndex(int i, int j, int dim)
+{
+	return (int)(((dim - i) * (1 + (dim - i))) / 2 + (dim - i - j));
+}
+
+int returnQuadIndex(int i, int j, int dim)
+{
+	return (int)(j * (dim + 1) + i);
+}
+
+void computeNormalBezier(Eigen::MatrixXd& V, Eigen::MatrixXi& CF, std::vector<Eigen::MatrixXd>& patchNormals, std::vector<int>& num_vertices_per_line, int dim)
+{
+	std::vector<std::vector<int>> patch_indices;
+	patch_indices.reserve(CF.rows());
+
+	for (int i = 0; i < CF.rows(); ++i) {
+		std::vector<int> patch;
+		patch.reserve(CF.cols());
+		for (int j = 0; j < CF.cols(); ++j) {
+			patch.push_back(CF(i, j));
+		}
+		patch_indices.push_back(patch);
+	}
+
+	int count = 0;
+	int pointNumBezierBezierTriangle = (dim + 1) * (dim + 2) / 2.0;
+	int pointNumBezierBezierQuad = (dim + 1) * (dim + 1);
+
+	for (const auto& indices : patch_indices)
+	{
+		int numVertices = num_vertices_per_line[count];
+		Eigen::MatrixXd allPointsThisPatch(numVertices, 3);
+		for (int i = 0; i < numVertices; ++i)
+		{
+			int vertexIndex = CF(count, i);
+			allPointsThisPatch.row(i) = V.row(vertexIndex);
+		}
+
+		if (num_vertices_per_line[count] == pointNumBezierBezierTriangle)
+		{
+			Eigen::MatrixXd normalsPatch = Eigen::MatrixXd::Zero(pointNumBezierBezierTriangle, 3);
+			Eigen::Vector3d v1, v2;
+			for (int i = dim; i >= 0; i--)
+			{
+				for (int j = dim - i; j >= 0; j--)
+				{
+					Eigen::Vector3d sumNormal = Eigen::Vector3d::Zero();
+					double sumCount = 0.0;
+					int k = dim - i - j;
+					Eigen::Vector3d bijk = allPointsThisPatch.row(returnTriangleIndex(i, j, dim)).transpose();
+					if (k - 1 >= 0 && i + 1 <= dim && j + 1 <= dim)
+					{
+						v1 = allPointsThisPatch.row(returnTriangleIndex(i + 1, j, dim)).transpose() - bijk;
+						v2 = allPointsThisPatch.row(returnTriangleIndex(i, j + 1, dim)).transpose() - bijk;
+						sumNormal += v1.cross(v2);
+						sumCount += 1.0;
+					}
+					if (k - 1 >= 0 && i - 1 >= 0 && j + 1 <= dim)
+					{
+						v1 = allPointsThisPatch.row(returnTriangleIndex(i, j + 1, dim)).transpose() - bijk;
+						v2 = allPointsThisPatch.row(returnTriangleIndex(i - 1, j + 1, dim)).transpose() - bijk;
+						sumNormal += v1.cross(v2);
+						sumCount += 1.0;
+					}
+					if (i - 1 >= 0 && j + 1 <= dim && k + 1 <= dim)
+					{
+						v1 = allPointsThisPatch.row(returnTriangleIndex(i - 1, j + 1, dim)).transpose() - bijk;
+						v2 = allPointsThisPatch.row(returnTriangleIndex(i - 1, j, dim)).transpose() - bijk;
+						sumNormal += v1.cross(v2);
+						sumCount += 1.0;
+					}
+					if (i - 1 >= 0 && j - 1 >= 0 && k + 1 <= dim)
+					{
+						v1 = allPointsThisPatch.row(returnTriangleIndex(i - 1, j, dim)).transpose() - bijk;
+						v2 = allPointsThisPatch.row(returnTriangleIndex(i, j - 1, dim)).transpose() - bijk;
+						sumNormal += v1.cross(v2);
+						sumCount += 1.0;
+					}
+					if (j - 1 >= 0 && i + 1 <= dim && k + 1 <= dim)
+					{
+						v1 = allPointsThisPatch.row(returnTriangleIndex(i, j - 1, dim)).transpose() - bijk;
+						v2 = allPointsThisPatch.row(returnTriangleIndex(i + 1, j - 1, dim)).transpose() - bijk;
+						sumNormal += v1.cross(v2);
+						sumCount += 1.0;
+					}
+					if (j - 1 >= 0 && k - 1 >= 0 && i + 1 <= dim)
+					{
+						v1 = allPointsThisPatch.row(returnTriangleIndex(i + 1, j - 1, dim)).transpose() - bijk;
+						v2 = allPointsThisPatch.row(returnTriangleIndex(i + 1, j, dim)).transpose() - bijk;
+						sumNormal += v1.cross(v2);
+						sumCount += 1.0;
+					}
+					normalsPatch.row(returnTriangleIndex(i, j, dim)) = sumNormal / sumCount * dim * dim;
+				}
+			}
+			patchNormals.push_back(normalsPatch);
+		}
+		else
+		{
+			Eigen::MatrixXd normalsPatch = Eigen::MatrixXd::Zero(pointNumBezierBezierQuad, 3);
+			Eigen::Vector3d v1, v2;
+			for (int j = 0; j <= dim; j++)
+			{
+				for (int i = 0; i <= dim; i++)
+				{
+					Eigen::Vector3d sumNormal = Eigen::Vector3d::Zero();
+					double sumCount = 0.0;
+					Eigen::Vector3d bij = allPointsThisPatch.row(returnQuadIndex(i, j, dim)).transpose();
+					if (j + 1 <= dim && i - 1 >= 0)
+					{
+						v1 = allPointsThisPatch.row(returnQuadIndex(i, j + 1, dim)).transpose() - bij;
+						v2 = allPointsThisPatch.row(returnQuadIndex(i - 1, j, dim)).transpose() - bij;
+						sumNormal += v1.cross(v2);
+						sumCount += 1.0;
+					}
+					if (i - 1 >= 0 && j - 1 >= 0)
+					{
+						v1 = allPointsThisPatch.row(returnQuadIndex(i - 1, j, dim)).transpose() - bij;
+						v2 = allPointsThisPatch.row(returnQuadIndex(i, j - 1, dim)).transpose() - bij;
+						sumNormal += v1.cross(v2);
+						sumCount += 1.0;
+					}
+					if (j - 1 >= 0 && i + 1 <= dim)
+					{
+						v1 = allPointsThisPatch.row(returnQuadIndex(i, j - 1, dim)).transpose() - bij;
+						v2 = allPointsThisPatch.row(returnQuadIndex(i + 1, j, dim)).transpose() - bij;
+						sumNormal += v1.cross(v2);
+						sumCount += 1.0;
+					}
+					if (i + 1 <= dim && j + 1 <= dim)
+					{
+						v1 = allPointsThisPatch.row(returnQuadIndex(i + 1, j, dim)).transpose() - bij;
+						v2 = allPointsThisPatch.row(returnQuadIndex(i, j + 1, dim)).transpose() - bij;
+						sumNormal += v1.cross(v2);
+						sumCount += 1.0;
+					}
+					normalsPatch.row(returnQuadIndex(i, j, dim)) = sumNormal / sumCount * dim * dim;
+				}
+			}
+			patchNormals.push_back(normalsPatch);
+		}
+		count++;
+	}
+}
+//BGC related code end

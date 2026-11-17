@@ -30,3 +30,14 @@ void computeMVC(const Eigen::MatrixXd& C, const Eigen::MatrixXi& CF, Eigen::Matr
 
 bool computeMVCTriQuad(const Eigen::MatrixXd& C, const Eigen::MatrixXi& CF, Eigen::MatrixXd const& eta_m,
     Eigen::MatrixXd& phi);
+
+//BGC related code begin
+void calcNewPositionsBezier(const Eigen::MatrixXd& C, const Eigen::MatrixXd& C_deformed, const Eigen::MatrixXi& CF, int dim, std::vector<Eigen::MatrixXd>& patch_Bezier_normals_original, std::vector<Eigen::MatrixXd>& patch_Bezier_normals,
+    const Eigen::MatrixXd& phi, std::vector<Eigen::MatrixXd> const& psi_bezier, Eigen::MatrixXd& eta_deformed, std::vector<int>& num_vertices_per_line);
+void calcNewPositionsBezierCrossProduct(const Eigen::MatrixXd& C, const Eigen::MatrixXd& C_deformed, const Eigen::MatrixXi& CF, int dim, std::vector<Eigen::MatrixXd>& patch_Bezier_cross_original, std::vector<Eigen::MatrixXd>& patch_Bezier_cross,
+    const Eigen::MatrixXd& phi, std::vector<Eigen::MatrixXd> const& psi_bezier, Eigen::MatrixXd& eta_deformed, std::vector<int>& num_vertices_per_line);
+void calculateGreenCoordinatesBezier(const Eigen::MatrixXd& C, const Eigen::MatrixXi& CF, int dim, std::vector<Eigen::MatrixXd>& patch_Bezier_normals, Eigen::MatrixXd const& eta_m,
+    Eigen::MatrixXd& phi_bezier, std::vector<Eigen::MatrixXd>& psi_bezier, std::vector<int>& num_vertices_per_line);
+void calculateGreenCoordinatesBezierCrossProduct(const Eigen::MatrixXd& C, const Eigen::MatrixXi& CF, int dim, std::vector<Eigen::MatrixXd>& patch_Bezier_normals, Eigen::MatrixXd const& eta_m,
+    Eigen::MatrixXd& phi_bezier, std::vector<Eigen::MatrixXd>& psi_bezier, std::vector<int>& num_vertices_per_line);
+//BGC related code end

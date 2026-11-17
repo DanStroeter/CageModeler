@@ -68,6 +68,7 @@ int main(int argc, char** argv)
 		("BBW", "Use bounded biharmonic weights by Jacobson et al.")
 		("QMVC", "Use triquad mean value coordinates by Thiery et al.")
 		("QGC", "Use tri-quad green coordinates by Thiery et al.")
+		("BGC", "Use Bezier patch green coordinates by Xiao et al.")
 		("MLC", "Use maximum likelihood coordinates by Chang et al.")
 		("MEC", boost::program_options::value<int>(&mec_flag), "Use maximum entropy coordinates by Hormann et al.(1: MEC-1 prior functions, 2: MEC-2 prior functions, default: 1)")
 		//("MEC", "Use maximum entropy coordinates by Hormann et al.")   // here we only use MEC-1 prior function
@@ -88,17 +89,18 @@ int main(int argc, char** argv)
 	const bool lbc = !harmonic && static_cast<bool>(vm.count("LBC"));
 	const bool green = !lbc && !harmonic && static_cast<bool>(vm.count("green"));
 	const bool QGC = !lbc && !harmonic && !green && static_cast<bool>(vm.count("QGC"));
-	const bool QMVC = !QGC && !lbc && !harmonic && !green && static_cast<bool>(vm.count("QMVC"));
-	const bool MLC = ! QMVC && !QGC && !lbc && !harmonic && !green && static_cast<bool>(vm.count("MLC"));
-	const bool MEC = !MLC && !QMVC && !QGC && !lbc && !harmonic && !green && static_cast<bool>(vm.count("MEC"));
-	const bool somigliana = !lbc && !harmonic && !green && !QMVC && !QGC && !MLC && !MEC && static_cast<bool>(vm.count("somigliana"));
-	const bool MVC = !lbc && !harmonic && !green && ! QMVC && !QGC && !MLC && !MEC && !somigliana && static_cast<bool>(vm.count("MVC"));
+	const bool BGC = !QGC && !lbc && !harmonic && !green && static_cast<bool>(vm.count("BGC"));
+	const bool QMVC = !BGC && !QGC && !lbc && !harmonic && !green && static_cast<bool>(vm.count("QMVC"));
+	const bool MLC = !QMVC && !BGC && !QGC && !lbc && !harmonic && !green && static_cast<bool>(vm.count("MLC"));
+	const bool MEC = !MLC && !QMVC && !BGC && !QGC && !lbc && !harmonic && !green && static_cast<bool>(vm.count("MEC"));
+	const bool somigliana = !lbc && !harmonic && !green && !QMVC && !BGC && !QGC && !MLC && !MEC && static_cast<bool>(vm.count("somigliana"));
+	const bool MVC = !lbc && !harmonic && !green && ! QMVC && !BGC && !QGC && !MLC && !MEC && !somigliana && static_cast<bool>(vm.count("MVC"));
 	const bool load_fbx = static_cast<bool>(vm.count("fbx"));
 	const bool find_offset = static_cast<bool>(vm.count("find-offset"));
 	const bool scale = static_cast<bool>(vm.count("scale"));
 	const bool influence = static_cast<bool>(vm.count("influence"));
 	const bool load_deformed_cage = static_cast<bool>(vm.count("cage-deformed"));
-	const bool interpolate_weights = static_cast<bool>(vm.count("interpolate-weights")) && !(QMVC || QGC || MEC || green || MVC || MLC || somigliana);
+	const bool interpolate_weights = static_cast<bool>(vm.count("interpolate-weights")) && !(QMVC || QGC || BGC || MEC || green || MVC || MLC || somigliana);
 	const bool no_offset = static_cast<bool>(vm.count("no-offset")) || interpolate_weights;
 	const bool measure_time = static_cast<bool>(vm.count("time"));
 
@@ -188,13 +190,13 @@ int main(int argc, char** argv)
 		somig_deformer->set_mesh(elements, model_verts);
 	}
 
-	if (!MVC && !somigliana && !green && !QMVC && !QGC && !MLC && !MEC && !vm.count("embedded"))
+	if (!MVC && !somigliana && !green && !QMVC && !BGC && !QGC && !MLC && !MEC && !vm.count("embedded"))
 	{
 		std::cerr << "You must specify an embedding!\n";
 		return 1;
 	}
 
-	if (!somigliana && !green && !MVC && !QMVC && !QGC && !MLC && !MEC)
+	if (!somigliana && !green && !MVC && !QMVC && !BGC && !QGC && !MLC && !MEC)
 	{
 		if (verbosity)
 		{
@@ -215,7 +217,7 @@ int main(int argc, char** argv)
 	int model_vertices_offset = 0, cage_vertices_offset = 0;
 
 	// Finding model verts in embedding
-	if (!interpolate_weights && find_offset && !MVC && !green && !QGC && !MLC && !MEC && !somigliana)
+	if (!interpolate_weights && find_offset && !MVC && !green && !BGC && !QGC && !MLC && !MEC && !somigliana)
 	{
 		auto verices_equal = [](const Eigen::Vector3d& a, const Eigen::Vector3d& b)
 		{
@@ -244,7 +246,7 @@ int main(int argc, char** argv)
 			return 1;
 		}
 	}
-	else if (!green && !QMVC && !QGC && !MLC && !MEC && !somigliana && !MVC)
+	else if (!green && !QMVC && !BGC && !QGC && !MLC && !MEC && !somigliana && !MVC)
 	{
 		auto const additional_offset = no_offset ? 0 : V.rows() - (V_model.rows() + model_vertices_offset);
 		model_vertices_offset += additional_offset;
@@ -261,15 +263,36 @@ int main(int argc, char** argv)
 	Eigen::MatrixXd C_deformed;
 	Eigen::VectorXi P;
 	Eigen::MatrixXi BE, CE;
+	
+	// BGC related variables
+	//--model=path/to/ManHead.obj --cage=path/to/ManHead_bezier_cage.txt --cage-deformed=path/to/ManHead_bezier_cage_deformed.txt --BGC -o output.obj
+	int bezierDim = 3;
+	bool crossProductBGC = false; // false: use vertex normals; true: use cross products
+	std::vector<int> numVerticesPerLine; // tensor product bezier: (dim + 1) * (dim + 1), bezier triangle: (dim + 1) * (dim + 2) / 2
+	std::vector<Eigen::MatrixXd> patchBezierNormals, patchBezierNormalsDeformed;
+	std::vector<Eigen::MatrixXd> patchPointCross, patchPointCrossDeformed;
+	std::vector<Eigen::MatrixXd> psi_bezier;
 
 	// Load cage if it has not been loaded already
-	if (C.rows() == 0 && !load_cage(cageFile, C, P, CF, scaling_factor, !QGC && !QMVC,
-		(!MVC && !green && !QMVC && !QGC && !MLC && !MEC && !somigliana) ? &V : nullptr,find_offset))
+	if (!BGC)
 	{
-		std::cerr << "Failed to load cage!\n";
-		return 1;
+		if (C.rows() == 0 && !load_cage(cageFile, C, P, CF, scaling_factor, !QGC && !QMVC,
+			(!MVC && !green && !QMVC && !QGC && !MLC && !MEC && !somigliana) ? &V : nullptr, find_offset))
+		{
+			std::cerr << "Failed to load cage!\n";
+			return 1;
+		}
 	}
-
+	else
+	{
+		//BGC: Bezier patch Green coordinates require loading control net topology
+		// The input is a txt file with following order (m=n=3 as examples)
+		//12 13 14 15 (u=v=1)                    0 (u=1, v=w=0)
+		//8 9 10 11                            1   2
+		//4 5 6 7                            3    4    5
+		//0(u=0, v=0) 1 2 3(u=1, v=0)     6 (v=1, u=w=0)789 (w=1, u=v=0)   
+		load_bezier_surface_cage(cageFile, bezierDim, C, CF, numVerticesPerLine);
+	}
 	if (somigliana)
 	{
 		std::vector<std::vector<unsigned int>> faces_somig(CF.rows());
@@ -289,21 +312,26 @@ int main(int argc, char** argv)
 		model_vertices_offset = C.rows();
 	}
 
-	if (!green && !MVC && !QMVC && !QGC && !MLC && !MEC && verbosity)
+	if (!green && !MVC && !QMVC && !BGC && !QGC && !MLC && !MEC && verbosity)
 	{
 		std::cout << "Using " << model_vertices_offset << " as offset for model vertices in embedding\n";
 	}
-
+	Eigen::MatrixXi CF_deformed;
 	if (load_deformed_cage)
 	{
 		Eigen::VectorXi P_deformed;
-		Eigen::MatrixXi CF_deformed;
-		if (!load_cage(cageDeformedFile, C_deformed, P_deformed, CF_deformed, scaling_factor, !QGC && !QMVC))
+		if (!BGC)
 		{
-			std::cerr << "Failed to load deformed cage!\n";
-			return 1;
+			if (!load_cage(cageDeformedFile, C_deformed, P_deformed, CF_deformed, scaling_factor, !QGC && !QMVC))
+			{
+				std::cerr << "Failed to load deformed cage!\n";
+				return 1;
+			}
 		}
-
+		else
+		{
+			load_bezier_surface_cage(cageDeformedFile, bezierDim, C_deformed, CF_deformed, numVerticesPerLine);
+		}
 		params = fromDeformedCage(C, C_deformed);
 	}
 
@@ -315,7 +343,9 @@ int main(int argc, char** argv)
 	std::vector<Eigen::Vector4d> psi_quad;
 	Eigen::VectorXi b;
 	Eigen::MatrixXd bc;
-	if (!MVC && !green && !QMVC && !QGC && !MLC && !MEC && !somigliana)
+	
+	bool cross_product_BGC = false;
+	if (!MVC && !green && !QMVC && !BGC && !QGC && !MLC && !MEC && !somigliana)
 	{
 		if (verbosity)
 		{
@@ -469,6 +499,22 @@ int main(int argc, char** argv)
 		calculateGreenCoordinatesTriQuad(C, CF, V_model, W, psi_tri, psi_quad);
 		stop_timer();
 	}
+	else if (BGC)
+	{
+		variant_string = "BGC";
+		start_timer();
+		if (cross_product_BGC == false)
+		{
+			computeNormalBezier(C, CF, patchBezierNormals, numVerticesPerLine, bezierDim);
+			calculateGreenCoordinatesBezier(C, CF, bezierDim, patchBezierNormals, V_model, W, psi_bezier, numVerticesPerLine);
+		}
+		else
+		{
+			computePointCross(C, CF, patchPointCross, numVerticesPerLine);
+			calculateGreenCoordinatesBezierCrossProduct(C, CF, bezierDim, patchPointCross, V_model, W, psi_bezier, numVerticesPerLine);
+		}
+		stop_timer();
+	}
 	else if (MVC) {
 		variant_string = "MVC";
 		start_timer();
@@ -557,7 +603,7 @@ int main(int argc, char** argv)
 		std::cout << "Done computing weights\n";
 	}
 
-	if (!lbc && !green && !QMVC && !QGC && !MLC && !MEC && !somigliana && !MVC)
+	if (!lbc && !green && !QMVC && !BGC && !QGC && !MLC && !MEC && !somigliana && !MVC)
 	{
 		W  = (W.array().colwise() / W.array().rowwise().sum()).eval();
 	}
@@ -567,7 +613,7 @@ int main(int argc, char** argv)
 	{
 		std::cout << "Calculating M\n";
 	}
-	if (green || QMVC || QGC || MVC)
+	if (green || QMVC || QGC || MVC || BGC)
 	{
 		M = W;
 	}
@@ -607,7 +653,7 @@ int main(int argc, char** argv)
 		if (!somigliana)
 		{
 			write_influence_color_map_OBJ(base_name + "_influence_" + variant_string + ".obj", V_model, T_model, interpolate_weights ? W_interpolated : W,
-				control_vertices_idx, (green || QGC || MLC || MEC || MVC || QMVC || interpolate_weights) ? 0 : model_vertices_offset, MVC || QMVC || green || QGC || MLC || MEC);
+				control_vertices_idx, (green || QGC || BGC || MLC || MEC || MVC || QMVC || interpolate_weights) ? 0 : model_vertices_offset, MVC || QMVC || green || QGC || MLC || MEC);
 		}
 		else
 		{
@@ -659,6 +705,19 @@ int main(int argc, char** argv)
 		{
 			calcNewPositionsTriQuad(C, C_deformed, CF, W, psi_tri, psi_quad, U_model);
 		}
+		else if (BGC)
+		{
+			if (cross_product_BGC == false)
+			{
+				computeNormalBezier(C_deformed, CF_deformed, patchBezierNormalsDeformed, numVerticesPerLine, bezierDim);
+				calcNewPositionsBezier(C, C_deformed, CF, bezierDim, patchBezierNormals, patchBezierNormalsDeformed, W, psi_bezier, U_model, numVerticesPerLine);
+			}
+			else
+			{
+				computePointCross(C_deformed, CF_deformed, patchPointCrossDeformed, numVerticesPerLine);
+				calcNewPositionsBezierCrossProduct(C, C_deformed, CF, bezierDim, patchPointCross, patchPointCrossDeformed, W, psi_bezier, U_model, numVerticesPerLine);
+			}
+		}
 		else if (MVC || QMVC || MLC || MEC)
 		{
 			U_model = W.transpose() * C_deformed;
@@ -683,7 +742,7 @@ int main(int argc, char** argv)
 			U = M * Transformation;
 		}
 
-		if (!MVC && !green && !QMVC && !QGC && !MLC && !MEC && !somigliana)
+		if (!MVC && !green && !QMVC && !BGC && !QGC && !MLC && !MEC && !somigliana)
 		{
 			for (int j = 0; j < V_model.rows(); ++j)
 			{
